@@ -1,22 +1,25 @@
 package com.vrg;
 
 import org.checkerframework.checker.nullness.qual.NonNull;
+import org.checkerframework.framework.qual.DefaultQualifier;
+import org.checkerframework.framework.qual.TypeUseLocation;
 
 import java.net.InetSocketAddress;
 
 /**
  * Created by lsuresh on 12/14/16.
  */
+@DefaultQualifier(value = NonNull.class, locations = TypeUseLocation.ALL)
 public class LinkUpdateMessage {
-    @NonNull private final InetSocketAddress src;
-    @NonNull private final InetSocketAddress dst;
-    @NonNull private final Status status;
-    @NonNull private final int incarnation;
+    private final InetSocketAddress src;
+    private final InetSocketAddress dst;
+    private final Status status;
+    private final int incarnation;
 
-    public LinkUpdateMessage(@NonNull final InetSocketAddress src,
-                             @NonNull final InetSocketAddress dst,
-                             @NonNull final Status status,
-                             @NonNull final int incarnation) {
+    public LinkUpdateMessage(final InetSocketAddress src,
+                             final InetSocketAddress dst,
+                             final Status status,
+                             final int incarnation) {
         this.src = src;
         this.dst = dst;
         this.status = status;
@@ -27,19 +30,19 @@ public class LinkUpdateMessage {
         UP, DOWN
     }
 
-    @NonNull public InetSocketAddress getSrc() {
+    public InetSocketAddress getSrc() {
         return src;
     }
 
-    @NonNull public InetSocketAddress getDst() {
+    public InetSocketAddress getDst() {
         return dst;
     }
 
-    @NonNull public Status getStatus() {
+    public Status getStatus() {
         return status;
     }
 
-    @NonNull public int getIncarnation() {
+    public int getIncarnation() {
         return incarnation;
     }
 }

@@ -5,6 +5,7 @@ import org.checkerframework.checker.nullness.qual.NonNull;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -19,6 +20,9 @@ public class MembershipView {
     @NonNull private final int K;
     @NonNull private final HashComparator[] hashComparators;
     @NonNull private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
+    @NonNull private boolean initializedWithSelf = false;
+    @NonNull private final AtomicInteger nodeAlreadyInRingExceptionsThrown = new AtomicInteger(0);
+    @NonNull private final AtomicInteger nodeNotInRingExceptionsThrown = new AtomicInteger(0);
 
     public MembershipView(final int K) {
         assert K > 0;
@@ -31,7 +35,8 @@ public class MembershipView {
         }
     }
 
-    public void ringAdd(@NonNull final Node node) {
+    @VisibleForTesting
+    void ringAdd(@NonNull final Node node) throws NodeAlreadyInRingException {
         try {
             rwLock.writeLock().lock();
             for (int k = 0; k < K; k++) {
@@ -39,7 +44,7 @@ public class MembershipView {
                 final int index = Collections.binarySearch(list, node, hashComparators[k]);
 
                 if (index >= 0) {
-                    throw new RuntimeException("Node already in ring: " + node.address);
+                    throw new NodeAlreadyInRingException(node);
                 }
 
                 final int newNodeIndex = (-1 * index - 1);
@@ -51,7 +56,8 @@ public class MembershipView {
         }
     }
 
-    public void ringDelete(@NonNull final Node node) {
+    @VisibleForTesting
+    void ringDelete(@NonNull final Node node) throws NodeNotInRingException {
         try {
             rwLock.writeLock().lock();
             for (int k = 0; k < K; k++) {
@@ -59,7 +65,7 @@ public class MembershipView {
                 final int index = Collections.binarySearch(list, node, hashComparators[k]);
 
                 if (index < 0) {
-                    throw new RuntimeException("Node not in ring: " + node.address);
+                    throw new NodeNotInRingException(node);
                 }
 
                 // Indexes being changed are index - 1, index, index + 1
@@ -70,7 +76,7 @@ public class MembershipView {
         }
     }
 
-    @NonNull public Set<Node> monitorsOf(@NonNull final Node node) {
+    @NonNull public Set<Node> monitorsOf(@NonNull final Node node) throws NodeNotInRingException {
         try {
             rwLock.readLock().lock();
             Set<Node> monitors = new HashSet<>();
@@ -84,7 +90,7 @@ public class MembershipView {
                 final int index = Collections.binarySearch(list, node, hashComparators[k]);
 
                 if (index < 0) {
-                    throw new RuntimeException("Node not in ring: " + node.address);
+                    throw new NodeNotInRingException(node);
                 }
 
                 monitors.add(list.get(Math.floorMod(index - 1, list.size())));
@@ -95,7 +101,7 @@ public class MembershipView {
         }
     }
 
-    @NonNull public Set<Node> monitoreesOf(@NonNull final Node node) {
+    @NonNull public Set<Node> monitoreesOf(@NonNull final Node node) throws NodeNotInRingException {
         try {
             rwLock.readLock().lock();
             Set<Node> monitorees = new HashSet<>();
@@ -109,7 +115,7 @@ public class MembershipView {
                 final int index = Collections.binarySearch(list, node, hashComparators[k]);
 
                 if (index < 0) {
-                    throw new RuntimeException("Node not in ring: " + node.address);
+                    throw new NodeNotInRingException(node);
                 }
 
                 monitorees.add(list.get((index + 1) % list.size()));
@@ -117,6 +123,38 @@ public class MembershipView {
             return monitorees;
         } finally {
             rwLock.readLock().unlock();
+        }
+    }
+
+    public void deliver(LinkUpdateMessage msg) {
+        try {
+            switch (msg.getStatus()) {
+                case UP:
+                    ringAdd(new Node(msg.getSrc()));
+                    break;
+                case DOWN:
+                    ringDelete(new Node(msg.getSrc()));
+                    break;
+            }
+        } catch (NodeAlreadyInRingException e) {
+            nodeAlreadyInRingExceptionsThrown.incrementAndGet();
+        } catch (NodeNotInRingException e) {
+            nodeNotInRingExceptionsThrown.incrementAndGet();
+        }
+
+    }
+
+    public void initializeWithSelf(@NonNull final Node node) {
+        if (!initializedWithSelf) {
+            // The only case a ringAdd is allowed to be called without going
+            // through the watermark.
+            try {
+                ringAdd(node);
+            } catch (NodeAlreadyInRingException e) {
+                // Should never happen
+                assert false;
+            }
+            initializedWithSelf = true;
         }
     }
 
@@ -141,6 +179,22 @@ public class MembershipView {
         public int compare(@NonNull final Node c1, @NonNull final Node c2) {
             return Utils.sha1Hex(c1.address.toString() + seed)
                     .compareTo(Utils.sha1Hex(c2.address.toString() + seed));
+        }
+    }
+
+    class NodeAlreadyInRingException extends Exception
+    {
+        public NodeAlreadyInRingException(Node node)
+        {
+            super(node.address.toString());
+        }
+    }
+
+    class NodeNotInRingException extends Exception
+    {
+        public NodeNotInRingException(Node node)
+        {
+            super(node.address.toString());
         }
     }
 }
