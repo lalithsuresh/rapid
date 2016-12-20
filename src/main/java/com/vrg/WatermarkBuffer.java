@@ -1,6 +1,7 @@
 package com.vrg;
 
 import org.checkerframework.checker.nullness.qual.NonNull;
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.checkerframework.framework.qual.DefaultQualifier;
 import org.checkerframework.framework.qual.TypeUseLocation;
 
@@ -15,7 +16,7 @@ import java.util.function.Consumer;
 /**
  * Created by lsuresh on 12/15/16.
  */
-@DefaultQualifier(value = NonNull.class, locations = TypeUseLocation.ALL)
+@DefaultQualifier(value = NonNull.class, locations = {TypeUseLocation.ALL})
 public class WatermarkBuffer {
     private static final int K_MIN = 3;
     private final int K;
@@ -43,23 +44,25 @@ public class WatermarkBuffer {
         this.deliverCallback = deliverCallback;
     }
 
+    public int getNumDelivers() {
+        return flushCounter.get();
+    }
+
     public final int ReceiveLinkUpdateMessage(final LinkUpdateMessage msg) {
         try {
             rwLock.writeLock().lock();
 
-            AtomicInteger incarnation = incarnationNumbers.get(msg.getSrc());
-            if (incarnation == null) {
-                incarnation = new AtomicInteger(msg.getIncarnation());
-                updateCounters.putIfAbsent(msg.getSrc(), new AtomicInteger(0));
-                incarnationNumbers.putIfAbsent(msg.getSrc(), incarnation);
-            }
-            else if (incarnation.get() > msg.getIncarnation()) {
+            final AtomicInteger incarnation = incarnationNumbers.computeIfAbsent(msg.getSrc(),
+                                             (k) -> new AtomicInteger(msg.getIncarnation()));
+
+            if (incarnation.get() > msg.getIncarnation()) {
                 return -1;
             }
-            // this calls for an invalidation? I don't think so
+            // One approach here is to complain
             assert (incarnation.get() >= msg.getIncarnation());
 
-            AtomicInteger counter = updateCounters.get(msg.getSrc());
+            final AtomicInteger counter = updateCounters.computeIfAbsent(msg.getSrc(),
+                                             (k) -> new AtomicInteger(0));
             final int value = counter.incrementAndGet();
 
             if (value == L) {
@@ -74,8 +77,16 @@ public class WatermarkBuffer {
                     this.flushCounter.incrementAndGet();
                     final int flushCount = readyList.size();
                     for (Node n: readyList) {
-                        updateCounters.get(n.address).getAndSet(0);
-                        incarnationNumbers.get(n.address).incrementAndGet();
+                        @Nullable final AtomicInteger updateCounter = updateCounters.get(n.address);
+                        @Nullable final AtomicInteger incarnationCounter = incarnationNumbers.get(n.address);
+                        if (updateCounter == null) {
+                            throw new RuntimeException("Node to be flushed not in UpdateCounters map: " + n.address);
+                        }
+                        if (incarnationCounter == null) {
+                            throw new RuntimeException("Node to be flushed not in incarnationNumbers map: " + n.address);
+                        }
+                        updateCounter.set(0);
+                        incarnationCounter.incrementAndGet();
                         deliverCallback.accept(msg);
                     }
                     readyList.clear();
@@ -88,9 +99,5 @@ public class WatermarkBuffer {
         finally {
             rwLock.writeLock().unlock();
         }
-    }
-
-   public int getNumDelivers() {
-        return flushCounter.get();
     }
 }

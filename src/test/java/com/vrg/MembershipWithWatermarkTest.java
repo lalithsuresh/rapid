@@ -101,7 +101,4 @@ public class MembershipWithWatermarkTest {
     public void multipleUpdates() {
 
     }
-
-    private void emptyConsumer(LinkUpdateMessage msg) {
-    }
 }

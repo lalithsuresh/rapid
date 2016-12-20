@@ -2,6 +2,8 @@ package com.vrg;
 
 import com.google.common.annotations.VisibleForTesting;
 import org.checkerframework.checker.nullness.qual.NonNull;
+import org.checkerframework.framework.qual.DefaultQualifier;
+import org.checkerframework.framework.qual.TypeUseLocation;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -15,14 +17,15 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  *
  * TODO: too many scans of the k rings during reads. Maintain a cache.
  */
+@DefaultQualifier(value = NonNull.class, locations = TypeUseLocation.ALL)
 public class MembershipView {
-    @NonNull private final ConcurrentHashMap<Integer, ArrayList<Node>> rings;
-    @NonNull private final int K;
-    @NonNull private final HashComparator[] hashComparators;
-    @NonNull private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
-    @NonNull private boolean initializedWithSelf = false;
-    @NonNull private final AtomicInteger nodeAlreadyInRingExceptionsThrown = new AtomicInteger(0);
-    @NonNull private final AtomicInteger nodeNotInRingExceptionsThrown = new AtomicInteger(0);
+    private final ConcurrentHashMap<Integer, ArrayList<Node>> rings;
+    private final int K;
+    private final HashComparator[] hashComparators;
+    private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
+    private final AtomicInteger nodeAlreadyInRingExceptionsThrown = new AtomicInteger(0);
+    private final AtomicInteger nodeNotInRingExceptionsThrown = new AtomicInteger(0);
+    private boolean initializedWithSelf = false;
 
     public MembershipView(final int K) {
         assert K > 0;
@@ -36,7 +39,7 @@ public class MembershipView {
     }
 
     @VisibleForTesting
-    void ringAdd(@NonNull final Node node) throws NodeAlreadyInRingException {
+    void ringAdd(final Node node) throws NodeAlreadyInRingException {
         try {
             rwLock.writeLock().lock();
             for (int k = 0; k < K; k++) {
@@ -57,7 +60,7 @@ public class MembershipView {
     }
 
     @VisibleForTesting
-    void ringDelete(@NonNull final Node node) throws NodeNotInRingException {
+    void ringDelete(final Node node) throws NodeNotInRingException {
         try {
             rwLock.writeLock().lock();
             for (int k = 0; k < K; k++) {
@@ -76,7 +79,7 @@ public class MembershipView {
         }
     }
 
-    @NonNull public Set<Node> monitorsOf(@NonNull final Node node) throws NodeNotInRingException {
+    public Set<Node> monitorsOf(final Node node) throws NodeNotInRingException {
         try {
             rwLock.readLock().lock();
             Set<Node> monitors = new HashSet<>();
@@ -101,7 +104,7 @@ public class MembershipView {
         }
     }
 
-    @NonNull public Set<Node> monitoreesOf(@NonNull final Node node) throws NodeNotInRingException {
+    public Set<Node> monitoreesOf(final Node node) throws NodeNotInRingException {
         try {
             rwLock.readLock().lock();
             Set<Node> monitorees = new HashSet<>();
@@ -126,7 +129,7 @@ public class MembershipView {
         }
     }
 
-    public void deliver(LinkUpdateMessage msg) {
+    public void deliver(final LinkUpdateMessage msg) {
         try {
             switch (msg.getStatus()) {
                 case UP:
@@ -144,7 +147,7 @@ public class MembershipView {
 
     }
 
-    public void initializeWithSelf(@NonNull final Node node) {
+    public void initializeWithSelf(final Node node) {
         if (!initializedWithSelf) {
             // The only case a ringAdd is allowed to be called without going
             // through the watermark.
@@ -169,30 +172,33 @@ public class MembershipView {
         }
     }
 
+    @DefaultQualifier(value = NonNull.class, locations = TypeUseLocation.ALL)
     private static class HashComparator implements Comparator<Node>
     {
         private final String seed;
-        public HashComparator(@NonNull final String seed) {
+        public HashComparator(final String seed) {
             this.seed = seed;
         }
 
-        public int compare(@NonNull final Node c1, @NonNull final Node c2) {
+        public int compare(final Node c1, final Node c2) {
             return Utils.sha1Hex(c1.address.toString() + seed)
                     .compareTo(Utils.sha1Hex(c2.address.toString() + seed));
         }
     }
 
+    @DefaultQualifier(value = NonNull.class, locations = TypeUseLocation.ALL)
     class NodeAlreadyInRingException extends Exception
     {
-        public NodeAlreadyInRingException(Node node)
+        public NodeAlreadyInRingException(final Node node)
         {
             super(node.address.toString());
         }
     }
 
+    @DefaultQualifier(value = NonNull.class, locations = TypeUseLocation.ALL)
     class NodeNotInRingException extends Exception
     {
-        public NodeNotInRingException(Node node)
+        public NodeNotInRingException(final Node node)
         {
             super(node.address.toString());
         }
