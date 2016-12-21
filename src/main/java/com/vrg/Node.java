@@ -3,12 +3,12 @@ package com.vrg;
 import java.net.InetSocketAddress;
 
 /**
- * Created by lsuresh on 12/13/16.
+ * Represents a node. For now, we just wrap it around a socket-address.
  */
-public class Node {
-    public final InetSocketAddress address;
+class Node {
+    final InetSocketAddress address;
 
-    public Node(InetSocketAddress address) {
+    Node(final InetSocketAddress address) {
         this.address = address;
     }
 }
