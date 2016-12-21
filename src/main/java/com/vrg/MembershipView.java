@@ -30,7 +30,6 @@ class MembershipView {
     private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
     private final AtomicInteger nodeAlreadyInRingExceptionsThrown = new AtomicInteger(0);
     private final AtomicInteger nodeNotInRingExceptionsThrown = new AtomicInteger(0);
-    private boolean initializedWithSelf = false;
 
     MembershipView(final int K) {
         assert K > 0;
@@ -39,6 +38,19 @@ class MembershipView {
         this.hashComparators = new HashComparator[K];
         for (int k = 0; k < K; k++) {
             this.rings.put(k, new ArrayList<>());
+            hashComparators[k] = new HashComparator(Integer.toString(k));
+        }
+    }
+
+    MembershipView(final int K, final Node node) {
+        assert K > 0;
+        this.K = K;
+        this.rings = new ConcurrentHashMap<>(K);
+        this.hashComparators = new HashComparator[K];
+        for (int k = 0; k < K; k++) {
+            final ArrayList<Node> list = new ArrayList<>();
+            list.add(node);
+            this.rings.put(k, list);
             hashComparators[k] = new HashComparator(Integer.toString(k));
         }
     }
@@ -169,24 +181,6 @@ class MembershipView {
             nodeNotInRingExceptionsThrown.incrementAndGet();
         }
 
-    }
-
-    /**
-     * Add a node directly to the K rings. Can only be executed once.
-     * @param node node to add to ring
-     */
-    void initializeWithSelf(final Node node) {
-        if (!initializedWithSelf) {
-            // The only case a ringAdd is allowed to be called without going
-            // through the watermark.
-            try {
-                ringAdd(node);
-            } catch (final NodeAlreadyInRingException e) {
-                // Should never happen
-                assert false;
-            }
-            initializedWithSelf = true;
-        }
     }
 
     @VisibleForTesting

@@ -24,8 +24,7 @@ public class MembershipWithWatermarkTest {
     @Test
     public void oneRingAddition() {
         final InetSocketAddress addr = InetSocketAddress.createUnresolved("127.0.0.1", 123);
-        final MembershipView mview = new MembershipView(K);
-        mview.initializeWithSelf(new Node(addr));
+        final MembershipView mview = new MembershipView(K, new Node(addr));
         for (int k = 0; k < K; k++) {
             final List<Node> list = mview.viewRing(k);
             assertEquals(1, list.size());
