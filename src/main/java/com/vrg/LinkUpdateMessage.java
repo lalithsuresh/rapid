@@ -7,7 +7,7 @@ import org.checkerframework.framework.qual.TypeUseLocation;
 import java.net.InetSocketAddress;
 
 /**
- * Created by lsuresh on 12/14/16.
+ * LinkUpdateMessage is used by nodes to announce changes in link status
  */
 @DefaultQualifier(value = NonNull.class, locations = TypeUseLocation.ALL)
 public class LinkUpdateMessage {

@@ -14,7 +14,9 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
 
 /**
- * Created by lsuresh on 12/15/16.
+ * A basic watermark buffer that delivers messages about a node if and only if:
+ * - there are H messages about the node.
+ * - there is no other node with more than L but less than H messages about it.
  */
 @DefaultQualifier(value = NonNull.class, locations = {TypeUseLocation.ALL})
 public class WatermarkBuffer {

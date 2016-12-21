@@ -6,9 +6,6 @@ import java.net.InetSocketAddress;
 import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
 
-/**
- * Created by lsuresh on 12/16/16.
- */
 public class TestUtils {
 
     @NonNull

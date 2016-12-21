@@ -6,9 +6,7 @@ import java.net.InetSocketAddress;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-/**
- * Created by lsuresh on 12/15/16.
- */
+
 public class WatermarkBufferTest {
     private static final int K = 10;
     private static final int H = 8;
