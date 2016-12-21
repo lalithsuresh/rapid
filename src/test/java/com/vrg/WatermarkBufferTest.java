@@ -6,12 +6,19 @@ import java.net.InetSocketAddress;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-
+/**
+ * Tests without changing incarnations for a watermark-buffer
+ */
 public class WatermarkBufferTest {
     private static final int K = 10;
     private static final int H = 8;
     private static final int L = 3;
 
+    /**
+     * A series of updates in increasing order of incarnations.
+     * At any incarnation X maintained by a node of a peer, a new incarnation
+     * is always <= X
+     */
     @Test
     public void waterMarkTest() {
         final WatermarkBuffer wb = new WatermarkBuffer(K, H, L, this::emptyConsumer);
@@ -28,6 +35,12 @@ public class WatermarkBufferTest {
         assertEquals(1, wb.getNumDelivers());
     }
 
+    /**
+     * Permutations of LinkUpdateMessage arrivals pertaining to two nodes are pushed.
+     * Ensure that the number of deliver events are sane. Ideally, we'd look at the
+     * resulting distribution (it should mostly be single view updates and not an
+     * update each for each node).
+     */
     @Test
     public void watermarkTwoAnnouncementsPermutation() {
         final int numPermutations = 100000;
@@ -36,12 +49,12 @@ public class WatermarkBufferTest {
 
         int numFlushes = 0;
         for (int i = 0; i < numPermutations; i++) {
-            LinkUpdateMessage[] messages = TestUtils.getMessagesArray(incarnations++, K);
+            final LinkUpdateMessage[] messages = TestUtils.getMessagesArray(incarnations++, K);
             TestUtils.shuffleArray(messages);
             String eventStream = "";
-            for (LinkUpdateMessage msg: messages) {
+            for (final LinkUpdateMessage msg: messages) {
                 final int result = wb.ReceiveLinkUpdateMessage(msg);
-                String log = msg.getSrc() + " " + result + " \n";
+                final String log = msg.getSrc() + " " + result + " \n";
                 eventStream += log;
             }
 
@@ -52,6 +65,6 @@ public class WatermarkBufferTest {
         }
     }
 
-    private void emptyConsumer(LinkUpdateMessage msg) {
+    private void emptyConsumer(final LinkUpdateMessage msg) {
     }
 }

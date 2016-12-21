@@ -23,7 +23,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * TODO: too many scans of the k rings during reads. Maintain a cache.
  */
 @DefaultQualifier(value = NonNull.class, locations = TypeUseLocation.ALL)
-public class MembershipView {
+class MembershipView {
     private final ConcurrentHashMap<Integer, ArrayList<Node>> rings;
     private final int K;
     private final HashComparator[] hashComparators;
@@ -32,7 +32,7 @@ public class MembershipView {
     private final AtomicInteger nodeNotInRingExceptionsThrown = new AtomicInteger(0);
     private boolean initializedWithSelf = false;
 
-    public MembershipView(final int K) {
+    MembershipView(final int K) {
         assert K > 0;
         this.K = K;
         this.rings = new ConcurrentHashMap<>(K);
@@ -48,15 +48,15 @@ public class MembershipView {
         try {
             rwLock.writeLock().lock();
             for (int k = 0; k < K; k++) {
-                ArrayList<Node> list = rings.get(k);
+                final ArrayList<Node> list = rings.get(k);
                 final int index = Collections.binarySearch(list, node, hashComparators[k]);
 
                 if (index >= 0) {
                     throw new NodeAlreadyInRingException(node);
                 }
 
-                final int newNodeIndex = (-1 * index - 1);
                 // Indexes being changed are (-1 * index - 1) - 1, (-1 * index - 1), (-1 * index - 1) + 1
+                final int newNodeIndex = (-1 * index - 1);
                 list.add(newNodeIndex, node);
             }
         } finally {
@@ -69,7 +69,7 @@ public class MembershipView {
         try {
             rwLock.writeLock().lock();
             for (int k = 0; k < K; k++) {
-                ArrayList<Node> list = rings.get(k);
+                final ArrayList<Node> list = rings.get(k);
                 final int index = Collections.binarySearch(list, node, hashComparators[k]);
 
                 if (index < 0) {
@@ -84,12 +84,18 @@ public class MembershipView {
         }
     }
 
-    public Set<Node> monitorsOf(final Node node) throws NodeNotInRingException {
+    /**
+     * Returns the set of monitors for {@code node}
+     * @param node input node
+     * @return the set of monitors for {@code node}
+     * @throws NodeNotInRingException thrown if {@code node} is not in the ring
+     */
+    Set<Node> monitorsOf(final Node node) throws NodeNotInRingException {
         try {
             rwLock.readLock().lock();
-            Set<Node> monitors = new HashSet<>();
+            final Set<Node> monitors = new HashSet<>();
             for (int k = 0; k < K; k++) {
-                ArrayList<Node> list = rings.get(k);
+                final ArrayList<Node> list = rings.get(k);
 
                 if (list.size() <= 1) {
                     return monitors;
@@ -101,7 +107,7 @@ public class MembershipView {
                     throw new NodeNotInRingException(node);
                 }
 
-                monitors.add(list.get(Math.floorMod(index - 1, list.size())));
+                monitors.add(list.get(Math.floorMod(index - 1, list.size()))); // Handles wrap around
             }
             return monitors;
         } finally {
@@ -109,12 +115,18 @@ public class MembershipView {
         }
     }
 
-    public Set<Node> monitoreesOf(final Node node) throws NodeNotInRingException {
+    /**
+     * Returns the set of nodes monitored by {@code node}
+     * @param node input node
+     * @return the set of nodes monitored by {@code node}
+     * @throws NodeNotInRingException thrown if {@code node} is not in the ring
+     */
+    Set<Node> monitoreesOf(final Node node) throws NodeNotInRingException {
         try {
             rwLock.readLock().lock();
-            Set<Node> monitorees = new HashSet<>();
+            final Set<Node> monitorees = new HashSet<>();
             for (int k = 0; k < K; k++) {
-                ArrayList<Node> list = rings.get(k);
+                final ArrayList<Node> list = rings.get(k);
 
                 if (list.size() <= 1) {
                     return monitorees;
@@ -126,7 +138,7 @@ public class MembershipView {
                     throw new NodeNotInRingException(node);
                 }
 
-                monitorees.add(list.get((index + 1) % list.size()));
+                monitorees.add(list.get((index + 1) % list.size())); // Handles wrap around
             }
             return monitorees;
         } finally {
@@ -134,7 +146,11 @@ public class MembershipView {
         }
     }
 
-    public void deliver(final LinkUpdateMessage msg) {
+    /**
+     * Deliver a LinkUpdateMessage
+     * @param msg message to deliver
+     */
+    void deliver(final LinkUpdateMessage msg) {
         try {
             switch (msg.getStatus()) {
                 case UP:
@@ -147,21 +163,25 @@ public class MembershipView {
                     // Invalid message
                     assert false;
             }
-        } catch (NodeAlreadyInRingException e) {
+        } catch (final NodeAlreadyInRingException e) {
             nodeAlreadyInRingExceptionsThrown.incrementAndGet();
-        } catch (NodeNotInRingException e) {
+        } catch (final NodeNotInRingException e) {
             nodeNotInRingExceptionsThrown.incrementAndGet();
         }
 
     }
 
-    public void initializeWithSelf(final Node node) {
+    /**
+     * Add a node directly to the K rings. Can only be executed once.
+     * @param node node to add to ring
+     */
+    void initializeWithSelf(final Node node) {
         if (!initializedWithSelf) {
             // The only case a ringAdd is allowed to be called without going
             // through the watermark.
             try {
                 ringAdd(node);
-            } catch (NodeAlreadyInRingException e) {
+            } catch (final NodeAlreadyInRingException e) {
                 // Should never happen
                 assert false;
             }
@@ -184,7 +204,7 @@ public class MembershipView {
     private static final class HashComparator implements Comparator<Node> {
         private final String seed;
 
-        public HashComparator(final String seed) {
+        HashComparator(final String seed) {
             this.seed = seed;
         }
 
@@ -196,14 +216,14 @@ public class MembershipView {
 
     @DefaultQualifier(value = NonNull.class, locations = TypeUseLocation.ALL)
     class NodeAlreadyInRingException extends Exception {
-        public NodeAlreadyInRingException(final Node node) {
+        NodeAlreadyInRingException(final Node node) {
             super(node.address.toString());
         }
     }
 
     @DefaultQualifier(value = NonNull.class, locations = TypeUseLocation.ALL)
     class NodeNotInRingException extends Exception {
-        public NodeNotInRingException(final Node node) {
+        NodeNotInRingException(final Node node) {
             super(node.address.toString());
         }
     }

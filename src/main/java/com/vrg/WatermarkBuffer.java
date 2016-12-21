@@ -19,21 +19,21 @@ import java.util.function.Consumer;
  * - there is no other node with more than L but less than H messages about it.
  */
 @DefaultQualifier(value = NonNull.class, locations = {TypeUseLocation.ALL})
-public class WatermarkBuffer {
+class WatermarkBuffer {
     private static final int K_MIN = 3;
     private final int K;
     private final int H;
     private final int L;
-    private final AtomicInteger flushCounter = new AtomicInteger(0);
-    private final AtomicInteger safetyValve = new AtomicInteger(0);
+    private final AtomicInteger deliverCounter = new AtomicInteger(0);
+    private final AtomicInteger updatesInProgress = new AtomicInteger(0);
     private final Map<InetSocketAddress, AtomicInteger> incarnationNumbers;
     private final Map<InetSocketAddress, AtomicInteger> updateCounters;
     private final ArrayList<Node> readyList = new ArrayList<>();
     private final ReentrantReadWriteLock rwLock = new ReentrantReadWriteLock();
     private final Consumer<LinkUpdateMessage> deliverCallback;
 
-    public WatermarkBuffer(final int K, final int H, final int L,
-                           Consumer<LinkUpdateMessage> deliverCallback) {
+    WatermarkBuffer(final int K, final int H, final int L,
+                    final Consumer<LinkUpdateMessage> deliverCallback) {
         if (H > K || L > H || K < K_MIN) {
             throw new IllegalArgumentException("Arguments do not satisfy K > H >= L >= 0:" +
                                                " (K: " + K + ", H: " + H + ", L: " + L);
@@ -46,11 +46,11 @@ public class WatermarkBuffer {
         this.deliverCallback = deliverCallback;
     }
 
-    public int getNumDelivers() {
-        return flushCounter.get();
+    int getNumDelivers() {
+        return deliverCounter.get();
     }
 
-    public final int ReceiveLinkUpdateMessage(final LinkUpdateMessage msg) {
+    int ReceiveLinkUpdateMessage(final LinkUpdateMessage msg) {
         try {
             rwLock.writeLock().lock();
 
@@ -60,7 +60,7 @@ public class WatermarkBuffer {
             if (incarnation.get() > msg.getIncarnation()) {
                 return -1;
             }
-            // One approach here is to complain
+            // TODO: not sure how to handle this case. Ideally, the system should be in lock-step about view changes
             assert (incarnation.get() >= msg.getIncarnation());
 
             final AtomicInteger counter = updateCounters.computeIfAbsent(msg.getSrc(),
@@ -68,17 +68,21 @@ public class WatermarkBuffer {
             final int value = counter.incrementAndGet();
 
             if (value == L) {
-                safetyValve.incrementAndGet();
+                updatesInProgress.incrementAndGet();
             }
 
             if (value == H) {
+                 // This message has received enough copies that it is safe to deliver, provided
+                 // there are no outstanding updates in progress.
                 readyList.add(new Node(msg.getSrc()));
-                final int safetyValveValue = safetyValve.decrementAndGet();
+                final int updatesInProgressVal = updatesInProgress.decrementAndGet();
 
-                if (safetyValveValue == 0) {
-                    this.flushCounter.incrementAndGet();
+                if (updatesInProgressVal == 0) {
+                    // No outstanding updates, so deliver all messages that have crossed the H threshold of copies.
+                    this.deliverCounter.incrementAndGet();
                     final int flushCount = readyList.size();
-                    for (Node n: readyList) {
+                    for (final Node n: readyList) {
+                        // The two counters below should never be null.
                         @Nullable final AtomicInteger updateCounter = updateCounters.get(n.address);
                         @Nullable final AtomicInteger incarnationCounter = incarnationNumbers.get(n.address);
                         if (updateCounter == null) {

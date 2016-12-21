@@ -11,28 +11,35 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Created by lsuresh on 12/16/16.
+ * Tests for a MembershipView backed by a WatermarkBuffer.
  */
 public class MembershipWithWatermarkTest {
     private static final int K = 10;
     private static final int H = 8;
     private static final int L = 3;
 
+    /**
+     * A ring initialized with self
+     */
     @Test
     public void oneRingAddition() {
         final InetSocketAddress addr = InetSocketAddress.createUnresolved("127.0.0.1", 123);
         final MembershipView mview = new MembershipView(K);
         mview.initializeWithSelf(new Node(addr));
-        final WatermarkBuffer wb = new WatermarkBuffer(K, H, L, mview::deliver);
         for (int k = 0; k < K; k++) {
             final List<Node> list = mview.viewRing(k);
             assertEquals(1, list.size());
-            for (Node n : list) {
+            for (final Node n : list) {
                 assertEquals(n.address, addr);
             }
         }
     }
 
+    /**
+     * A series of updates in increasing order of incarnations.
+     * At any incarnation X maintained by a node of a peer, a new incarnation
+     * is always <= X
+     */
     @Test
     public void multipleUpdatesOrderedIncarnations() {
         final int numPermutations = 100000;
@@ -45,9 +52,9 @@ public class MembershipWithWatermarkTest {
             final LinkUpdateMessage[] messages = TestUtils.getMessagesArray(incarnations++, K);
             TestUtils.shuffleArray(messages);
             String eventStream = "";
-            for (LinkUpdateMessage msg: messages) {
+            for (final LinkUpdateMessage msg: messages) {
                 final int result = wb.ReceiveLinkUpdateMessage(msg);
-                String log = msg.getSrc() + " " + result + " \n";
+                final String log = msg.getSrc() + " " + result + " \n";
                 eventStream += log;
             }
 
@@ -60,7 +67,9 @@ public class MembershipWithWatermarkTest {
         assertEquals(mview.viewRing(0).size(), 2);
     }
 
-
+    /**
+     * A series of updates with a scrambled order of incarnations.
+     */
     @Test
     public void multipleUpdatesUnorderedIncarnations() {
         final int numIncarnations = 10;
@@ -71,19 +80,19 @@ public class MembershipWithWatermarkTest {
 
         int numFlushes = 0;
 
-        ArrayList<LinkUpdateMessage> list =  new ArrayList<>();
+        final ArrayList<LinkUpdateMessage> list =  new ArrayList<>();
 
         for (int i = 0; i < numIncarnations; i++) {
             list.addAll(Arrays.asList(TestUtils.getMessagesArray(i, K)));
         }
 
-        LinkUpdateMessage[] messages = list.toArray(new LinkUpdateMessage[list.size()]);
+        final LinkUpdateMessage[] messages = list.toArray(new LinkUpdateMessage[list.size()]);
         for (int i = 0; i < numPermutations; i++) {
             TestUtils.shuffleArray(messages);
             String eventStream = "";
-            for (LinkUpdateMessage msg: messages) {
+            for (final LinkUpdateMessage msg: messages) {
                 final int result = wb.ReceiveLinkUpdateMessage(msg);
-                String log = msg.getSrc() + " " + result + " \n";
+                final String log = msg.getSrc() + " " + result + " \n";
                 eventStream += log;
             }
 
@@ -94,11 +103,5 @@ public class MembershipWithWatermarkTest {
         }
 
         assertEquals(mview.viewRing(0).size(), 2);
-    }
-
-
-    @Test
-    public void multipleUpdates() {
-
     }
 }
