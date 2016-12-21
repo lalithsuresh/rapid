@@ -62,7 +62,7 @@ public class MembershipWithWatermarkTest {
 
 
     @Test
-    public void multipleUpdatesUnOrderedIncarnations() {
+    public void multipleUpdatesUnorderedIncarnations() {
         final int numIncarnations = 10;
         final int numPermutations = 100000;
 

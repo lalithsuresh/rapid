@@ -5,7 +5,12 @@ import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.framework.qual.DefaultQualifier;
 import org.checkerframework.framework.qual.TypeUseLocation;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Set;
+import java.util.HashSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReadWriteLock;
@@ -138,6 +143,9 @@ public class MembershipView {
                 case DOWN:
                     ringDelete(new Node(msg.getSrc()));
                     break;
+                default:
+                    // Invalid message
+                    assert false;
             }
         } catch (NodeAlreadyInRingException e) {
             nodeAlreadyInRingExceptionsThrown.incrementAndGet();
@@ -173,33 +181,29 @@ public class MembershipView {
     }
 
     @DefaultQualifier(value = NonNull.class, locations = TypeUseLocation.ALL)
-    private static class HashComparator implements Comparator<Node>
-    {
+    private static final class HashComparator implements Comparator<Node> {
         private final String seed;
+
         public HashComparator(final String seed) {
             this.seed = seed;
         }
 
-        public int compare(final Node c1, final Node c2) {
+        public final int compare(final Node c1, final Node c2) {
             return Utils.sha1Hex(c1.address.toString() + seed)
                     .compareTo(Utils.sha1Hex(c2.address.toString() + seed));
         }
     }
 
     @DefaultQualifier(value = NonNull.class, locations = TypeUseLocation.ALL)
-    class NodeAlreadyInRingException extends Exception
-    {
-        public NodeAlreadyInRingException(final Node node)
-        {
+    class NodeAlreadyInRingException extends Exception {
+        public NodeAlreadyInRingException(final Node node) {
             super(node.address.toString());
         }
     }
 
     @DefaultQualifier(value = NonNull.class, locations = TypeUseLocation.ALL)
-    class NodeNotInRingException extends Exception
-    {
-        public NodeNotInRingException(final Node node)
-        {
+    class NodeNotInRingException extends Exception {
+        public NodeNotInRingException(final Node node) {
             super(node.address.toString());
         }
     }

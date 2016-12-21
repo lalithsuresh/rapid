@@ -82,10 +82,12 @@ public class WatermarkBuffer {
                         @Nullable final AtomicInteger updateCounter = updateCounters.get(n.address);
                         @Nullable final AtomicInteger incarnationCounter = incarnationNumbers.get(n.address);
                         if (updateCounter == null) {
-                            throw new RuntimeException("Node to be flushed not in UpdateCounters map: " + n.address);
+                            throw new RuntimeException("Node to be delivered not in UpdateCounters map: "
+                                                        + n.address);
                         }
                         if (incarnationCounter == null) {
-                            throw new RuntimeException("Node to be flushed not in incarnationNumbers map: " + n.address);
+                            throw new RuntimeException("Node to be delivered not in incarnationNumbers map: "
+                                                        + n.address);
                         }
                         updateCounter.set(0);
                         incarnationCounter.incrementAndGet();
