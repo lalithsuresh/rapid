@@ -26,7 +26,6 @@ class WatermarkBuffer {
     private final int L;
     private final AtomicInteger deliverCounter = new AtomicInteger(0);
     private final AtomicInteger updatesInProgress = new AtomicInteger(0);
-    private final Map<InetSocketAddress, AtomicInteger> incarnationNumbers;
     private final Map<InetSocketAddress, AtomicInteger> updateCounters;
     private final ArrayList<Node> readyList = new ArrayList<>();
     private final ReentrantReadWriteLock rwLock = new ReentrantReadWriteLock();
@@ -42,7 +41,6 @@ class WatermarkBuffer {
         this.H = H;
         this.L = L;
         this.updateCounters = new HashMap<>();
-        this.incarnationNumbers = new HashMap<>();
         this.deliverCallback = deliverCallback;
     }
 
@@ -53,15 +51,6 @@ class WatermarkBuffer {
     int ReceiveLinkUpdateMessage(final LinkUpdateMessage msg) {
         try {
             rwLock.writeLock().lock();
-
-            final AtomicInteger incarnation = incarnationNumbers.computeIfAbsent(msg.getSrc(),
-                                             (k) -> new AtomicInteger(msg.getIncarnation()));
-
-            if (incarnation.get() > msg.getIncarnation()) {
-                return -1;
-            }
-            // TODO: not sure how to handle this case. Ideally, the system should be in lock-step about view changes
-            assert (incarnation.get() >= msg.getIncarnation());
 
             final AtomicInteger counter = updateCounters.computeIfAbsent(msg.getSrc(),
                                              (k) -> new AtomicInteger(0));
@@ -82,19 +71,14 @@ class WatermarkBuffer {
                     this.deliverCounter.incrementAndGet();
                     final int flushCount = readyList.size();
                     for (final Node n: readyList) {
-                        // The two counters below should never be null.
+                        // The counter below should never be null.
                         @Nullable final AtomicInteger updateCounter = updateCounters.get(n.address);
-                        @Nullable final AtomicInteger incarnationCounter = incarnationNumbers.get(n.address);
                         if (updateCounter == null) {
                             throw new RuntimeException("Node to be delivered not in UpdateCounters map: "
                                                         + n.address);
                         }
-                        if (incarnationCounter == null) {
-                            throw new RuntimeException("Node to be delivered not in incarnationNumbers map: "
-                                                        + n.address);
-                        }
+
                         updateCounter.set(0);
-                        incarnationCounter.incrementAndGet();
                         deliverCallback.accept(msg);
                     }
                     readyList.clear();

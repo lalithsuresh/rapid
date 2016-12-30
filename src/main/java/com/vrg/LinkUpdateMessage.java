@@ -14,16 +14,13 @@ public class LinkUpdateMessage {
     private final InetSocketAddress src;
     private final InetSocketAddress dst;
     private final Status status;
-    private final int incarnation;
 
     public LinkUpdateMessage(final InetSocketAddress src,
                              final InetSocketAddress dst,
-                             final Status status,
-                             final int incarnation) {
+                             final Status status) {
         this.src = src;
         this.dst = dst;
         this.status = status;
-        this.incarnation = incarnation;
     }
 
     public enum Status {
@@ -40,9 +37,5 @@ public class LinkUpdateMessage {
 
     public Status getStatus() {
         return status;
-    }
-
-    public int getIncarnation() {
-        return incarnation;
     }
 }

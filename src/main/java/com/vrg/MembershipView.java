@@ -203,8 +203,8 @@ class MembershipView {
         }
 
         public final int compare(final Node c1, final Node c2) {
-            return Utils.sha1Hex(c1.address.toString() + seed)
-                    .compareTo(Utils.sha1Hex(c2.address.toString() + seed));
+            return Utils.sha1HexStringToString(c1.address.toString() + seed)
+                    .compareTo(Utils.sha1HexStringToString(c2.address.toString() + seed));
         }
     }
 
