@@ -67,22 +67,24 @@ public class ConfigurationTests {
         final Configuration conf1 = new Configuration();
         final Configuration conf2 = new Configuration();
 
-        long[] longs = new Random().longs().distinct().limit(6).toArray();
-        final List<Long> conf1List = new ArrayList<>();
-        final List<Long> conf2List = new ArrayList<>();
-        for (final long l : longs) {
-            conf1List.add(l);
-            conf2List.add(l);
+        final long[] commits1 = new Random().longs().distinct().limit(6).toArray();
+        final List<Long> commitList1 = new ArrayList<>();
+        final List<Long> commitList2 = new ArrayList<>();
+        for (final long commit : commits1) {
+            commitList1.add(commit);
+            commitList2.add(commit);
         }
 
-        // Diverge from here
-        longs = new Random().longs().distinct().limit(6).toArray();
-        for (final long l : longs) {
-            conf1List.add(l);
+        // Conf1 makes progress from here
+        final long[] commits2 = new Random().longs().distinct().limit(6).toArray();
+        for (final long commit : commits2) {
+            final List<Long> tmp = new ArrayList<>();
+            tmp.add(commit);
+            conf1.updateConfiguration(tmp); // conf1 will have increments of single commits
         }
 
-        conf1.updateConfiguration(conf1List);
-        conf2.updateConfiguration(conf2List);
+        conf1.updateConfiguration(commitList1);
+        conf2.updateConfiguration(commitList2);
         assertEquals(Configuration.ComparisonResult.MERGE, Configuration.compare(conf1, conf2));
         assertEquals(Configuration.ComparisonResult.MERGE, Configuration.compare(conf2, conf1));
     }
@@ -92,24 +94,24 @@ public class ConfigurationTests {
         final Configuration conf1 = new Configuration();
         final Configuration conf2 = new Configuration();
 
-        long[] longs = new Random().longs().distinct().limit(6).toArray();
-        final List<Long> conf1List = new ArrayList<>();
-        final List<Long> conf2List = new ArrayList<>();
-        for (final long l : longs) {
-            conf1List.add(l);
-            conf2List.add(l);
+        final long[] commits1 = new Random().longs().distinct().limit(6).toArray();
+        final List<Long> commitList1 = new ArrayList<>();
+        final List<Long> commitList2 = new ArrayList<>();
+        for (final long commit : commits1) {
+            commitList1.add(commit);
+            commitList2.add(commit);
         }
-        conf1.updateConfiguration(conf1List);
-        conf2.updateConfiguration(conf2List);
+        conf1.updateConfiguration(commitList1);
+        conf2.updateConfiguration(commitList2);
         assertEquals(Configuration.ComparisonResult.EQUAL, Configuration.compare(conf1, conf2));
         assertEquals(Configuration.ComparisonResult.EQUAL, Configuration.compare(conf2, conf1));
 
         // Conf1 makes progress from here
-        longs = new Random().longs().distinct().limit(6).toArray();
-        for (final long l : longs) {
-            final List<Long> singleList = new ArrayList<>();
-            singleList.add(l);
-            conf1.updateConfiguration(singleList); // conf1 will have increments of single commits
+        final long[] commits2 = new Random().longs().distinct().limit(6).toArray();
+        for (final long commit : commits2) {
+            final List<Long> tmp = new ArrayList<>();
+            tmp.add(commit);
+            conf1.updateConfiguration(tmp); // conf1 will have increments of single commits
         }
 
         assertEquals(Configuration.ComparisonResult.FAST_FORWARD_TO_LEFT, Configuration.compare(conf1, conf2));
@@ -122,36 +124,36 @@ public class ConfigurationTests {
         final Configuration conf1 = new Configuration();
         final Configuration conf2 = new Configuration();
 
-        long[] longs = new Random().longs().distinct().limit(6).toArray();
-        final List<Long> conf1List = new ArrayList<>();
-        final List<Long> conf2List = new ArrayList<>();
-        for (final long l : longs) {
-            conf1List.add(l);
-            conf2List.add(l);
+        final long[] commits1 = new Random().longs().distinct().limit(6).toArray();
+        final List<Long> commitList1 = new ArrayList<>();
+        final List<Long> commitList2 = new ArrayList<>();
+        for (final long commit : commits1) {
+            commitList1.add(commit);
+            commitList2.add(commit);
         }
-        conf1.updateConfiguration(conf1List);
-        conf2.updateConfiguration(conf2List);
+        conf1.updateConfiguration(commitList1);
+        conf2.updateConfiguration(commitList2);
         assertEquals(Configuration.ComparisonResult.EQUAL, Configuration.compare(conf1, conf2));
         assertEquals(Configuration.ComparisonResult.EQUAL, Configuration.compare(conf2, conf1));
 
         // Conf1 makes progress from here
-        longs = new Random().longs().distinct().limit(6).toArray();
-        for (final long l : longs) {
+        final long[] commits2 = new Random().longs().distinct().limit(6).toArray();
+        for (final long commit : commits2) {
             final List<Long> singleList = new ArrayList<>();
-            singleList.add(l);
+            singleList.add(commit);
             conf1.updateConfiguration(singleList); // conf1 will have increments of single commits
         }
 
-        conf2List.clear();
-        conf2List.add(longs[0]); // only add the first commit from above to the list
-        conf2.updateConfiguration(conf2List);
+        commitList2.clear();
+        commitList2.add(commits2[0]); // only add the first commit from above to the list
+        conf2.updateConfiguration(commitList2);
 
         assertEquals(Configuration.ComparisonResult.FAST_FORWARD_TO_LEFT, Configuration.compare(conf1, conf2));
         assertEquals(Configuration.ComparisonResult.FAST_FORWARD_TO_RIGHT, Configuration.compare(conf2, conf1));
 
-        conf2List.clear();
-        conf2List.add(longs[3]); // break the commit order from what conf1 applied. This should trigger a merge
-        conf2.updateConfiguration(conf2List);
+        commitList2.clear();
+        commitList2.add(commits2[3]); // break the commit order from what conf1 applied. This should trigger a merge
+        conf2.updateConfiguration(commitList2);
 
         assertEquals(Configuration.ComparisonResult.MERGE, Configuration.compare(conf1, conf2));
         assertEquals(Configuration.ComparisonResult.MERGE, Configuration.compare(conf2, conf1));
@@ -162,31 +164,31 @@ public class ConfigurationTests {
         final Configuration conf1 = new Configuration();
         final Configuration conf2 = new Configuration();
 
-        long[] longs = new Random().longs().distinct().limit(6).toArray();
-        final List<Long> conf1List = new ArrayList<>();
-        final List<Long> conf2List = new ArrayList<>();
-        for (final long l : longs) {
-            conf1List.add(l);
-            conf2List.add(l);
+        final long[] commits1 = new Random().longs().distinct().limit(6).toArray();
+        final List<Long> commitList1 = new ArrayList<>();
+        final List<Long> commitList2 = new ArrayList<>();
+        for (final long commit : commits1) {
+            commitList1.add(commit);
+            commitList2.add(commit);
         }
-        conf1.updateConfiguration(conf1List);
-        conf2.updateConfiguration(conf2List);
+        conf1.updateConfiguration(commitList1);
+        conf2.updateConfiguration(commitList2);
         assertEquals(Configuration.ComparisonResult.EQUAL, Configuration.compare(conf1, conf2));
         assertEquals(Configuration.ComparisonResult.EQUAL, Configuration.compare(conf2, conf1));
 
-        conf2List.clear();
+        commitList2.clear();
 
         // Diverge from here. conf1 makes 6 individual view changes whereas
         // conf2 applies one view change with 6 operations.
-        longs = new Random().longs().distinct().limit(6).toArray();
-        for (final long l : longs) {
-            conf2List.add(l);
+        final long[] commits2 = new Random().longs().distinct().limit(6).toArray();
+        for (final long commit : commits2) {
+            commitList2.add(commit);
 
             final List<Long> singleList = new ArrayList<>();
-            singleList.add(l);
+            singleList.add(commit);
             conf1.updateConfiguration(singleList); // conf1 will have increments of single commits
         }
-        conf2.updateConfiguration(conf2List);
+        conf2.updateConfiguration(commitList2);
 
         assertEquals(Configuration.ComparisonResult.EQUAL, Configuration.compare(conf1, conf2));
         assertEquals(Configuration.ComparisonResult.EQUAL, Configuration.compare(conf2, conf1));
