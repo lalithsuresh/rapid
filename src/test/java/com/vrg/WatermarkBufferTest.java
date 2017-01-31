@@ -52,7 +52,7 @@ public class WatermarkBufferTest {
             TestUtils.shuffleArray(messages);
             String eventStream = "";
             for (final LinkUpdateMessage msg: messages) {
-                final int result = wb.ReceiveLinkUpdateMessage(msg);
+                final int result = wb.ReceiveLinkUpdateMessage(msg).size();
                 final String log = msg.getSrc() + " " + result + " \n";
                 eventStream += log;
             }

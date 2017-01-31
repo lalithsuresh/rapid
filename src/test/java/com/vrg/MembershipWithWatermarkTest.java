@@ -6,6 +6,7 @@ import org.junit.Test;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
@@ -43,7 +44,6 @@ public class MembershipWithWatermarkTest {
     @Ignore("Affected by configuration work") @Test
     public void multipleUpdatesOrderedIncarnations() {
         final int numPermutations = 100000;
-        int incarnations = 0;
         final MembershipView mview = new MembershipView(K);
         final WatermarkBuffer wb = new WatermarkBuffer(K, H, L, mview::deliver);
 
@@ -53,7 +53,7 @@ public class MembershipWithWatermarkTest {
             TestUtils.shuffleArray(messages);
             String eventStream = "";
             for (final LinkUpdateMessage msg: messages) {
-                final int result = wb.ReceiveLinkUpdateMessage(msg);
+                final int result = wb.ReceiveLinkUpdateMessage(msg).size();
                 final String log = msg.getSrc() + " " + result + " \n";
                 eventStream += log;
             }
@@ -91,7 +91,7 @@ public class MembershipWithWatermarkTest {
             TestUtils.shuffleArray(messages);
             String eventStream = "";
             for (final LinkUpdateMessage msg: messages) {
-                final int result = wb.ReceiveLinkUpdateMessage(msg);
+                final int result = wb.ReceiveLinkUpdateMessage(msg).size();
                 final String log = msg.getSrc() + " " + result + " \n";
                 eventStream += log;
             }

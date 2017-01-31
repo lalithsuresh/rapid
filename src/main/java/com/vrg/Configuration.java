@@ -41,18 +41,22 @@ public class Configuration {
     }
 
     public static ComparisonResult compare(final Configuration c1, final Configuration c2) {
+        return compare(c1, c2.configHistory);
+    }
+
+    public static ComparisonResult compare(final Configuration c1, final List<String> c2) {
         assert c1 != null;
         assert c2 != null;
 
         // c1 either subsumes c2 or vice versa
         final int o1size = c1.configHistory.size();
-        final int o2size = c2.configHistory.size();
-
+        final int o2size = c2.size();
         assert o1size > 0;
         assert o2size > 0;
+        final String c2Head = c2.get(o2size - 1);
 
         // First we compare the heads to see if they are compatible
-        if (c1.head().equals(c2.head())) {
+        if (c1.head().equals(c2Head)) {
             return ComparisonResult.EQUAL;
         }
 
@@ -69,7 +73,7 @@ public class Configuration {
             return ComparisonResult.FAST_FORWARD_TO_RIGHT; // FF c1 to c2
         }
         // ... 3) c1 is one or more configUpdates ahead of c2.head()  (c1 > c2).
-        if (divergingCommit.equals(c2.head())) {
+        if (divergingCommit.equals(c2Head)) {
             return ComparisonResult.FAST_FORWARD_TO_LEFT; // FF c2 to c1
         }
         // ... 4) Merge required, since c1 and c2 have both made some updates since the diverging point.
@@ -86,10 +90,14 @@ public class Configuration {
     }
 
     private String findDivergingCommit(final Configuration c2) {
+        return findDivergingCommit(c2.configHistory);
+    }
+
+    private String findDivergingCommit(final List<String> remoteConfigHistory) {
         final Set<String> localConfig = new HashSet<>(configHistory);
 
-        for (int i = c2.configHistory.size() - 1; i >= 0; i--) {
-            final String configId = c2.configHistory.get(i);
+        for (int i = remoteConfigHistory.size() - 1; i >= 0; i--) {
+            final String configId = remoteConfigHistory.get(i);
             if (localConfig.contains(configId)) {
                 return configId;
             }
@@ -98,7 +106,7 @@ public class Configuration {
         return NONE;
     }
 
-    private String head() {
+    public String head() {
         final int size = configHistory.size();
         assert size > 0;
         return configHistory.get(size - 1);

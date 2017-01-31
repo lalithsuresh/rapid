@@ -8,6 +8,9 @@ import java.util.concurrent.ThreadLocalRandom;
 
 final class TestUtils {
 
+    private TestUtils() {
+    }
+
     @NonNull
     static LinkUpdateMessage[] getMessagesArray(final int K) {
         final String ip1 = "192.168.1.1";
@@ -45,5 +48,4 @@ final class TestUtils {
             ar[i] = a;
         }
     }
-
 }

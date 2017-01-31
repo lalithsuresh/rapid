@@ -11,6 +11,10 @@ import java.util.Collection;
  * Utility methods
  */
 final class Utils {
+
+    private Utils() {
+    }
+
     static String sha1HexStringToString(final String text) {
         return DigestUtils.sha1Hex(text);
     }
