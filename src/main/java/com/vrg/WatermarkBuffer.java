@@ -1,5 +1,6 @@
 package com.vrg;
 
+import com.google.common.net.HostAndPort;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.checkerframework.framework.qual.DefaultQualifier;
@@ -28,7 +29,7 @@ class WatermarkBuffer {
     private final int L;
     private final AtomicInteger deliverCounter = new AtomicInteger(0);
     private final AtomicInteger updatesInProgress = new AtomicInteger(0);
-    private final Map<InetSocketAddress, AtomicInteger> updateCounters;
+    private final Map<HostAndPort, AtomicInteger> updateCounters;
     private final ArrayList<Node> readyList = new ArrayList<>();
     private final Object lock = new Object();
     private static final List<Node> EMPTY_LIST =

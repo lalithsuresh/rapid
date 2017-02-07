@@ -1,5 +1,6 @@
 package com.vrg;
 
+import com.google.common.net.HostAndPort;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
@@ -22,7 +23,7 @@ public class MembershipViewTest {
     public void oneRingAddition() {
         final int K = 10;
         final MembershipView mview = new MembershipView(K);
-        final InetSocketAddress addr = InetSocketAddress.createUnresolved("127.0.0.1", 123);
+        final HostAndPort addr = HostAndPort.fromParts("127.0.0.1", 123);
         final Node node = new Node(addr);
         try {
             mview.ringAdd(node);
@@ -50,7 +51,7 @@ public class MembershipViewTest {
 
         for (int i = 0; i < numNodes; i++) {
             try {
-                mview.ringAdd(new Node(InetSocketAddress.createUnresolved("127.0.0.1", i)));
+                mview.ringAdd(new Node(HostAndPort.fromParts("127.0.0.1", i)));
             } catch (final MembershipView.NodeAlreadyInRingException e) {
                 fail();
             }
@@ -74,7 +75,7 @@ public class MembershipViewTest {
 
         for (int i = 0; i < numNodes; i++) {
             try {
-                mview.ringAdd(new Node(InetSocketAddress.createUnresolved("127.0.0.1", startPort + i)));
+                mview.ringAdd(new Node(HostAndPort.fromParts("127.0.0.1", startPort + i)));
             } catch (final MembershipView.NodeAlreadyInRingException e) {
                 fail();
             }
@@ -88,7 +89,7 @@ public class MembershipViewTest {
         int numThrows = 0;
         for (int i = 0; i < numNodes; i++) {
             try {
-                mview.ringAdd(new Node(InetSocketAddress.createUnresolved("127.0.0.1", startPort + i)));
+                mview.ringAdd(new Node(HostAndPort.fromParts("127.0.0.1", startPort + i)));
             } catch (final MembershipView.NodeAlreadyInRingException e) {
                 numThrows++;
             }
@@ -109,7 +110,7 @@ public class MembershipViewTest {
         int numThrows = 0;
         for (int i = 0; i < numNodes; i++) {
             try {
-                mview.ringDelete(new Node(InetSocketAddress.createUnresolved("127.0.0.1", i)));
+                mview.ringDelete(new Node(HostAndPort.fromParts("127.0.0.1", i)));
             } catch (final MembershipView.NodeNotInRingException e) {
                 numThrows++;
             }
@@ -131,7 +132,7 @@ public class MembershipViewTest {
 
         for (int i = 0; i < numNodes; i++) {
             try {
-                mview.ringAdd(new Node(InetSocketAddress.createUnresolved("127.0.0.1", i)));
+                mview.ringAdd(new Node(HostAndPort.fromParts("127.0.0.1", i)));
             } catch (final MembershipView.NodeAlreadyInRingException e) {
                 fail();
             }
@@ -139,7 +140,7 @@ public class MembershipViewTest {
 
         for (int i = 0; i < numNodes; i++) {
             try {
-                mview.ringDelete(new Node(InetSocketAddress.createUnresolved("127.0.0.1", i)));
+                mview.ringDelete(new Node(HostAndPort.fromParts("127.0.0.1", i)));
             } catch (final MembershipView.NodeNotInRingException e) {
                 numThrows++;
             }
@@ -161,12 +162,12 @@ public class MembershipViewTest {
         try {
             final int K = 10;
             final MembershipView mview = new MembershipView(K);
-            final Node n1 = new Node(InetSocketAddress.createUnresolved("127.0.0.1", 1));
+            final Node n1 = new Node(HostAndPort.fromParts("127.0.0.1", 1));
             mview.ringAdd(n1);
             assertEquals(0, mview.monitoreesOf(n1).size());
             assertEquals(0, mview.monitorsOf(n1).size());
 
-            final Node n2 = new Node(InetSocketAddress.createUnresolved("127.0.0.1", 2));
+            final Node n2 = new Node(HostAndPort.fromParts("127.0.0.1", 2));
             assertEquals(0, mview.monitoreesOf(n2).size());
             assertEquals(0, mview.monitorsOf(n2).size());
         } catch (final MembershipView.NodeAlreadyInRingException | MembershipView.NodeNotInRingException e) {
@@ -182,7 +183,7 @@ public class MembershipViewTest {
         try {
             final int K = 10;
             final MembershipView mview = new MembershipView(K);
-            final Node n = new Node(InetSocketAddress.createUnresolved("127.0.0.1", 1));
+            final Node n = new Node(HostAndPort.fromParts("127.0.0.1", 1));
             assertEquals(0, mview.monitoreesOf(n).size());
             assertEquals(0, mview.monitorsOf(n).size());
         } catch (final MembershipView.NodeNotInRingException e) {
@@ -198,8 +199,8 @@ public class MembershipViewTest {
         try {
             final int K = 10;
             final MembershipView mview = new MembershipView(K);
-            final Node n1 = new Node(InetSocketAddress.createUnresolved("127.0.0.1", 1));
-            final Node n2 = new Node(InetSocketAddress.createUnresolved("127.0.0.1", 2));
+            final Node n1 = new Node(HostAndPort.fromParts("127.0.0.1", 1));
+            final Node n2 = new Node(HostAndPort.fromParts("127.0.0.1", 2));
             mview.ringAdd(n1);
             mview.ringAdd(n2);
             assertEquals(1, mview.monitoreesOf(n1).size());
@@ -217,9 +218,9 @@ public class MembershipViewTest {
         try {
             final int K = 10;
             final MembershipView mview = new MembershipView(K);
-            final Node n1 = new Node(InetSocketAddress.createUnresolved("127.0.0.1", 1));
-            final Node n2 = new Node(InetSocketAddress.createUnresolved("127.0.0.1", 2));
-            final Node n3 = new Node(InetSocketAddress.createUnresolved("127.0.0.1", 3));
+            final Node n1 = new Node(HostAndPort.fromParts("127.0.0.1", 1));
+            final Node n2 = new Node(HostAndPort.fromParts("127.0.0.1", 2));
+            final Node n3 = new Node(HostAndPort.fromParts("127.0.0.1", 3));
             mview.ringAdd(n1);
             mview.ringAdd(n2);
             mview.ringAdd(n3);
@@ -244,7 +245,7 @@ public class MembershipViewTest {
         final int numNodes = 10000;
         final ArrayList<Node> list = new ArrayList<>();
         for (int i = 0; i < numNodes; i++) {
-            final Node n = new Node(InetSocketAddress.createUnresolved("127.0.0.1", i));
+            final Node n = new Node(HostAndPort.fromParts("127.0.0.1", i));
             list.add(n);
             try {
                 mview.ringAdd(n);

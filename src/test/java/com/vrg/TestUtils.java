@@ -1,8 +1,9 @@
 package com.vrg;
 
+import com.google.common.net.HostAndPort;
+import com.vrg.thrift.Status;
 import org.checkerframework.checker.nullness.qual.NonNull;
 
-import java.net.InetSocketAddress;
 import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -15,22 +16,22 @@ final class TestUtils {
     static LinkUpdateMessage[] getMessagesArray(final int K) {
         final String ip1 = "192.168.1.1";
         final int startingPort = 1;
-        final InetSocketAddress src1 = InetSocketAddress.createUnresolved(ip1, startingPort);
+        final HostAndPort src1 = HostAndPort.fromParts(ip1, startingPort);
         final LinkUpdateMessage[] messages = new LinkUpdateMessage[2*K];
         int arrIndex = 0;
         for (int i = 0; i < K; i++) {
             messages[arrIndex] = new LinkUpdateMessage(src1,
-                    InetSocketAddress.createUnresolved(ip1, startingPort + i + 1),
-                    LinkUpdateMessage.Status.UP);
+                    HostAndPort.fromParts(ip1, startingPort + i + 1),
+                    Status.UP);
             arrIndex++;
         }
 
         final String ip2 = "10.1.1.1";
-        final InetSocketAddress src2 = InetSocketAddress.createUnresolved(ip2, startingPort + K + 1);
+        final HostAndPort src2 = HostAndPort.fromParts(ip2, startingPort + K + 1);
         for (int i = 0; i < K; i++) {
             messages[arrIndex] = new LinkUpdateMessage(src2,
-                    InetSocketAddress.createUnresolved(ip2, startingPort + K + i + 2),
-                    LinkUpdateMessage.Status.UP);
+                    HostAndPort.fromParts(ip2, startingPort + K + i + 2),
+                    Status.UP);
             arrIndex++;
         }
         return messages;

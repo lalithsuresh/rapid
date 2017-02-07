@@ -1,9 +1,12 @@
 package com.vrg;
 
+import com.google.common.net.HostAndPort;
+import com.vrg.thrift.LinkUpdateMessageT;
+import com.vrg.thrift.MembershipServiceT;
+import org.apache.thrift.TException;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.framework.qual.DefaultQualifier;
 import org.checkerframework.framework.qual.TypeUseLocation;
-import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
 import java.net.InetSocketAddress;
 import java.util.List;
@@ -12,12 +15,12 @@ import java.util.List;
  * Created by MembershipService
  */
 @DefaultQualifier(value = NonNull.class, locations = TypeUseLocation.ALL)
-public class MembershipService {
+public class MembershipService implements MembershipServiceT.Iface {
     private final MembershipView membershipView;
     private final WatermarkBuffer watermarkBuffer;
-    private final InetSocketAddress myAddr;
+    private final HostAndPort myAddr;
 
-    public MembershipService(final InetSocketAddress myAddr,
+    public MembershipService(final HostAndPort myAddr,
                              final int K, final int H, final int L) {
         this.myAddr = myAddr;
         this.membershipView = new MembershipView(K, new Node(this.myAddr));
@@ -31,8 +34,6 @@ public class MembershipService {
      *
      * Link update messages that do not affect an ongoing proposal
      * needs to be dropped.
-     *
-     *
      */
     public void receiveLinkUpdateMessage(final LinkUpdateMessage msg) {
         final List<Node> proposal = proposedViewChange(msg);
@@ -47,5 +48,10 @@ public class MembershipService {
 
     List<Node> proposedViewChange(final LinkUpdateMessage msg) {
         return watermarkBuffer.receiveLinkUpdateMessage(msg);
+    }
+
+    @Override
+    public void receiveLinkUpdateMessage(final LinkUpdateMessageT msg) throws TException {
+
     }
 }
