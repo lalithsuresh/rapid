@@ -40,6 +40,11 @@
       <artifactId>jdk8</artifactId>
       <version>2.1.6</version>
     </dependency>
+    <dependency>
+      <groupId>org.apache.thrift</groupId>
+      <artifactId>libthrift</artifactId>
+      <version>0.9.3</version>
+    </dependency>
   </dependencies>
   <build>
     <plugins>

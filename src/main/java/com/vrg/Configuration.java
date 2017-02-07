@@ -23,7 +23,7 @@ import java.util.Set;
 public class Configuration {
     private final ArrayList<String> configHistory;
     private final ArrayList<List<Long>> opHistory;
-    private final Set<Long> identifiersSeen = new HashSet<>(); // when to gc?
+    private final Set<Long> identifiersSeen = new HashSet<>(); // TODO: when to gc?
     private static final String ZERO = "zero"; // All histories start from zero.
     private static final String NONE = ""; // Indicates no common ancestor
 

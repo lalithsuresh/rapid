@@ -30,13 +30,11 @@ class WatermarkBuffer {
     private final AtomicInteger updatesInProgress = new AtomicInteger(0);
     private final Map<InetSocketAddress, AtomicInteger> updateCounters;
     private final ArrayList<Node> readyList = new ArrayList<>();
-    private final ReentrantReadWriteLock rwLock = new ReentrantReadWriteLock();
-    private final Consumer<LinkUpdateMessage> deliverCallback;
+    private final Object lock = new Object();
     private static final List<Node> EMPTY_LIST =
             Collections.unmodifiableList(new ArrayList<Node>());
 
-    WatermarkBuffer(final int K, final int H, final int L,
-                    final Consumer<LinkUpdateMessage> deliverCallback) {
+    WatermarkBuffer(final int K, final int H, final int L) {
         if (H > K || L > H || K < K_MIN) {
             throw new IllegalArgumentException("Arguments do not satisfy K > H >= L >= 0:" +
                                                " (K: " + K + ", H: " + H + ", L: " + L);
@@ -45,16 +43,14 @@ class WatermarkBuffer {
         this.H = H;
         this.L = L;
         this.updateCounters = new HashMap<>();
-        this.deliverCallback = deliverCallback;
     }
 
     int getNumDelivers() {
         return deliverCounter.get();
     }
 
-    List<Node> ReceiveLinkUpdateMessage(final LinkUpdateMessage msg) {
-        try {
-            rwLock.writeLock().lock();
+    List<Node> receiveLinkUpdateMessage(final LinkUpdateMessage msg) {
+        synchronized (lock) {
 
             final AtomicInteger counter = updateCounters.computeIfAbsent(msg.getDst(),
                                              (k) -> new AtomicInteger(0));
@@ -80,9 +76,7 @@ class WatermarkBuffer {
                             throw new RuntimeException("Node to be delivered not in UpdateCounters map: "
                                                         + n.address);
                         }
-
                         updateCounter.set(0);
-                        deliverCallback.accept(msg);
                     }
                     final List<Node> ret = Collections.unmodifiableList(new ArrayList<>(readyList));
                     readyList.clear();
@@ -91,9 +85,6 @@ class WatermarkBuffer {
             }
 
             return EMPTY_LIST;
-        }
-        finally {
-            rwLock.writeLock().unlock();
         }
     }
 }

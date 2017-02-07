@@ -16,54 +16,40 @@ public class WatermarkBufferTest {
     private static final int L = 3;
 
     /**
-     * A series of updates in increasing order of incarnations.
-     * At any incarnation X maintained by a node of a peer, a new incarnation
-     * is always <= X
+     * A series of updates.
      */
     @Test
     public void waterMarkTest() {
-        final WatermarkBuffer wb = new WatermarkBuffer(K, H, L, this::emptyConsumer);
+        final WatermarkBuffer wb = new WatermarkBuffer(K, H, L);
         final InetSocketAddress src = InetSocketAddress.createUnresolved("127.0.0.1", 1);
         final InetSocketAddress dst = InetSocketAddress.createUnresolved("127.0.0.2", 2);
 
-        for (int i = 0; i < 7; i++) {
-            wb.ReceiveLinkUpdateMessage(new LinkUpdateMessage(src, dst, LinkUpdateMessage.Status.UP));
+        for (int i = 0; i < H - 1; i++) {
+            wb.receiveLinkUpdateMessage(new LinkUpdateMessage(src, dst, LinkUpdateMessage.Status.UP));
             assertEquals(0, wb.getNumDelivers());
         }
 
-        wb.ReceiveLinkUpdateMessage(new LinkUpdateMessage(src, dst, LinkUpdateMessage.Status.UP));
+        wb.receiveLinkUpdateMessage(new LinkUpdateMessage(src, dst, LinkUpdateMessage.Status.UP));
         assertEquals(1, wb.getNumDelivers());
     }
 
-    /**
-     * Permutations of LinkUpdateMessage arrivals pertaining to two nodes are pushed.
-     * Ensure that the number of deliver events are sane. Ideally, we'd look at the
-     * resulting distribution (it should mostly be single view updates and not an
-     * update each for each node).
-     */
-    @Ignore("Affected by configuration work") @Test
-    public void watermarkTwoAnnouncementsPermutation() {
-        final int numPermutations = 100000;
-        final WatermarkBuffer wb = new WatermarkBuffer(K, H, L, this::emptyConsumer);
+    @Test
+    public void waterMarkTestBlocking() {
+        final WatermarkBuffer wb = new WatermarkBuffer(K, H, L);
+        final InetSocketAddress src = InetSocketAddress.createUnresolved("127.0.0.1", 1);
+        final InetSocketAddress dst = InetSocketAddress.createUnresolved("127.0.0.2", 2);
 
-        int numFlushes = 0;
-        for (int i = 0; i < numPermutations; i++) {
-            final LinkUpdateMessage[] messages = TestUtils.getMessagesArray(K);
-            TestUtils.shuffleArray(messages);
-            String eventStream = "";
-            for (final LinkUpdateMessage msg: messages) {
-                final int result = wb.ReceiveLinkUpdateMessage(msg).size();
-                final String log = msg.getSrc() + " " + result + " \n";
-                eventStream += log;
-            }
-
-            assertTrue(eventStream + " " + numFlushes,
-                    numFlushes + 1 == wb.getNumDelivers()
-                    || numFlushes + 2 == wb.getNumDelivers());
-            numFlushes = wb.getNumDelivers();
+        for (int i = 0; i < H - 1; i++) {
+            wb.receiveLinkUpdateMessage(new LinkUpdateMessage(src, dst, LinkUpdateMessage.Status.UP));
+            assertEquals(0, wb.getNumDelivers());
         }
-    }
 
-    private void emptyConsumer(final LinkUpdateMessage msg) {
+        for (int i = 0; i < H - 1; i++) {
+            wb.receiveLinkUpdateMessage(new LinkUpdateMessage(src, dst, LinkUpdateMessage.Status.UP));
+            assertEquals(0, wb.getNumDelivers());
+        }
+
+        wb.receiveLinkUpdateMessage(new LinkUpdateMessage(src, dst, LinkUpdateMessage.Status.UP));
+        assertEquals(1, wb.getNumDelivers());
     }
 }
