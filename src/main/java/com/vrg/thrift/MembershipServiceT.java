@@ -40,13 +40,13 @@ public class MembershipServiceT {
 
   public interface Iface {
 
-    public void receiveLinkUpdateMessage(LinkUpdateMessageT msg) throws org.apache.thrift.TException;
+    public void receiveLinkUpdateMessage(String src, String dst, Status status, long config) throws org.apache.thrift.TException;
 
   }
 
   public interface AsyncIface {
 
-    public void receiveLinkUpdateMessage(LinkUpdateMessageT msg, org.apache.thrift.async.AsyncMethodCallback resultHandler) throws org.apache.thrift.TException;
+    public void receiveLinkUpdateMessage(String src, String dst, Status status, long config, org.apache.thrift.async.AsyncMethodCallback resultHandler) throws org.apache.thrift.TException;
 
   }
 
@@ -70,16 +70,19 @@ public class MembershipServiceT {
       super(iprot, oprot);
     }
 
-    public void receiveLinkUpdateMessage(LinkUpdateMessageT msg) throws org.apache.thrift.TException
+    public void receiveLinkUpdateMessage(String src, String dst, Status status, long config) throws org.apache.thrift.TException
     {
-      sendReceiveLinkUpdateMessage(msg);
+      sendReceiveLinkUpdateMessage(src, dst, status, config);
       recvReceiveLinkUpdateMessage();
     }
 
-    public void sendReceiveLinkUpdateMessage(LinkUpdateMessageT msg) throws org.apache.thrift.TException
+    public void sendReceiveLinkUpdateMessage(String src, String dst, Status status, long config) throws org.apache.thrift.TException
     {
       receiveLinkUpdateMessage_args args = new receiveLinkUpdateMessage_args();
-      args.setMsg(msg);
+      args.setSrc(src);
+      args.setDst(dst);
+      args.setStatus(status);
+      args.setConfig(config);
       sendBase("receiveLinkUpdateMessage", args);
     }
 
@@ -108,24 +111,33 @@ public class MembershipServiceT {
       super(protocolFactory, clientManager, transport);
     }
 
-    public void receiveLinkUpdateMessage(LinkUpdateMessageT msg, org.apache.thrift.async.AsyncMethodCallback resultHandler) throws org.apache.thrift.TException {
+    public void receiveLinkUpdateMessage(String src, String dst, Status status, long config, org.apache.thrift.async.AsyncMethodCallback resultHandler) throws org.apache.thrift.TException {
       checkReady();
-      receiveLinkUpdateMessage_call method_call = new receiveLinkUpdateMessage_call(msg, resultHandler, this, ___protocolFactory, ___transport);
+      receiveLinkUpdateMessage_call method_call = new receiveLinkUpdateMessage_call(src, dst, status, config, resultHandler, this, ___protocolFactory, ___transport);
       this.___currentMethod = method_call;
       ___manager.call(method_call);
     }
 
     public static class receiveLinkUpdateMessage_call extends org.apache.thrift.async.TAsyncMethodCall {
-      private LinkUpdateMessageT msg;
-      public receiveLinkUpdateMessage_call(LinkUpdateMessageT msg, org.apache.thrift.async.AsyncMethodCallback resultHandler, org.apache.thrift.async.TAsyncClient client, org.apache.thrift.protocol.TProtocolFactory protocolFactory, org.apache.thrift.transport.TNonblockingTransport transport) throws org.apache.thrift.TException {
+      private String src;
+      private String dst;
+      private Status status;
+      private long config;
+      public receiveLinkUpdateMessage_call(String src, String dst, Status status, long config, org.apache.thrift.async.AsyncMethodCallback resultHandler, org.apache.thrift.async.TAsyncClient client, org.apache.thrift.protocol.TProtocolFactory protocolFactory, org.apache.thrift.transport.TNonblockingTransport transport) throws org.apache.thrift.TException {
         super(client, protocolFactory, transport, resultHandler, false);
-        this.msg = msg;
+        this.src = src;
+        this.dst = dst;
+        this.status = status;
+        this.config = config;
       }
 
       public void write_args(org.apache.thrift.protocol.TProtocol prot) throws org.apache.thrift.TException {
         prot.writeMessageBegin(new org.apache.thrift.protocol.TMessage("receiveLinkUpdateMessage", org.apache.thrift.protocol.TMessageType.CALL, 0));
         receiveLinkUpdateMessage_args args = new receiveLinkUpdateMessage_args();
-        args.setMsg(msg);
+        args.setSrc(src);
+        args.setDst(dst);
+        args.setStatus(status);
+        args.setConfig(config);
         args.write(prot);
         prot.writeMessageEnd();
       }
@@ -172,7 +184,7 @@ public class MembershipServiceT {
 
       public receiveLinkUpdateMessage_result getResult(I iface, receiveLinkUpdateMessage_args args) throws org.apache.thrift.TException {
         receiveLinkUpdateMessage_result result = new receiveLinkUpdateMessage_result();
-        iface.receiveLinkUpdateMessage(args.msg);
+        iface.receiveLinkUpdateMessage(args.src, args.dst, args.status, args.config);
         return result;
       }
     }
@@ -240,7 +252,7 @@ public class MembershipServiceT {
       }
 
       public void start(I iface, receiveLinkUpdateMessage_args args, org.apache.thrift.async.AsyncMethodCallback<Void> resultHandler) throws TException {
-        iface.receiveLinkUpdateMessage(args.msg,resultHandler);
+        iface.receiveLinkUpdateMessage(args.src, args.dst, args.status, args.config,resultHandler);
       }
     }
 
@@ -249,7 +261,10 @@ public class MembershipServiceT {
   public static class receiveLinkUpdateMessage_args implements org.apache.thrift.TBase<receiveLinkUpdateMessage_args, receiveLinkUpdateMessage_args._Fields>, java.io.Serializable, Cloneable, Comparable<receiveLinkUpdateMessage_args>   {
     private static final org.apache.thrift.protocol.TStruct STRUCT_DESC = new org.apache.thrift.protocol.TStruct("receiveLinkUpdateMessage_args");
 
-    private static final org.apache.thrift.protocol.TField MSG_FIELD_DESC = new org.apache.thrift.protocol.TField("msg", org.apache.thrift.protocol.TType.STRUCT, (short)1);
+    private static final org.apache.thrift.protocol.TField SRC_FIELD_DESC = new org.apache.thrift.protocol.TField("src", org.apache.thrift.protocol.TType.STRING, (short)1);
+    private static final org.apache.thrift.protocol.TField DST_FIELD_DESC = new org.apache.thrift.protocol.TField("dst", org.apache.thrift.protocol.TType.STRING, (short)2);
+    private static final org.apache.thrift.protocol.TField STATUS_FIELD_DESC = new org.apache.thrift.protocol.TField("status", org.apache.thrift.protocol.TType.I32, (short)3);
+    private static final org.apache.thrift.protocol.TField CONFIG_FIELD_DESC = new org.apache.thrift.protocol.TField("config", org.apache.thrift.protocol.TType.I64, (short)4);
 
     private static final Map<Class<? extends IScheme>, SchemeFactory> schemes = new HashMap<Class<? extends IScheme>, SchemeFactory>();
     static {
@@ -257,11 +272,25 @@ public class MembershipServiceT {
       schemes.put(TupleScheme.class, new receiveLinkUpdateMessage_argsTupleSchemeFactory());
     }
 
-    public LinkUpdateMessageT msg; // required
+    public String src; // required
+    public String dst; // required
+    /**
+     * 
+     * @see Status
+     */
+    public Status status; // required
+    public long config; // required
 
     /** The set of fields this struct contains, along with convenience methods for finding and manipulating them. */
     public enum _Fields implements org.apache.thrift.TFieldIdEnum {
-      MSG((short)1, "msg");
+      SRC((short)1, "src"),
+      DST((short)2, "dst"),
+      /**
+       * 
+       * @see Status
+       */
+      STATUS((short)3, "status"),
+      CONFIG((short)4, "config");
 
       private static final Map<String, _Fields> byName = new HashMap<String, _Fields>();
 
@@ -276,8 +305,14 @@ public class MembershipServiceT {
        */
       public static _Fields findByThriftId(int fieldId) {
         switch(fieldId) {
-          case 1: // MSG
-            return MSG;
+          case 1: // SRC
+            return SRC;
+          case 2: // DST
+            return DST;
+          case 3: // STATUS
+            return STATUS;
+          case 4: // CONFIG
+            return CONFIG;
           default:
             return null;
         }
@@ -318,11 +353,19 @@ public class MembershipServiceT {
     }
 
     // isset id assignments
+    private static final int __CONFIG_ISSET_ID = 0;
+    private byte __isset_bitfield = 0;
     public static final Map<_Fields, org.apache.thrift.meta_data.FieldMetaData> metaDataMap;
     static {
       Map<_Fields, org.apache.thrift.meta_data.FieldMetaData> tmpMap = new EnumMap<_Fields, org.apache.thrift.meta_data.FieldMetaData>(_Fields.class);
-      tmpMap.put(_Fields.MSG, new org.apache.thrift.meta_data.FieldMetaData("msg", org.apache.thrift.TFieldRequirementType.DEFAULT, 
-          new org.apache.thrift.meta_data.StructMetaData(org.apache.thrift.protocol.TType.STRUCT, LinkUpdateMessageT.class)));
+      tmpMap.put(_Fields.SRC, new org.apache.thrift.meta_data.FieldMetaData("src", org.apache.thrift.TFieldRequirementType.DEFAULT, 
+          new org.apache.thrift.meta_data.FieldValueMetaData(org.apache.thrift.protocol.TType.STRING)));
+      tmpMap.put(_Fields.DST, new org.apache.thrift.meta_data.FieldMetaData("dst", org.apache.thrift.TFieldRequirementType.DEFAULT, 
+          new org.apache.thrift.meta_data.FieldValueMetaData(org.apache.thrift.protocol.TType.STRING)));
+      tmpMap.put(_Fields.STATUS, new org.apache.thrift.meta_data.FieldMetaData("status", org.apache.thrift.TFieldRequirementType.DEFAULT, 
+          new org.apache.thrift.meta_data.EnumMetaData(org.apache.thrift.protocol.TType.ENUM, Status.class)));
+      tmpMap.put(_Fields.CONFIG, new org.apache.thrift.meta_data.FieldMetaData("config", org.apache.thrift.TFieldRequirementType.DEFAULT, 
+          new org.apache.thrift.meta_data.FieldValueMetaData(org.apache.thrift.protocol.TType.I64)));
       metaDataMap = Collections.unmodifiableMap(tmpMap);
       org.apache.thrift.meta_data.FieldMetaData.addStructMetaDataMap(receiveLinkUpdateMessage_args.class, metaDataMap);
     }
@@ -331,19 +374,34 @@ public class MembershipServiceT {
     }
 
     public receiveLinkUpdateMessage_args(
-      LinkUpdateMessageT msg)
+      String src,
+      String dst,
+      Status status,
+      long config)
     {
       this();
-      this.msg = msg;
+      this.src = src;
+      this.dst = dst;
+      this.status = status;
+      this.config = config;
+      setConfigIsSet(true);
     }
 
     /**
      * Performs a deep copy on <i>other</i>.
      */
     public receiveLinkUpdateMessage_args(receiveLinkUpdateMessage_args other) {
-      if (other.isSetMsg()) {
-        this.msg = new LinkUpdateMessageT(other.msg);
+      __isset_bitfield = other.__isset_bitfield;
+      if (other.isSetSrc()) {
+        this.src = other.src;
       }
+      if (other.isSetDst()) {
+        this.dst = other.dst;
+      }
+      if (other.isSetStatus()) {
+        this.status = other.status;
+      }
+      this.config = other.config;
     }
 
     public receiveLinkUpdateMessage_args deepCopy() {
@@ -352,40 +410,147 @@ public class MembershipServiceT {
 
     @Override
     public void clear() {
-      this.msg = null;
+      this.src = null;
+      this.dst = null;
+      this.status = null;
+      setConfigIsSet(false);
+      this.config = 0;
     }
 
-    public LinkUpdateMessageT getMsg() {
-      return this.msg;
+    public String getSrc() {
+      return this.src;
     }
 
-    public receiveLinkUpdateMessage_args setMsg(LinkUpdateMessageT msg) {
-      this.msg = msg;
+    public receiveLinkUpdateMessage_args setSrc(String src) {
+      this.src = src;
       return this;
     }
 
-    public void unsetMsg() {
-      this.msg = null;
+    public void unsetSrc() {
+      this.src = null;
     }
 
-    /** Returns true if field msg is set (has been assigned a value) and false otherwise */
-    public boolean isSetMsg() {
-      return this.msg != null;
+    /** Returns true if field src is set (has been assigned a value) and false otherwise */
+    public boolean isSetSrc() {
+      return this.src != null;
     }
 
-    public void setMsgIsSet(boolean value) {
+    public void setSrcIsSet(boolean value) {
       if (!value) {
-        this.msg = null;
+        this.src = null;
       }
+    }
+
+    public String getDst() {
+      return this.dst;
+    }
+
+    public receiveLinkUpdateMessage_args setDst(String dst) {
+      this.dst = dst;
+      return this;
+    }
+
+    public void unsetDst() {
+      this.dst = null;
+    }
+
+    /** Returns true if field dst is set (has been assigned a value) and false otherwise */
+    public boolean isSetDst() {
+      return this.dst != null;
+    }
+
+    public void setDstIsSet(boolean value) {
+      if (!value) {
+        this.dst = null;
+      }
+    }
+
+    /**
+     * 
+     * @see Status
+     */
+    public Status getStatus() {
+      return this.status;
+    }
+
+    /**
+     * 
+     * @see Status
+     */
+    public receiveLinkUpdateMessage_args setStatus(Status status) {
+      this.status = status;
+      return this;
+    }
+
+    public void unsetStatus() {
+      this.status = null;
+    }
+
+    /** Returns true if field status is set (has been assigned a value) and false otherwise */
+    public boolean isSetStatus() {
+      return this.status != null;
+    }
+
+    public void setStatusIsSet(boolean value) {
+      if (!value) {
+        this.status = null;
+      }
+    }
+
+    public long getConfig() {
+      return this.config;
+    }
+
+    public receiveLinkUpdateMessage_args setConfig(long config) {
+      this.config = config;
+      setConfigIsSet(true);
+      return this;
+    }
+
+    public void unsetConfig() {
+      __isset_bitfield = EncodingUtils.clearBit(__isset_bitfield, __CONFIG_ISSET_ID);
+    }
+
+    /** Returns true if field config is set (has been assigned a value) and false otherwise */
+    public boolean isSetConfig() {
+      return EncodingUtils.testBit(__isset_bitfield, __CONFIG_ISSET_ID);
+    }
+
+    public void setConfigIsSet(boolean value) {
+      __isset_bitfield = EncodingUtils.setBit(__isset_bitfield, __CONFIG_ISSET_ID, value);
     }
 
     public void setFieldValue(_Fields field, Object value) {
       switch (field) {
-      case MSG:
+      case SRC:
         if (value == null) {
-          unsetMsg();
+          unsetSrc();
         } else {
-          setMsg((LinkUpdateMessageT)value);
+          setSrc((String)value);
+        }
+        break;
+
+      case DST:
+        if (value == null) {
+          unsetDst();
+        } else {
+          setDst((String)value);
+        }
+        break;
+
+      case STATUS:
+        if (value == null) {
+          unsetStatus();
+        } else {
+          setStatus((Status)value);
+        }
+        break;
+
+      case CONFIG:
+        if (value == null) {
+          unsetConfig();
+        } else {
+          setConfig((Long)value);
         }
         break;
 
@@ -394,8 +559,17 @@ public class MembershipServiceT {
 
     public Object getFieldValue(_Fields field) {
       switch (field) {
-      case MSG:
-        return getMsg();
+      case SRC:
+        return getSrc();
+
+      case DST:
+        return getDst();
+
+      case STATUS:
+        return getStatus();
+
+      case CONFIG:
+        return getConfig();
 
       }
       throw new IllegalStateException();
@@ -408,8 +582,14 @@ public class MembershipServiceT {
       }
 
       switch (field) {
-      case MSG:
-        return isSetMsg();
+      case SRC:
+        return isSetSrc();
+      case DST:
+        return isSetDst();
+      case STATUS:
+        return isSetStatus();
+      case CONFIG:
+        return isSetConfig();
       }
       throw new IllegalStateException();
     }
@@ -427,12 +607,39 @@ public class MembershipServiceT {
       if (that == null)
         return false;
 
-      boolean this_present_msg = true && this.isSetMsg();
-      boolean that_present_msg = true && that.isSetMsg();
-      if (this_present_msg || that_present_msg) {
-        if (!(this_present_msg && that_present_msg))
+      boolean this_present_src = true && this.isSetSrc();
+      boolean that_present_src = true && that.isSetSrc();
+      if (this_present_src || that_present_src) {
+        if (!(this_present_src && that_present_src))
           return false;
-        if (!this.msg.equals(that.msg))
+        if (!this.src.equals(that.src))
+          return false;
+      }
+
+      boolean this_present_dst = true && this.isSetDst();
+      boolean that_present_dst = true && that.isSetDst();
+      if (this_present_dst || that_present_dst) {
+        if (!(this_present_dst && that_present_dst))
+          return false;
+        if (!this.dst.equals(that.dst))
+          return false;
+      }
+
+      boolean this_present_status = true && this.isSetStatus();
+      boolean that_present_status = true && that.isSetStatus();
+      if (this_present_status || that_present_status) {
+        if (!(this_present_status && that_present_status))
+          return false;
+        if (!this.status.equals(that.status))
+          return false;
+      }
+
+      boolean this_present_config = true;
+      boolean that_present_config = true;
+      if (this_present_config || that_present_config) {
+        if (!(this_present_config && that_present_config))
+          return false;
+        if (this.config != that.config)
           return false;
       }
 
@@ -443,10 +650,25 @@ public class MembershipServiceT {
     public int hashCode() {
       List<Object> list = new ArrayList<Object>();
 
-      boolean present_msg = true && (isSetMsg());
-      list.add(present_msg);
-      if (present_msg)
-        list.add(msg);
+      boolean present_src = true && (isSetSrc());
+      list.add(present_src);
+      if (present_src)
+        list.add(src);
+
+      boolean present_dst = true && (isSetDst());
+      list.add(present_dst);
+      if (present_dst)
+        list.add(dst);
+
+      boolean present_status = true && (isSetStatus());
+      list.add(present_status);
+      if (present_status)
+        list.add(status.getValue());
+
+      boolean present_config = true;
+      list.add(present_config);
+      if (present_config)
+        list.add(config);
 
       return list.hashCode();
     }
@@ -459,12 +681,42 @@ public class MembershipServiceT {
 
       int lastComparison = 0;
 
-      lastComparison = Boolean.valueOf(isSetMsg()).compareTo(other.isSetMsg());
+      lastComparison = Boolean.valueOf(isSetSrc()).compareTo(other.isSetSrc());
       if (lastComparison != 0) {
         return lastComparison;
       }
-      if (isSetMsg()) {
-        lastComparison = org.apache.thrift.TBaseHelper.compareTo(this.msg, other.msg);
+      if (isSetSrc()) {
+        lastComparison = org.apache.thrift.TBaseHelper.compareTo(this.src, other.src);
+        if (lastComparison != 0) {
+          return lastComparison;
+        }
+      }
+      lastComparison = Boolean.valueOf(isSetDst()).compareTo(other.isSetDst());
+      if (lastComparison != 0) {
+        return lastComparison;
+      }
+      if (isSetDst()) {
+        lastComparison = org.apache.thrift.TBaseHelper.compareTo(this.dst, other.dst);
+        if (lastComparison != 0) {
+          return lastComparison;
+        }
+      }
+      lastComparison = Boolean.valueOf(isSetStatus()).compareTo(other.isSetStatus());
+      if (lastComparison != 0) {
+        return lastComparison;
+      }
+      if (isSetStatus()) {
+        lastComparison = org.apache.thrift.TBaseHelper.compareTo(this.status, other.status);
+        if (lastComparison != 0) {
+          return lastComparison;
+        }
+      }
+      lastComparison = Boolean.valueOf(isSetConfig()).compareTo(other.isSetConfig());
+      if (lastComparison != 0) {
+        return lastComparison;
+      }
+      if (isSetConfig()) {
+        lastComparison = org.apache.thrift.TBaseHelper.compareTo(this.config, other.config);
         if (lastComparison != 0) {
           return lastComparison;
         }
@@ -489,12 +741,32 @@ public class MembershipServiceT {
       StringBuilder sb = new StringBuilder("receiveLinkUpdateMessage_args(");
       boolean first = true;
 
-      sb.append("msg:");
-      if (this.msg == null) {
+      sb.append("src:");
+      if (this.src == null) {
         sb.append("null");
       } else {
-        sb.append(this.msg);
+        sb.append(this.src);
       }
+      first = false;
+      if (!first) sb.append(", ");
+      sb.append("dst:");
+      if (this.dst == null) {
+        sb.append("null");
+      } else {
+        sb.append(this.dst);
+      }
+      first = false;
+      if (!first) sb.append(", ");
+      sb.append("status:");
+      if (this.status == null) {
+        sb.append("null");
+      } else {
+        sb.append(this.status);
+      }
+      first = false;
+      if (!first) sb.append(", ");
+      sb.append("config:");
+      sb.append(this.config);
       first = false;
       sb.append(")");
       return sb.toString();
@@ -503,9 +775,6 @@ public class MembershipServiceT {
     public void validate() throws org.apache.thrift.TException {
       // check for required fields
       // check for sub-struct validity
-      if (msg != null) {
-        msg.validate();
-      }
     }
 
     private void writeObject(java.io.ObjectOutputStream out) throws java.io.IOException {
@@ -518,6 +787,8 @@ public class MembershipServiceT {
 
     private void readObject(java.io.ObjectInputStream in) throws java.io.IOException, ClassNotFoundException {
       try {
+        // it doesn't seem like you should have to do this, but java serialization is wacky, and doesn't call the default constructor.
+        __isset_bitfield = 0;
         read(new org.apache.thrift.protocol.TCompactProtocol(new org.apache.thrift.transport.TIOStreamTransport(in)));
       } catch (org.apache.thrift.TException te) {
         throw new java.io.IOException(te);
@@ -542,11 +813,34 @@ public class MembershipServiceT {
             break;
           }
           switch (schemeField.id) {
-            case 1: // MSG
-              if (schemeField.type == org.apache.thrift.protocol.TType.STRUCT) {
-                struct.msg = new LinkUpdateMessageT();
-                struct.msg.read(iprot);
-                struct.setMsgIsSet(true);
+            case 1: // SRC
+              if (schemeField.type == org.apache.thrift.protocol.TType.STRING) {
+                struct.src = iprot.readString();
+                struct.setSrcIsSet(true);
+              } else { 
+                org.apache.thrift.protocol.TProtocolUtil.skip(iprot, schemeField.type);
+              }
+              break;
+            case 2: // DST
+              if (schemeField.type == org.apache.thrift.protocol.TType.STRING) {
+                struct.dst = iprot.readString();
+                struct.setDstIsSet(true);
+              } else { 
+                org.apache.thrift.protocol.TProtocolUtil.skip(iprot, schemeField.type);
+              }
+              break;
+            case 3: // STATUS
+              if (schemeField.type == org.apache.thrift.protocol.TType.I32) {
+                struct.status = com.vrg.thrift.Status.findByValue(iprot.readI32());
+                struct.setStatusIsSet(true);
+              } else { 
+                org.apache.thrift.protocol.TProtocolUtil.skip(iprot, schemeField.type);
+              }
+              break;
+            case 4: // CONFIG
+              if (schemeField.type == org.apache.thrift.protocol.TType.I64) {
+                struct.config = iprot.readI64();
+                struct.setConfigIsSet(true);
               } else { 
                 org.apache.thrift.protocol.TProtocolUtil.skip(iprot, schemeField.type);
               }
@@ -566,11 +860,24 @@ public class MembershipServiceT {
         struct.validate();
 
         oprot.writeStructBegin(STRUCT_DESC);
-        if (struct.msg != null) {
-          oprot.writeFieldBegin(MSG_FIELD_DESC);
-          struct.msg.write(oprot);
+        if (struct.src != null) {
+          oprot.writeFieldBegin(SRC_FIELD_DESC);
+          oprot.writeString(struct.src);
           oprot.writeFieldEnd();
         }
+        if (struct.dst != null) {
+          oprot.writeFieldBegin(DST_FIELD_DESC);
+          oprot.writeString(struct.dst);
+          oprot.writeFieldEnd();
+        }
+        if (struct.status != null) {
+          oprot.writeFieldBegin(STATUS_FIELD_DESC);
+          oprot.writeI32(struct.status.getValue());
+          oprot.writeFieldEnd();
+        }
+        oprot.writeFieldBegin(CONFIG_FIELD_DESC);
+        oprot.writeI64(struct.config);
+        oprot.writeFieldEnd();
         oprot.writeFieldStop();
         oprot.writeStructEnd();
       }
@@ -589,23 +896,52 @@ public class MembershipServiceT {
       public void write(org.apache.thrift.protocol.TProtocol prot, receiveLinkUpdateMessage_args struct) throws org.apache.thrift.TException {
         TTupleProtocol oprot = (TTupleProtocol) prot;
         BitSet optionals = new BitSet();
-        if (struct.isSetMsg()) {
+        if (struct.isSetSrc()) {
           optionals.set(0);
         }
-        oprot.writeBitSet(optionals, 1);
-        if (struct.isSetMsg()) {
-          struct.msg.write(oprot);
+        if (struct.isSetDst()) {
+          optionals.set(1);
+        }
+        if (struct.isSetStatus()) {
+          optionals.set(2);
+        }
+        if (struct.isSetConfig()) {
+          optionals.set(3);
+        }
+        oprot.writeBitSet(optionals, 4);
+        if (struct.isSetSrc()) {
+          oprot.writeString(struct.src);
+        }
+        if (struct.isSetDst()) {
+          oprot.writeString(struct.dst);
+        }
+        if (struct.isSetStatus()) {
+          oprot.writeI32(struct.status.getValue());
+        }
+        if (struct.isSetConfig()) {
+          oprot.writeI64(struct.config);
         }
       }
 
       @Override
       public void read(org.apache.thrift.protocol.TProtocol prot, receiveLinkUpdateMessage_args struct) throws org.apache.thrift.TException {
         TTupleProtocol iprot = (TTupleProtocol) prot;
-        BitSet incoming = iprot.readBitSet(1);
+        BitSet incoming = iprot.readBitSet(4);
         if (incoming.get(0)) {
-          struct.msg = new LinkUpdateMessageT();
-          struct.msg.read(iprot);
-          struct.setMsgIsSet(true);
+          struct.src = iprot.readString();
+          struct.setSrcIsSet(true);
+        }
+        if (incoming.get(1)) {
+          struct.dst = iprot.readString();
+          struct.setDstIsSet(true);
+        }
+        if (incoming.get(2)) {
+          struct.status = com.vrg.thrift.Status.findByValue(iprot.readI32());
+          struct.setStatusIsSet(true);
+        }
+        if (incoming.get(3)) {
+          struct.config = iprot.readI64();
+          struct.setConfigIsSet(true);
         }
       }
     }

@@ -1,14 +1,13 @@
 package com.vrg;
 
 import com.google.common.net.HostAndPort;
-import com.vrg.thrift.LinkUpdateMessageT;
 import com.vrg.thrift.MembershipServiceT;
+import com.vrg.thrift.Status;
 import org.apache.thrift.TException;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.framework.qual.DefaultQualifier;
 import org.checkerframework.framework.qual.TypeUseLocation;
 
-import java.net.InetSocketAddress;
 import java.util.List;
 
 /**
@@ -20,7 +19,7 @@ public class MembershipService implements MembershipServiceT.Iface {
     private final WatermarkBuffer watermarkBuffer;
     private final HostAndPort myAddr;
 
-    public MembershipService(final HostAndPort myAddr,
+    MembershipService(final HostAndPort myAddr,
                              final int K, final int H, final int L) {
         this.myAddr = myAddr;
         this.membershipView = new MembershipView(K, new Node(this.myAddr));
@@ -35,7 +34,7 @@ public class MembershipService implements MembershipServiceT.Iface {
      * Link update messages that do not affect an ongoing proposal
      * needs to be dropped.
      */
-    public void receiveLinkUpdateMessage(final LinkUpdateMessage msg) {
+    private void receiveLinkUpdateMessage(final LinkUpdateMessage msg) {
         final List<Node> proposal = proposedViewChange(msg);
         if (proposal.size() != 0) {
             // Initiate proposal
@@ -46,12 +45,16 @@ public class MembershipService implements MembershipServiceT.Iface {
         // continue gossipping
     }
 
-    List<Node> proposedViewChange(final LinkUpdateMessage msg) {
+    private List<Node> proposedViewChange(final LinkUpdateMessage msg) {
         return watermarkBuffer.receiveLinkUpdateMessage(msg);
     }
 
     @Override
-    public void receiveLinkUpdateMessage(final LinkUpdateMessageT msg) throws TException {
-
+    public void receiveLinkUpdateMessage(final String src,
+                                         final String dst,
+                                         final Status status,
+                                         final long config) throws TException {
+        final LinkUpdateMessage msg = new LinkUpdateMessage(src, dst, status);
+        receiveLinkUpdateMessage(msg);
     }
 }

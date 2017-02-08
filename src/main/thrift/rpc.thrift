@@ -5,13 +5,6 @@ enum Status {
   DOWN = 2,
 }
 
-struct LinkUpdateMessageT {
-  1: string src,
-  2: string dst,
-  3: Status op,
-  4: i64 config,
-}
-
 service MembershipServiceT {
-   void receiveLinkUpdateMessage(1:LinkUpdateMessageT msg),
+   void receiveLinkUpdateMessage(1:string src, 2:string dst, 3:Status status, 4:i64 config),
 }
