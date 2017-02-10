@@ -14,8 +14,9 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
-import org.junit.Test;
 import com.vrg.rapid.pb.Remoting.Status;
+import org.junit.Test;
+
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;

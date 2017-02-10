@@ -15,9 +15,10 @@ package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.MembershipServiceGrpc;
-import com.vrg.rapid.pb.Remoting;
-import com.vrg.rapid.pb.Remoting.LinkUpdateMessageWire;
 import com.vrg.rapid.pb.MembershipServiceGrpc.MembershipServiceBlockingStub;
+import com.vrg.rapid.pb.Remoting.LinkUpdateMessageWire;
+import com.vrg.rapid.pb.Remoting.Response;
+import com.vrg.rapid.pb.Remoting.Status;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 
@@ -35,10 +36,10 @@ public class MessagingClient {
         stubs = new ConcurrentHashMap<>();
     }
 
-    boolean sendLinkUpdateMessage(final HostAndPort src,
-                                      final HostAndPort dst,
-                                      final Remoting.Status status,
-                                      final long configurationId) {
+    Response sendLinkUpdateMessage(final HostAndPort src,
+                                            final HostAndPort dst,
+                                            final Status status,
+                                            final long configurationId) {
         Objects.requireNonNull(src);
         Objects.requireNonNull(dst);
         Objects.requireNonNull(status);
@@ -50,9 +51,7 @@ public class MessagingClient {
                                             .setDst(dst.toString())
                                             .setStatus(status)
                                             .setConfig(configurationId).build();
-        stub.receiveLinkUpdateMessage(msg);
-
-        return true;
+        return stub.receiveLinkUpdateMessage(msg);
     }
 
     private MembershipServiceBlockingStub createBlockingStub(final HostAndPort remote) {

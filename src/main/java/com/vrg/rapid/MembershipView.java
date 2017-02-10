@@ -19,10 +19,10 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import java.util.HashSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReadWriteLock;
@@ -34,7 +34,6 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  *
  * TODO: too many scans of the k rings during reads. Maintain a cache.
  */
-//@DefaultQualifier(value = NonNull.class, locations = TypeUseLocation.ALL)
 class MembershipView {
     private final ConcurrentHashMap<Integer, ArrayList<Node>> rings;
     private final int K;

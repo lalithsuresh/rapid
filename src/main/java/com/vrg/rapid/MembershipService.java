@@ -16,11 +16,11 @@ package com.vrg.rapid;
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.MembershipServiceGrpc;
 import com.vrg.rapid.pb.Remoting;
+import com.vrg.rapid.pb.Remoting.LinkUpdateMessageWire;
+import com.vrg.rapid.pb.Remoting.Response;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import io.grpc.stub.StreamObserver;
-import com.vrg.rapid.pb.Remoting.LinkUpdateMessageWire;
-import com.vrg.rapid.pb.Remoting.Response;
 
 import java.io.IOException;
 import java.util.List;

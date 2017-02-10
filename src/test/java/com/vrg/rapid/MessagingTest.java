@@ -14,11 +14,13 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
+import com.vrg.rapid.pb.Remoting.Response;
 import com.vrg.rapid.pb.Remoting.Status;
 import org.junit.Test;
+
 import java.io.IOException;
 
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertNotNull;
 
 /**
  * Tests without changing incarnations for a watermark-buffer
@@ -38,9 +40,9 @@ public class MessagingTest {
         final HostAndPort clientAddr = HostAndPort.fromParts("127.0.0.1", serverPort);
         final long configId = 10;
         final MessagingClient client = new MessagingClient();
-        final boolean result = client.sendLinkUpdateMessage(clientAddr, serverAddr,
+        final Response result = client.sendLinkUpdateMessage(clientAddr, serverAddr,
                                                             Status.DOWN, configId);
-        assertTrue(result);
+        assertNotNull(result);
     }
 
 }
