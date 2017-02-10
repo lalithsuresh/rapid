@@ -1,27 +1,33 @@
-package com.vrg;
+/*
+ * Copyright © 2016 - 2017 VMware, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the “License”); you may not use this file
+ * except in compliance with the License. You may obtain a copy of the License at
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under the
+ * License is distributed on an “AS IS” BASIS, without warranties or conditions of any kind,
+ * EITHER EXPRESS OR IMPLIED. See the License for the specific language governing
+ * permissions and limitations under the License.
+ */
+
+package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
-import org.checkerframework.checker.nullness.qual.NonNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
-import org.checkerframework.framework.qual.DefaultQualifier;
-import org.checkerframework.framework.qual.TypeUseLocation;
 
-import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
-import java.util.function.Consumer;
 
 /**
  * A basic watermark buffer that delivers messages about a node if and only if:
  * - there are H messages about the node.
  * - there is no other node with more than L but less than H messages about it.
  */
-@DefaultQualifier(value = NonNull.class, locations = {TypeUseLocation.ALL})
 class WatermarkBuffer {
     private static final int K_MIN = 3;
     private final int K;
@@ -51,6 +57,8 @@ class WatermarkBuffer {
     }
 
     List<Node> receiveLinkUpdateMessage(final LinkUpdateMessage msg) {
+        Objects.requireNonNull(msg);
+
         synchronized (lock) {
 
             final AtomicInteger counter = updateCounters.computeIfAbsent(msg.getDst(),
@@ -72,7 +80,7 @@ class WatermarkBuffer {
                     this.deliverCounter.incrementAndGet();
                     for (final Node n: readyList) {
                         // The counter below should never be null.
-                        @Nullable final AtomicInteger updateCounter = updateCounters.get(n.address);
+                        final AtomicInteger updateCounter = updateCounters.get(n.address);
                         if (updateCounter == null) {
                             throw new RuntimeException("Node to be delivered not in UpdateCounters map: "
                                                         + n.address);

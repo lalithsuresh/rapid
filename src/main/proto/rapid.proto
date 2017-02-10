@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+option java_package = "com.vrg.rapid.pb";
+option java_outer_classname = "Remoting";
+
+package remoting;
+
+service MembershipService {
+  rpc receiveLinkUpdateMessage (LinkUpdateMessageWire) returns (Response) {}
+}
+
+message LinkUpdateMessageWire
+{
+    string src = 1;
+    string dst = 2;
+    Status status = 3;
+    int64 config = 4;
+}
+
+enum Status {
+    UP = 0;
+    DOWN = 1;
+};
+
+message Response
+{
+}

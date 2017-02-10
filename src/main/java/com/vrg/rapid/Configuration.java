@@ -1,12 +1,22 @@
-package com.vrg;
+/*
+ * Copyright © 2016 - 2017 VMware, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the “License”); you may not use this file
+ * except in compliance with the License. You may obtain a copy of the License at
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under the
+ * License is distributed on an “AS IS” BASIS, without warranties or conditions of any kind,
+ * EITHER EXPRESS OR IMPLIED. See the License for the specific language governing
+ * permissions and limitations under the License.
+ */
 
-import org.checkerframework.checker.nullness.qual.NonNull;
-import org.checkerframework.framework.qual.DefaultQualifier;
-import org.checkerframework.framework.qual.TypeUseLocation;
+package com.vrg.rapid;
 
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 
@@ -19,7 +29,6 @@ import java.util.Set;
  *
  * XXX: Not thread safe
  */
-@DefaultQualifier(value = NonNull.class, locations = {TypeUseLocation.ALL})
 public class Configuration {
     private final ArrayList<String> configHistory;
     private final ArrayList<List<Long>> opHistory;
@@ -35,8 +44,8 @@ public class Configuration {
 
     public Configuration(final ArrayList<String> configHistory,
                          final ArrayList<List<Long>> opHistory) {
-        this.configHistory = configHistory;
-        this.opHistory = opHistory;
+        this.configHistory = Objects.requireNonNull(configHistory);
+        this.opHistory = Objects.requireNonNull(opHistory);
         this.configHistory.add(Utils.sha1HexStringToString(ZERO));
     }
 

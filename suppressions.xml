@@ -19,4 +19,5 @@
 
 <suppressions>
     <suppress files="com[\\/]vrg[\\/]thrift" checks=".*"/>
+    <suppress files="com[\\/]vrg[\\/]grpc" checks=".*"/>
 </suppressions>

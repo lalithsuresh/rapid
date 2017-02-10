@@ -1,14 +1,26 @@
-package com.vrg;
+/*
+ * Copyright © 2016 - 2017 VMware, Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the “License”); you may not use this file
+ * except in compliance with the License. You may obtain a copy of the License at
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under the
+ * License is distributed on an “AS IS” BASIS, without warranties or conditions of any kind,
+ * EITHER EXPRESS OR IMPLIED. See the License for the specific language governing
+ * permissions and limitations under the License.
+ */
+
+package com.vrg.rapid;
 
 import com.google.common.annotations.VisibleForTesting;
-import org.checkerframework.checker.nullness.qual.NonNull;
-import org.checkerframework.framework.qual.DefaultQualifier;
-import org.checkerframework.framework.qual.TypeUseLocation;
 
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.HashSet;
 import java.util.concurrent.ConcurrentHashMap;
@@ -22,7 +34,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  *
  * TODO: too many scans of the k rings during reads. Maintain a cache.
  */
-@DefaultQualifier(value = NonNull.class, locations = TypeUseLocation.ALL)
+//@DefaultQualifier(value = NonNull.class, locations = TypeUseLocation.ALL)
 class MembershipView {
     private final ConcurrentHashMap<Integer, ArrayList<Node>> rings;
     private final int K;
@@ -44,6 +56,7 @@ class MembershipView {
 
     MembershipView(final int K, final Node node) {
         assert K > 0;
+        Objects.requireNonNull(node);
         this.K = K;
         this.rings = new ConcurrentHashMap<>(K);
         this.hashComparators = new HashComparator[K];
@@ -57,6 +70,7 @@ class MembershipView {
 
     @VisibleForTesting
     void ringAdd(final Node node) throws NodeAlreadyInRingException {
+        Objects.requireNonNull(node);
         try {
             rwLock.writeLock().lock();
             for (int k = 0; k < K; k++) {
@@ -78,6 +92,7 @@ class MembershipView {
 
     @VisibleForTesting
     void ringDelete(final Node node) throws NodeNotInRingException {
+        Objects.requireNonNull(node);
         try {
             rwLock.writeLock().lock();
             for (int k = 0; k < K; k++) {
@@ -103,6 +118,7 @@ class MembershipView {
      * @throws NodeNotInRingException thrown if {@code node} is not in the ring
      */
     Set<Node> monitorsOf(final Node node) throws NodeNotInRingException {
+        Objects.requireNonNull(node);
         try {
             rwLock.readLock().lock();
             final Set<Node> monitors = new HashSet<>();
@@ -134,6 +150,7 @@ class MembershipView {
      * @throws NodeNotInRingException thrown if {@code node} is not in the ring
      */
     Set<Node> monitoreesOf(final Node node) throws NodeNotInRingException {
+        Objects.requireNonNull(node);
         try {
             rwLock.readLock().lock();
             final Set<Node> monitorees = new HashSet<>();
@@ -163,6 +180,7 @@ class MembershipView {
      * @param msg message to deliver
      */
     void deliver(final LinkUpdateMessage msg) {
+        Objects.requireNonNull(msg);
         try {
             switch (msg.getStatus()) {
                 case UP:
@@ -194,8 +212,7 @@ class MembershipView {
         }
     }
 
-    @DefaultQualifier(value = NonNull.class, locations = TypeUseLocation.ALL)
-    private static final class HashComparator implements Comparator<Node> {
+    private static final class HashComparator implements Comparator<Node>, Serializable {
         private final String seed;
 
         HashComparator(final String seed) {
@@ -208,15 +225,13 @@ class MembershipView {
         }
     }
 
-    @DefaultQualifier(value = NonNull.class, locations = TypeUseLocation.ALL)
-    class NodeAlreadyInRingException extends Exception {
+    static class NodeAlreadyInRingException extends Exception {
         NodeAlreadyInRingException(final Node node) {
             super(node.address.toString());
         }
     }
 
-    @DefaultQualifier(value = NonNull.class, locations = TypeUseLocation.ALL)
-    class NodeNotInRingException extends Exception {
+    static class NodeNotInRingException extends Exception {
         NodeNotInRingException(final Node node) {
             super(node.address.toString());
         }
