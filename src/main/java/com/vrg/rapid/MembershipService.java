@@ -15,6 +15,7 @@ package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.MembershipServiceGrpc;
+import com.vrg.rapid.pb.Remoting;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import io.grpc.stub.StreamObserver;
@@ -42,7 +43,7 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
         this.watermarkBuffer = new WatermarkBuffer(K, H, L);
     }
 
-    public void startServer() throws IOException {
+    void startServer() throws IOException {
         server = ServerBuilder.forPort(myAddr.getPort())
                 .addService(this)
                 .build()
@@ -55,7 +56,7 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
         }));
     }
 
-    public void stopServer() {
+    private void stopServer() {
         if (server != null) {
             server.shutdown();
         }
@@ -88,11 +89,21 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
      */
     private void receiveLinkUpdateMessage(final LinkUpdateMessage msg) {
         Objects.requireNonNull(msg);
+
+        // If msg UP and in set, we'
+        if (msg.getStatus().equals(Remoting.Status.UP) && membershipView.isPresent(new Node(msg.getDst()))) {
+            throw new RuntimeException("Received UP message for node already in set");
+        }
+        if (msg.getStatus().equals(Remoting.Status.DOWN) && !membershipView.isPresent(new Node(msg.getDst()))) {
+            throw new RuntimeException("Received DOWN message for node not in set");
+        }
+
         final List<Node> proposal = proposedViewChange(msg);
         if (proposal.size() != 0) {
             // Initiate proposal
             throw new UnsupportedOperationException();
             // execute consensus.
+            // if consensus
         }
 
         // continue gossipping

@@ -98,9 +98,9 @@ public class Configuration {
         configHistory.add(Utils.sha1HexStringToString(Utils.sha1HexLongsToString(identifiersSeen)));
     }
 
-    private String findDivergingCommit(final Configuration c2) {
-        return findDivergingCommit(c2.configHistory);
-    }
+//    private String findDivergingCommit(final Configuration c2) {
+//        return findDivergingCommit(c2.configHistory);
+//    }
 
     private String findDivergingCommit(final List<String> remoteConfigHistory) {
         final Set<String> localConfig = new HashSet<>(configHistory);
@@ -115,7 +115,7 @@ public class Configuration {
         return NONE;
     }
 
-    public String head() {
+    private String head() {
         final int size = configHistory.size();
         assert size > 0;
         return configHistory.get(size - 1);

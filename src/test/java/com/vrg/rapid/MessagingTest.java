@@ -24,9 +24,9 @@ import static org.junit.Assert.assertTrue;
  * Tests without changing incarnations for a watermark-buffer
  */
 public class MessagingTest {
-    private static int K = 10;
-    private static int H = 8;
-    private static int L = 3;
+    private static final int K = 10;
+    private static final int H = 8;
+    private static final int L = 3;
 
     @Test
     public void oneWayPing() throws InterruptedException, IOException {
@@ -39,7 +39,7 @@ public class MessagingTest {
         final long configId = 10;
         final MessagingClient client = new MessagingClient();
         final boolean result = client.sendLinkUpdateMessage(clientAddr, serverAddr,
-                                                            Status.UP, configId);
+                                                            Status.DOWN, configId);
         assertTrue(result);
     }
 

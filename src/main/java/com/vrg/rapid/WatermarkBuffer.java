@@ -30,7 +30,6 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 class WatermarkBuffer {
     private static final int K_MIN = 3;
-    private final int K;
     private final int H;
     private final int L;
     private final AtomicInteger deliverCounter = new AtomicInteger(0);
@@ -46,7 +45,6 @@ class WatermarkBuffer {
             throw new IllegalArgumentException("Arguments do not satisfy K > H >= L >= 0:" +
                                                " (K: " + K + ", H: " + H + ", L: " + L);
         }
-        this.K = K;
         this.H = H;
         this.L = L;
         this.updateCounters = new HashMap<>();

@@ -198,7 +198,11 @@ class MembershipView {
         } catch (final NodeNotInRingException e) {
             nodeNotInRingExceptionsThrown.incrementAndGet();
         }
+    }
 
+    boolean isPresent(final Node node) {
+        final int index = Collections.binarySearch(rings.get(0), node, hashComparators[0]);
+        return index >= 0;
     }
 
     @VisibleForTesting
@@ -213,6 +217,7 @@ class MembershipView {
     }
 
     private static final class HashComparator implements Comparator<Node>, Serializable {
+        private static final long serialVersionUID = -4891729390L;
         private final String seed;
 
         HashComparator(final String seed) {

@@ -48,7 +48,7 @@ final class TestUtils {
     }
 
     // Fisher–Yates shuffle
-    static void shuffleArray(LinkUpdateMessage[] ar)
+    static void shuffleArray(final LinkUpdateMessage[] ar)
     {
         final Random rnd = ThreadLocalRandom.current();
         for (int i = ar.length - 1; i > 0; i--)

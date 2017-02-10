@@ -35,7 +35,7 @@ public class MessagingClient {
         stubs = new ConcurrentHashMap<>();
     }
 
-    public boolean sendLinkUpdateMessage(final HostAndPort src,
+    boolean sendLinkUpdateMessage(final HostAndPort src,
                                       final HostAndPort dst,
                                       final Remoting.Status status,
                                       final long configurationId) {
