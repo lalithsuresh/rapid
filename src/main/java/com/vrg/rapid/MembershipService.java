@@ -15,9 +15,9 @@ package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.MembershipServiceGrpc;
-import com.vrg.rapid.pb.Remoting;
-import com.vrg.rapid.pb.Remoting.LinkUpdateMessageWire;
-import com.vrg.rapid.pb.Remoting.Response;
+import com.vrg.rapid.pb.Status;
+import com.vrg.rapid.pb.LinkUpdateMessageWire;
+import com.vrg.rapid.pb.Response;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import io.grpc.stub.StreamObserver;
@@ -91,10 +91,10 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
         Objects.requireNonNull(msg);
 
         // If msg UP and in set, we'
-        if (msg.getStatus().equals(Remoting.Status.UP) && membershipView.isPresent(new Node(msg.getDst()))) {
+        if (msg.getStatus().equals(Status.UP) && membershipView.isPresent(new Node(msg.getDst()))) {
             throw new RuntimeException("Received UP message for node already in set");
         }
-        if (msg.getStatus().equals(Remoting.Status.DOWN) && !membershipView.isPresent(new Node(msg.getDst()))) {
+        if (msg.getStatus().equals(Status.DOWN) && !membershipView.isPresent(new Node(msg.getDst()))) {
             throw new RuntimeException("Received DOWN message for node not in set");
         }
 

@@ -16,9 +16,9 @@ package com.vrg.rapid;
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.MembershipServiceGrpc;
 import com.vrg.rapid.pb.MembershipServiceGrpc.MembershipServiceBlockingStub;
-import com.vrg.rapid.pb.Remoting.LinkUpdateMessageWire;
-import com.vrg.rapid.pb.Remoting.Response;
-import com.vrg.rapid.pb.Remoting.Status;
+import com.vrg.rapid.pb.LinkUpdateMessageWire;
+import com.vrg.rapid.pb.Response;
+import com.vrg.rapid.pb.Status;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 

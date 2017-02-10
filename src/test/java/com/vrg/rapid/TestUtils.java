@@ -14,7 +14,7 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
-import com.vrg.rapid.pb.Remoting.Status;
+import com.vrg.rapid.pb.Status;
 
 import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;

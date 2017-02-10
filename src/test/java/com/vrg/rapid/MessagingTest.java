@@ -14,8 +14,8 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
-import com.vrg.rapid.pb.Remoting.Response;
-import com.vrg.rapid.pb.Remoting.Status;
+import com.vrg.rapid.pb.Response;
+import com.vrg.rapid.pb.Status;
 import org.junit.Test;
 
 import java.io.IOException;
