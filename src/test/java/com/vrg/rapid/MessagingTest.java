@@ -16,11 +16,20 @@ package com.vrg.rapid;
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.Response;
 import com.vrg.rapid.pb.Status;
+import io.grpc.ServerInterceptor;
+import io.grpc.StatusRuntimeException;
 import org.junit.Test;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 /**
  * Tests without changing incarnations for a watermark-buffer
@@ -29,20 +38,122 @@ public class MessagingTest {
     private static final int K = 10;
     private static final int H = 8;
     private static final int L = 3;
+    private final int serverPortBase = 1234;
+    private static final String localhostIp = "127.0.0.1";
 
     @Test
     public void oneWayPing() throws InterruptedException, IOException {
         final int serverPort = 1234;
-        final HostAndPort serverAddr = HostAndPort.fromParts("127.0.0.1", serverPort);
-        final MembershipService service = new MembershipService(serverAddr, K, H, L);
-        service.startServer();
+        final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, serverPort);
+        final MembershipService service = createAndStartMembershipService(serverAddr);
 
-        final HostAndPort clientAddr = HostAndPort.fromParts("127.0.0.1", serverPort);
+        final HostAndPort clientAddr = HostAndPort.fromParts(localhostIp, serverPort);
         final long configId = 10;
-        final MessagingClient client = new MessagingClient();
-        final Response result = client.sendLinkUpdateMessage(clientAddr, serverAddr,
-                                                            Status.DOWN, configId);
+        final MessagingClient client = new MessagingClient(clientAddr);
+        final Response result = client.sendLinkUpdateMessage(serverAddr, clientAddr, serverAddr,
+                                                             Status.DOWN, configId);
         assertNotNull(result);
+        service.stopServer();
+        service.blockUntilShutdown();
     }
 
+    @Test
+    public void droppedMessage() throws InterruptedException, IOException {
+        final int serverPort = 1234;
+        final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, serverPort);
+        final MembershipService service = createAndStartMembershipService(serverAddr,
+                Collections.singletonList(new MessageDropInterceptor()));
+
+        final HostAndPort clientAddr = HostAndPort.fromParts(localhostIp, serverPort);
+        final long configId = 10;
+        final MessagingClient client = new MessagingClient(clientAddr);
+        boolean exceptionCaught = false;
+        try {
+            client.sendLinkUpdateMessage(serverAddr, clientAddr, serverAddr,
+                    Status.DOWN, configId);
+        } catch (final StatusRuntimeException e) {
+            exceptionCaught = true;
+        }
+        assertTrue(exceptionCaught);
+        service.stopServer();
+        service.blockUntilShutdown();
+    }
+
+    @Test
+    public void broadcast() throws InterruptedException, IOException {
+        final int N = 50;
+        final List<MembershipService> services = createAndStartMembershipServices(N);
+        final HostAndPort src = HostAndPort.fromParts(localhostIp, 1234);
+        final HostAndPort dst = HostAndPort.fromParts(localhostIp, 1235);
+        final Status status = Status.DOWN;
+
+        final List<Node> currentView = services.get(0).getMembershipView();
+
+        for (int i = 0; i < K; i++) {
+            services.get(i).broadcastLinkUpdateMessage(new LinkUpdateMessage(currentView.get(i).address, dst, status));
+        }
+
+        for (int i = 0; i < N; i++) {
+            assertEquals(1, services.get(i).getProposalLog().size());
+        }
+        shutDownServices(services);
+    }
+
+    private MembershipService createAndStartMembershipService(final HostAndPort serverAddr) throws IOException {
+        final MembershipService service = new MembershipService(serverAddr, K, H, L,
+                new MembershipView(K, new Node(serverAddr)), true);
+        service.startServer();
+        return service;
+    }
+
+    private MembershipService createAndStartMembershipService(final HostAndPort serverAddr,
+                                                              final List<ServerInterceptor> interceptors)
+                                                                throws IOException {
+        final MembershipService service = new MembershipService(serverAddr, K, H, L,
+                new MembershipView(K, new Node(serverAddr)), true);
+        service.startServer(interceptors);
+        return service;
+    }
+
+    private MembershipService createAndStartMembershipService(final HostAndPort serverAddr,
+                                                              final List<ServerInterceptor> interceptors,
+                                                              final MembershipView membershipView)
+            throws IOException {
+        final MembershipService service = new MembershipService(serverAddr, K, H, L, membershipView, true);
+        service.startServer(interceptors);
+        return service;
+    }
+
+    private List<MembershipService> createAndStartMembershipServices(final int N) throws IOException {
+        final List<MembershipService> services = new ArrayList<>(N);
+        for (int i = serverPortBase; i < serverPortBase + N; i++) {
+            final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, i);
+            services.add(createAndStartMembershipService(serverAddr, Collections.emptyList(), createMembershipView(N)));
+        }
+
+        return services;
+    }
+
+    private void shutDownServices(final List<MembershipService> services) {
+        services.parallelStream().forEach(service -> {
+            service.stopServer();
+            try {
+                service.blockUntilShutdown();
+            } catch (InterruptedException e) {
+                fail();
+            }
+        });
+    }
+
+    private MembershipView createMembershipView(final int N) {
+        final MembershipView membershipView = new MembershipView(K);
+        for (int i = serverPortBase; i < serverPortBase + N; i++) {
+            try {
+                membershipView.ringAdd(new Node(HostAndPort.fromParts(localhostIp, i)));
+            } catch (final Exception e){
+                fail();
+            }
+        }
+        return membershipView;
+    }
 }

@@ -12,10 +12,11 @@ service MembershipService {
 
 message LinkUpdateMessageWire
 {
-    string src = 1;
-    string dst = 2;
-    Status status = 3;
-    int64 config = 4;
+    string sender = 1;
+    string linkSrc = 2;
+    string linkDst = 3;
+    Status linkStatus = 4;
+    int64 config = 5;
 }
 
 enum Status {

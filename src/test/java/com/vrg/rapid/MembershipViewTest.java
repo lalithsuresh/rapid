@@ -254,7 +254,7 @@ public class MembershipViewTest {
         final int K = 10;
         final MembershipView mview = new MembershipView(K);
 
-        final int numNodes = 10000;
+        final int numNodes = 1000;
         final ArrayList<Node> list = new ArrayList<>();
         for (int i = 0; i < numNodes; i++) {
             final Node n = new Node(HostAndPort.fromParts("127.0.0.1", i));

@@ -24,34 +24,45 @@ import io.grpc.ManagedChannelBuilder;
 
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 
 /**
  * MessagingServiceGrpc client.
  */
-public class MessagingClient {
+class MessagingClient {
     private final ConcurrentHashMap<HostAndPort, MembershipServiceBlockingStub> stubs;
+    private final HostAndPort address;
 
-    MessagingClient() {
+    MessagingClient(final HostAndPort address) {
         stubs = new ConcurrentHashMap<>();
+        this.address = address;
     }
 
-    Response sendLinkUpdateMessage(final HostAndPort src,
-                                            final HostAndPort dst,
-                                            final Status status,
-                                            final long configurationId) {
+    Response sendLinkUpdateMessage(final HostAndPort remote, final LinkUpdateMessage msg) {
+        Objects.requireNonNull(msg);
+        // TODO: need config id
+        return sendLinkUpdateMessage(remote, msg.getSrc(), msg.getDst(), msg.getStatus(), 10);
+    }
+
+    Response sendLinkUpdateMessage(final HostAndPort remote,
+                                   final HostAndPort src,
+                                   final HostAndPort dst,
+                                   final Status status,
+                                   final long configurationId) {
         Objects.requireNonNull(src);
         Objects.requireNonNull(dst);
         Objects.requireNonNull(status);
 
-        final MembershipServiceBlockingStub stub = stubs.computeIfAbsent(dst, this::createBlockingStub);
+        final MembershipServiceBlockingStub stub = stubs.computeIfAbsent(remote, this::createBlockingStub);
 
         final LinkUpdateMessageWire msg = LinkUpdateMessageWire.newBuilder()
-                                            .setSrc(src.toString())
-                                            .setDst(dst.toString())
-                                            .setStatus(status)
+                                            .setSender(address.toString())
+                                            .setLinkSrc(src.toString())
+                                            .setLinkDst(dst.toString())
+                                            .setLinkStatus(status)
                                             .setConfig(configurationId).build();
-        return stub.receiveLinkUpdateMessage(msg);
+        return stub.withDeadlineAfter(1, TimeUnit.SECONDS).receiveLinkUpdateMessage(msg);
     }
 
     private MembershipServiceBlockingStub createBlockingStub(final HostAndPort remote) {
@@ -60,6 +71,7 @@ public class MessagingClient {
                                         .forAddress(remote.getHostText(), remote.getPort())
                                         .usePlaintext(true)
                                         .build();
+
         return MembershipServiceGrpc.newBlockingStub(channel);
     }
 }
