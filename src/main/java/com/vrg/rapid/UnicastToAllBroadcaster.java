@@ -18,7 +18,7 @@ import com.google.common.net.HostAndPort;
 import java.util.List;
 
 /**
- * Created by lsuresh on 2/10/17.
+ * Simple best-effort broadcaster.
  */
 public class UnicastToAllBroadcaster implements IBroadcaster {
     private final MessagingClient messagingClient;

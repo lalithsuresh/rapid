@@ -19,13 +19,13 @@ import io.grpc.ServerCallHandler;
 import io.grpc.ServerInterceptor;
 
 /**
- * Created by lsuresh on 2/11/17.
+ * Drops messages at the server of a gRPC call. Used for testing.
  */
 public class MessageDropInterceptor implements ServerInterceptor {
     @Override
     public <ReqT, RespT> ServerCall.Listener<ReqT> interceptCall(final ServerCall<ReqT, RespT> serverCall,
-                                                                 final Metadata metadata,
-                                                                 final ServerCallHandler<ReqT, RespT> serverCallHandler) {
+                                                             final Metadata metadata,
+                                                             final ServerCallHandler<ReqT, RespT> serverCallHandler) {
         return new ServerCall.Listener<ReqT>() {};
     }
 }

@@ -18,7 +18,7 @@ import com.google.common.net.HostAndPort;
 import java.util.List;
 
 /**
- * Created by lsuresh on 2/10/17.
+ * Supports different broadcast implementations (eager flooding, gossip, etc.).
  */
 public interface IBroadcaster {
     void broadcast(List<HostAndPort> recipients, LinkUpdateMessage msg);
