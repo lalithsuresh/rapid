@@ -31,7 +31,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
- * Tests without changing incarnations for a watermark-buffer
+ * Tests to drive the messaging sub-system
  */
 public class MessagingTest {
     private static final int K = 10;
