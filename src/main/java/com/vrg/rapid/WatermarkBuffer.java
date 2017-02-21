@@ -52,7 +52,7 @@ class WatermarkBuffer {
         this.reportsPerHost = new HashMap<>();
     }
 
-    int getNumDelivers() {
+    int getNumProposals() {
         return proposalCount.get();
     }
 
