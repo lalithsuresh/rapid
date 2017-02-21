@@ -22,7 +22,7 @@ import java.util.List;
 import static org.junit.Assert.assertEquals;
 
 /**
- * Tests without changing incarnations for a watermark-buffer
+ * Tests for a watermark-buffer
  */
 public class WatermarkBufferTest {
     private static final int K = 10;
