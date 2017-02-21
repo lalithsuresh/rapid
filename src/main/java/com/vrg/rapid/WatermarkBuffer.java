@@ -18,9 +18,11 @@ import com.google.common.net.HostAndPort;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -32,10 +34,10 @@ class WatermarkBuffer {
     private static final int K_MIN = 3;
     private final int H;
     private final int L;
-    private final AtomicInteger deliverCounter = new AtomicInteger(0);
+    private final AtomicInteger proposalCount = new AtomicInteger(0);
     private final AtomicInteger updatesInProgress = new AtomicInteger(0);
-    private final Map<HostAndPort, AtomicInteger> updateCounters;
-    private final ArrayList<Node> readyList = new ArrayList<>();
+    private final Map<HostAndPort, HashSet<HostAndPort>> reportsPerHost;
+    private final ArrayList<Node> proposal = new ArrayList<>();
     private final Object lock = new Object();
     private static final List<Node> EMPTY_LIST =
             Collections.unmodifiableList(new ArrayList<Node>());
@@ -47,11 +49,11 @@ class WatermarkBuffer {
         }
         this.H = H;
         this.L = L;
-        this.updateCounters = new HashMap<>();
+        this.reportsPerHost = new HashMap<>();
     }
 
     int getNumDelivers() {
-        return deliverCounter.get();
+        return proposalCount.get();
     }
 
     List<Node> receiveLinkUpdateMessage(final LinkUpdateMessage msg) {
@@ -59,34 +61,35 @@ class WatermarkBuffer {
 
         synchronized (lock) {
 
-            final AtomicInteger counter = updateCounters.computeIfAbsent(msg.getDst(),
-                                             (k) -> new AtomicInteger(0));
-            final int value = counter.incrementAndGet();
+            final Set<HostAndPort> reportsForHost = reportsPerHost.computeIfAbsent(msg.getDst(),
+                                             (k) -> new HashSet());
+            reportsForHost.add(msg.getSrc());
+            final int numReportsForHost = reportsForHost.size();
 
-            if (value == L) {
+            if (numReportsForHost == L) {
                 updatesInProgress.incrementAndGet();
             }
 
-            if (value == H) {
+            if (numReportsForHost == H) {
                  // This message has received enough copies that it is safe to deliver, provided
                  // there are no outstanding updates in progress.
-                readyList.add(new Node(msg.getDst()));
+                proposal.add(new Node(msg.getDst()));
                 final int updatesInProgressVal = updatesInProgress.decrementAndGet();
 
                 if (updatesInProgressVal == 0) {
                     // No outstanding updates, so deliver all messages that have crossed the H threshold of copies.
-                    this.deliverCounter.incrementAndGet();
-                    for (final Node n: readyList) {
+                    this.proposalCount.incrementAndGet();
+                    for (final Node n: proposal) {
                         // The counter below should never be null.
-                        final AtomicInteger updateCounter = updateCounters.get(n.address);
-                        if (updateCounter == null) {
+                        final Set reportsSet = reportsPerHost.get(n.address);
+                        if (reportsSet == null) {
                             throw new RuntimeException("Node to be delivered not in UpdateCounters map: "
                                                         + n.address);
                         }
-                        updateCounter.set(0);
+                        reportsSet.clear();
                     }
-                    final List<Node> ret = Collections.unmodifiableList(new ArrayList<>(readyList));
-                    readyList.clear();
+                    final List<Node> ret = Collections.unmodifiableList(new ArrayList<>(proposal));
+                    proposal.clear();
                     return ret;
                 }
             }
