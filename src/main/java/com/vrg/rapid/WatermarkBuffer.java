@@ -26,9 +26,9 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * A basic watermark buffer that delivers messages about a node if and only if:
- * - there are H messages about the node.
- * - there is no other node with more than L but less than H messages about it.
+ * A filter that outputs a view change proposal about a node only if:
+ * - there are H reports about a node.
+ * - there is no other node about which there are more than L but less than H reports.
  */
 class WatermarkBuffer {
     private static final int K_MIN = 3;
