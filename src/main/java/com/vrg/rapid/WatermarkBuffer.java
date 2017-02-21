@@ -71,13 +71,14 @@ class WatermarkBuffer {
             }
 
             if (numReportsForHost == H) {
-                 // This message has received enough copies that it is safe to deliver, provided
-                 // there are no outstanding updates in progress.
+                 // Enough reports about "msg.getDst()" have been received that it is safe to act upon,
+                 // provided there are no other nodes with L < #reports < H.
                 proposal.add(new Node(msg.getDst()));
                 final int updatesInProgressVal = updatesInProgress.decrementAndGet();
 
                 if (updatesInProgressVal == 0) {
-                    // No outstanding updates, so deliver all messages that have crossed the H threshold of copies.
+                    // No outstanding updates, so all nodes that have crossed the H threshold of reports are
+                    // now part of a single proposal.
                     this.proposalCount.incrementAndGet();
                     for (final Node n: proposal) {
                         // The counter below should never be null.
