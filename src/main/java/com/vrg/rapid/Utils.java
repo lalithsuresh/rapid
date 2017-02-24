@@ -13,31 +13,56 @@
 
 package com.vrg.rapid;
 
+import com.google.common.hash.HashCode;
+import com.google.common.hash.HashFunction;
+import com.google.common.hash.Hasher;
+import com.google.common.hash.Hashing;
 import org.apache.commons.codec.digest.DigestUtils;
 
 import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.UUID;
 
 /**
  * Utility methods
  */
 final class Utils {
+    private static final UUID[] EMPTY_UUID_ARRAY = new UUID[0];
+    private static final HashFunction hashFunction = Hashing.murmur3_32();
 
     private Utils() {
     }
 
-    static String sha1HexStringToString(final String text) {
+    static String sha1Hex(final String text) {
         return DigestUtils.sha1Hex(text);
     }
 
-    static String sha1HexLongsToString(final Collection<Long> input) {
-        final Long[] longs = input.toArray(new Long[0]);
-        Arrays.sort(longs);
-        final ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES * longs.length);
-        for (final Long l: longs) {
-            buffer.putLong(l);
+    static String sha1Hex(final Collection<UUID> input) {
+        final UUID[] uuids = input.toArray(EMPTY_UUID_ARRAY);
+        Arrays.sort(uuids);
+        final ByteBuffer buffer = ByteBuffer.allocate(Long.BYTES * 2 * uuids.length); // a UUID = 2 longs.
+        for (final UUID id: uuids) {
+            buffer.putLong(id.getMostSignificantBits());
+            buffer.putLong(id.getLeastSignificantBits());
         }
         return DigestUtils.sha1Hex(buffer.array());
+    }
+
+    static long murmurHex(final String text) {
+        final Hasher hasher = hashFunction.newHasher();
+        return hasher.putString(text, Charset.defaultCharset()).hash().asInt();
+    }
+
+    static long murmurHex(final Collection<UUID> input) {
+        final Hasher hasher = hashFunction.newHasher();
+
+        for (final UUID id: input) {
+            hasher.putLong(id.getMostSignificantBits())
+                  .putLong(id.getLeastSignificantBits());
+        }
+
+        return  hasher.hash().asInt();
     }
 }

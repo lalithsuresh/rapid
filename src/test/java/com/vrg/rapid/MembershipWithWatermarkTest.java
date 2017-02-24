@@ -17,6 +17,7 @@ import com.google.common.net.HostAndPort;
 import org.junit.Test;
 
 import java.util.List;
+import java.util.UUID;
 
 import static org.junit.Assert.assertEquals;
 
@@ -34,12 +35,12 @@ public class MembershipWithWatermarkTest {
     @Test
     public void oneRingAddition() {
         final HostAndPort addr = HostAndPort.fromParts("127.0.0.1", 123);
-        final MembershipView mview = new MembershipView(K, new Node(addr));
+        final MembershipView mview = new MembershipView(K, addr);
         for (int k = 0; k < K; k++) {
-            final List<Node> list = mview.viewRing(k);
+            final List<HostAndPort> list = mview.viewRing(k);
             assertEquals(1, list.size());
-            for (final Node n : list) {
-                assertEquals(n.address, addr);
+            for (final HostAndPort n : list) {
+                assertEquals(n, addr);
             }
         }
     }

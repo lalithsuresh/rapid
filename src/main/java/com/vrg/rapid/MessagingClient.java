@@ -41,15 +41,14 @@ class MessagingClient {
 
     Response sendLinkUpdateMessage(final HostAndPort remote, final LinkUpdateMessage msg) {
         Objects.requireNonNull(msg);
-        // TODO: need config id
-        return sendLinkUpdateMessage(remote, msg.getSrc(), msg.getDst(), msg.getStatus(), 10);
+        return sendLinkUpdateMessage(remote, msg.getSrc(), msg.getDst(), msg.getStatus(), msg.getConfigurationId());
     }
 
     Response sendLinkUpdateMessage(final HostAndPort remote,
                                    final HostAndPort src,
                                    final HostAndPort dst,
                                    final Status status,
-                                   final long configurationId) {
+                                   final String configurationId) {
         Objects.requireNonNull(src);
         Objects.requireNonNull(dst);
         Objects.requireNonNull(status);
@@ -61,7 +60,7 @@ class MessagingClient {
                                             .setLinkSrc(src.toString())
                                             .setLinkDst(dst.toString())
                                             .setLinkStatus(status)
-                                            .setConfig(configurationId).build();
+                                            .setConfigurationId(configurationId).build();
         return stub.withDeadlineAfter(1, TimeUnit.SECONDS).receiveLinkUpdateMessage(msg);
     }
 

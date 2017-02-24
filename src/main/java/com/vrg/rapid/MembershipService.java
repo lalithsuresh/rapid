@@ -29,7 +29,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
-import java.util.stream.Collectors;
 
 
 /**
@@ -38,19 +37,21 @@ import java.util.stream.Collectors;
 public class MembershipService extends MembershipServiceGrpc.MembershipServiceImplBase {
     private final MembershipView membershipView;
     private final WatermarkBuffer watermarkBuffer;
+    private final Configuration configuration;
     private final HostAndPort myAddr;
     private final IBroadcaster broadcaster;
     private final boolean logProposals;
-    private final List<List<Node>> logProposalList = new ArrayList<>();
+    private final List<List<HostAndPort>> logProposalList = new ArrayList<>();
     private Server server;
 
     MembershipService(final HostAndPort myAddr,
                       final int K, final int H, final int L) {
         this.myAddr = Objects.requireNonNull(myAddr);
-        this.membershipView = new MembershipView(K, new Node(this.myAddr));
+        this.membershipView = new MembershipView(K, this.myAddr);
         this.watermarkBuffer = new WatermarkBuffer(K, H, L);
         this.broadcaster = new UnicastToAllBroadcaster(new MessagingClient(myAddr));
         this.logProposals = false;
+        this.configuration = new Configuration();
     }
 
     MembershipService(final HostAndPort myAddr,
@@ -62,6 +63,7 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
         this.watermarkBuffer = new WatermarkBuffer(K, H, L);
         this.broadcaster = new UnicastToAllBroadcaster(new MessagingClient(myAddr));
         this.logProposals = logProposals;
+        this.configuration = new Configuration();
     }
 
     void startServer() throws IOException {
@@ -99,8 +101,8 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
     public void receiveLinkUpdateMessage(final LinkUpdateMessageWire request,
                                          final StreamObserver<Response> responseObserver) {
         final LinkUpdateMessage msg = new LinkUpdateMessage(request.getLinkSrc(), request.getLinkDst(),
-                                            request.getLinkStatus());
-        receiveLinkUpdateMessage(msg);
+                                            request.getLinkStatus(), request.getConfigurationId());
+        processLinkUpdateMessage(msg);
         final Response response = Response.newBuilder().build();
         responseObserver.onNext(response);
         responseObserver.onCompleted();
@@ -114,19 +116,24 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
      * Link update messages that do not affect an ongoing proposal
      * needs to be dropped.
      */
-    private void receiveLinkUpdateMessage(final LinkUpdateMessage msg) {
+    private void processLinkUpdateMessage(final LinkUpdateMessage msg) {
         Objects.requireNonNull(msg);
+
+        if (!configuration.head().equals(msg.getConfigurationId())) {
+            throw new RuntimeException("Configuration ID mismatch: {incoming: " +
+                    msg.getConfigurationId() + ", local:" + configuration.head());
+        }
 
         // The invariant we want to maintain is that a node can only go into the
         // membership set once and leave it once.
-        if (msg.getStatus().equals(Status.UP) && membershipView.isPresent(new Node(msg.getDst()))) {
+        if (msg.getStatus().equals(Status.UP) && membershipView.isPresent(msg.getDst())) {
             throw new RuntimeException("Received UP message for node already in set");
         }
-        if (msg.getStatus().equals(Status.DOWN) && !membershipView.isPresent(new Node(msg.getDst()))) {
+        if (msg.getStatus().equals(Status.DOWN) && !membershipView.isPresent(msg.getDst())) {
             throw new RuntimeException("Received DOWN message for node not in set");
         }
 
-        final List<Node> proposal = proposedViewChange(msg);
+        final List<HostAndPort> proposal = proposedViewChange(msg);
         if (proposal.size() != 0) {
             // Initiate proposal
             if (logProposals) {
@@ -140,22 +147,19 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
     }
 
     void broadcastLinkUpdateMessage(final LinkUpdateMessage msg) {
-        final List<HostAndPort> nodes = membershipView.viewRing(0)
-                                            .stream()
-                                            .map(e -> e.address)
-                                            .collect(Collectors.toList());
+        final List<HostAndPort> nodes = membershipView.viewRing(0);
         broadcaster.broadcast(nodes, msg);
     }
 
-    private List<Node> proposedViewChange(final LinkUpdateMessage msg) {
-        return watermarkBuffer.receiveLinkUpdateMessage(msg);
+    private List<HostAndPort> proposedViewChange(final LinkUpdateMessage msg) {
+        return watermarkBuffer.aggregateForProposal(msg);
     }
 
-    List<List<Node>> getProposalLog() {
+    List<List<HostAndPort>> getProposalLog() {
         return Collections.unmodifiableList(logProposalList);
     }
 
-    List<Node> getMembershipView() {
+    List<HostAndPort> getMembershipView() {
         return membershipView.viewRing(0);
     }
 }

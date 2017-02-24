@@ -13,6 +13,7 @@
 
 package com.vrg.rapid;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
 
 import java.util.ArrayList;
@@ -37,10 +38,10 @@ class WatermarkBuffer {
     private final AtomicInteger proposalCount = new AtomicInteger(0);
     private final AtomicInteger updatesInProgress = new AtomicInteger(0);
     private final Map<HostAndPort, HashSet<HostAndPort>> reportsPerHost;
-    private final ArrayList<Node> proposal = new ArrayList<>();
+    private final ArrayList<HostAndPort> proposal = new ArrayList<>();
     private final Object lock = new Object();
-    private static final List<Node> EMPTY_LIST =
-            Collections.unmodifiableList(new ArrayList<Node>());
+    private static final List<HostAndPort> EMPTY_LIST =
+            Collections.unmodifiableList(new ArrayList<HostAndPort>());
 
     WatermarkBuffer(final int K, final int H, final int L) {
         if (H > K || L > H || K < K_MIN) {
@@ -56,7 +57,7 @@ class WatermarkBuffer {
         return proposalCount.get();
     }
 
-    List<Node> receiveLinkUpdateMessage(final LinkUpdateMessage msg) {
+    List<HostAndPort> aggregateForProposal(final LinkUpdateMessage msg) {
         Objects.requireNonNull(msg);
 
         synchronized (lock) {
@@ -73,23 +74,22 @@ class WatermarkBuffer {
             if (numReportsForHost == H) {
                  // Enough reports about "msg.getDst()" have been received that it is safe to act upon,
                  // provided there are no other nodes with L < #reports < H.
-                proposal.add(new Node(msg.getDst()));
+                proposal.add(msg.getDst());
                 final int updatesInProgressVal = updatesInProgress.decrementAndGet();
 
                 if (updatesInProgressVal == 0) {
                     // No outstanding updates, so all nodes that have crossed the H threshold of reports are
                     // now part of a single proposal.
                     this.proposalCount.incrementAndGet();
-                    for (final Node n: proposal) {
+                    for (final HostAndPort n: proposal) {
                         // The counter below should never be null.
-                        final Set reportsSet = reportsPerHost.get(n.address);
+                        final Set reportsSet = reportsPerHost.get(n);
                         if (reportsSet == null) {
-                            throw new RuntimeException("Node to be delivered not in UpdateCounters map: "
-                                                        + n.address);
+                            throw new RuntimeException("Host for proposal not in UpdateCounters map: " + n);
                         }
                         reportsSet.clear();
                     }
-                    final List<Node> ret = Collections.unmodifiableList(new ArrayList<>(proposal));
+                    final List<HostAndPort> ret = ImmutableList.copyOf(proposal);
                     proposal.clear();
                     return ret;
                 }

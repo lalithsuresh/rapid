@@ -14,6 +14,7 @@
 package com.vrg.rapid;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.net.HostAndPort;
 
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -23,8 +24,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -35,46 +36,56 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * TODO: too many scans of the k rings during reads. Maintain a cache.
  */
 class MembershipView {
-    private final ConcurrentHashMap<Integer, ArrayList<Node>> rings;
+    private static final int INITIAL_CAPACITY = 10000;
+
+    private final ConcurrentHashMap<Integer, ArrayList<HostAndPort>> rings;
     private final int K;
-    private final HashComparator[] hashComparators;
+    private final AddressComparator[] addressComparators;
     private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
-    private final AtomicInteger nodeAlreadyInRingExceptionsThrown = new AtomicInteger(0);
-    private final AtomicInteger nodeNotInRingExceptionsThrown = new AtomicInteger(0);
+    private final Set<UUID> identifiersSeen = new HashSet<>();
+    private long currentConfigurationId;
+    private boolean shouldUpdateConfigurationId = true;
 
     MembershipView(final int K) {
         assert K > 0;
         this.K = K;
         this.rings = new ConcurrentHashMap<>(K);
-        this.hashComparators = new HashComparator[K];
+        this.addressComparators = new AddressComparator[K];
         for (int k = 0; k < K; k++) {
             this.rings.put(k, new ArrayList<>());
-            hashComparators[k] = new HashComparator(Integer.toString(k));
+            addressComparators[k] = new AddressComparator(Integer.toString(k));
         }
     }
 
-    MembershipView(final int K, final Node node) {
+    MembershipView(final int K, final HostAndPort node) {
         assert K > 0;
         Objects.requireNonNull(node);
         this.K = K;
         this.rings = new ConcurrentHashMap<>(K);
-        this.hashComparators = new HashComparator[K];
+        this.addressComparators = new AddressComparator[K];
         for (int k = 0; k < K; k++) {
-            final ArrayList<Node> list = new ArrayList<>();
+            final ArrayList<HostAndPort> list = new ArrayList<>();
             list.add(node);
             this.rings.put(k, list);
-            hashComparators[k] = new HashComparator(Integer.toString(k));
+            addressComparators[k] = new AddressComparator(Integer.toString(k));
         }
     }
 
     @VisibleForTesting
-    void ringAdd(final Node node) throws NodeAlreadyInRingException {
+    void ringAdd(final HostAndPort node, final UUID uuid) throws NodeAlreadyInRingException {
         Objects.requireNonNull(node);
+        Objects.requireNonNull(uuid);
+
+        if (identifiersSeen.contains(uuid)) {
+            throw new RuntimeException("Host add attempt with identifier already seen:" +
+                    " {host: " + node + ", identifier: " + uuid + "}:");
+        }
+
         try {
             rwLock.writeLock().lock();
             for (int k = 0; k < K; k++) {
-                final ArrayList<Node> list = rings.get(k);
-                final int index = Collections.binarySearch(list, node, hashComparators[k]);
+                final ArrayList<HostAndPort> list = rings.get(k);
+                final int index = Collections.binarySearch(list, node, addressComparators[k]);
 
                 if (index >= 0) {
                     throw new NodeAlreadyInRingException(node);
@@ -84,19 +95,21 @@ class MembershipView {
                 final int newNodeIndex = (-1 * index - 1);
                 list.add(newNodeIndex, node);
             }
+            identifiersSeen.add(uuid);
+            shouldUpdateConfigurationId = true;
         } finally {
             rwLock.writeLock().unlock();
         }
     }
 
     @VisibleForTesting
-    void ringDelete(final Node node) throws NodeNotInRingException {
+    void ringDelete(final HostAndPort node) throws NodeNotInRingException {
         Objects.requireNonNull(node);
         try {
             rwLock.writeLock().lock();
             for (int k = 0; k < K; k++) {
-                final ArrayList<Node> list = rings.get(k);
-                final int index = Collections.binarySearch(list, node, hashComparators[k]);
+                final ArrayList<HostAndPort> list = rings.get(k);
+                final int index = Collections.binarySearch(list, node, addressComparators[k]);
 
                 if (index < 0) {
                     throw new NodeNotInRingException(node);
@@ -105,6 +118,7 @@ class MembershipView {
                 // Indexes being changed are index - 1, index, index + 1
                 list.remove(index);
             }
+            shouldUpdateConfigurationId = true;
         } finally {
             rwLock.writeLock().unlock();
         }
@@ -116,19 +130,19 @@ class MembershipView {
      * @return the set of monitors for {@code node}
      * @throws NodeNotInRingException thrown if {@code node} is not in the ring
      */
-    Set<Node> monitorsOf(final Node node) throws NodeNotInRingException {
+    Set<HostAndPort> monitorsOf(final HostAndPort node) throws NodeNotInRingException {
         Objects.requireNonNull(node);
         try {
             rwLock.readLock().lock();
-            final Set<Node> monitors = new HashSet<>();
+            final Set<HostAndPort> monitors = new HashSet<>();
             for (int k = 0; k < K; k++) {
-                final ArrayList<Node> list = rings.get(k);
+                final ArrayList<HostAndPort> list = rings.get(k);
 
                 if (list.size() <= 1) {
                     return monitors;
                 }
 
-                final int index = Collections.binarySearch(list, node, hashComparators[k]);
+                final int index = Collections.binarySearch(list, node, addressComparators[k]);
 
                 if (index < 0) {
                     throw new NodeNotInRingException(node);
@@ -148,19 +162,19 @@ class MembershipView {
      * @return the set of nodes monitored by {@code node}
      * @throws NodeNotInRingException thrown if {@code node} is not in the ring
      */
-    Set<Node> monitoreesOf(final Node node) throws NodeNotInRingException {
+    Set<HostAndPort> monitoreesOf(final HostAndPort node) throws NodeNotInRingException {
         Objects.requireNonNull(node);
         try {
             rwLock.readLock().lock();
-            final Set<Node> monitorees = new HashSet<>();
+            final Set<HostAndPort> monitorees = new HashSet<>();
             for (int k = 0; k < K; k++) {
-                final ArrayList<Node> list = rings.get(k);
+                final ArrayList<HostAndPort> list = rings.get(k);
 
                 if (list.size() <= 1) {
                     return monitorees;
                 }
 
-                final int index = Collections.binarySearch(list, node, hashComparators[k]);
+                final int index = Collections.binarySearch(list, node, addressComparators[k]);
 
                 if (index < 0) {
                     throw new NodeNotInRingException(node);
@@ -174,38 +188,27 @@ class MembershipView {
         }
     }
 
-    /**
-     * Deliver a LinkUpdateMessage
-     * @param msg message to deliver
-     */
-    void deliver(final LinkUpdateMessage msg) {
-        Objects.requireNonNull(msg);
-        try {
-            switch (msg.getStatus()) {
-                case UP:
-                    ringAdd(new Node(msg.getSrc()));
-                    break;
-                case DOWN:
-                    ringDelete(new Node(msg.getSrc()));
-                    break;
-                default:
-                    // Invalid message
-                    assert false;
-            }
-        } catch (final NodeAlreadyInRingException e) {
-            nodeAlreadyInRingExceptionsThrown.incrementAndGet();
-        } catch (final NodeNotInRingException e) {
-            nodeNotInRingExceptionsThrown.incrementAndGet();
-        }
-    }
-
-    boolean isPresent(final Node node) {
-        final int index = Collections.binarySearch(rings.get(0), node, hashComparators[0]);
+    boolean isPresent(final HostAndPort address) {
+        final int index = Collections.binarySearch(rings.get(0), address, addressComparators[0]);
         return index >= 0;
     }
 
+    long getCurrentConfigurationId() {
+        try {
+            rwLock.readLock().lock();
+            if (shouldUpdateConfigurationId) {
+                updateCurrentConfigurationId();
+                shouldUpdateConfigurationId = false;
+            }
+            return currentConfigurationId;
+        }
+        finally {
+            rwLock.readLock().unlock();
+        }
+    }
+
     @VisibleForTesting
-    List<Node> viewRing(final int k) {
+    List<HostAndPort> viewRing(final int k) {
         try {
             rwLock.readLock().lock();
             assert k >= 0;
@@ -215,29 +218,37 @@ class MembershipView {
         }
     }
 
-    private static final class HashComparator implements Comparator<Node>, Serializable {
+    private void updateCurrentConfigurationId() {
+        long result = Utils.murmurHex(identifiersSeen);
+        for (final HostAndPort address: rings.get(0)) {
+            result = result * 31 + Utils.murmurHex(address.toString());
+        }
+        currentConfigurationId = result;
+    }
+
+    private static final class AddressComparator implements Comparator<HostAndPort>, Serializable {
         private static final long serialVersionUID = -4891729390L;
         private final String seed;
 
-        HashComparator(final String seed) {
+        AddressComparator(final String seed) {
             this.seed = seed;
         }
 
-        public final int compare(final Node c1, final Node c2) {
-            return Utils.sha1HexStringToString(c1.address.toString() + seed)
-                    .compareTo(Utils.sha1HexStringToString(c2.address.toString() + seed));
+        public final int compare(final HostAndPort c1, final HostAndPort c2) {
+            return Utils.sha1Hex(c1.toString() + seed)
+                    .compareTo(Utils.sha1Hex(c2.toString() + seed));
         }
     }
 
     static class NodeAlreadyInRingException extends Exception {
-        NodeAlreadyInRingException(final Node node) {
-            super(node.address.toString());
+        NodeAlreadyInRingException(final HostAndPort node) {
+            super(node.toString());
         }
     }
 
     static class NodeNotInRingException extends Exception {
-        NodeNotInRingException(final Node node) {
-            super(node.address.toString());
+        NodeNotInRingException(final HostAndPort node) {
+            super(node.toString());
         }
     }
 }

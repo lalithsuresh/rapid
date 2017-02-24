@@ -24,6 +24,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.UUID;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -37,8 +38,10 @@ public class MessagingTest {
     private static final int K = 10;
     private static final int H = 8;
     private static final int L = 3;
+
     private final int serverPortBase = 1234;
     private static final String localhostIp = "127.0.0.1";
+    private static final String configurationId = new Configuration().head();
 
     @Test
     public void oneWayPing() throws InterruptedException, IOException {
@@ -47,10 +50,9 @@ public class MessagingTest {
         final MembershipService service = createAndStartMembershipService(serverAddr);
 
         final HostAndPort clientAddr = HostAndPort.fromParts(localhostIp, serverPort);
-        final long configId = 10;
         final MessagingClient client = new MessagingClient(clientAddr);
         final Response result = client.sendLinkUpdateMessage(serverAddr, clientAddr, serverAddr,
-                                                             Status.DOWN, configId);
+                                                             Status.DOWN, configurationId);
         assertNotNull(result);
         service.stopServer();
         service.blockUntilShutdown();
@@ -64,12 +66,11 @@ public class MessagingTest {
                 Collections.singletonList(new MessageDropInterceptor()));
 
         final HostAndPort clientAddr = HostAndPort.fromParts(localhostIp, serverPort);
-        final long configId = 10;
         final MessagingClient client = new MessagingClient(clientAddr);
         boolean exceptionCaught = false;
         try {
             client.sendLinkUpdateMessage(serverAddr, clientAddr, serverAddr,
-                    Status.DOWN, configId);
+                    Status.DOWN, configurationId);
         } catch (final StatusRuntimeException e) {
             exceptionCaught = true;
         }
@@ -86,10 +87,11 @@ public class MessagingTest {
         final HostAndPort dst = HostAndPort.fromParts(localhostIp, 1235);
         final Status status = Status.DOWN;
 
-        final List<Node> currentView = services.get(0).getMembershipView();
+        final List<HostAndPort> currentView = services.get(0).getMembershipView();
 
         for (int i = 0; i < K; i++) {
-            services.get(i).broadcastLinkUpdateMessage(new LinkUpdateMessage(currentView.get(i).address, dst, status));
+            services.get(i).broadcastLinkUpdateMessage(new LinkUpdateMessage(currentView.get(i),
+                                                                             dst, status, configurationId));
         }
 
         for (int i = 0; i < N; i++) {
@@ -100,7 +102,7 @@ public class MessagingTest {
 
     private MembershipService createAndStartMembershipService(final HostAndPort serverAddr) throws IOException {
         final MembershipService service = new MembershipService(serverAddr, K, H, L,
-                new MembershipView(K, new Node(serverAddr)), true);
+                new MembershipView(K, serverAddr), true);
         service.startServer();
         return service;
     }
@@ -109,7 +111,7 @@ public class MessagingTest {
                                                               final List<ServerInterceptor> interceptors)
                                                                 throws IOException {
         final MembershipService service = new MembershipService(serverAddr, K, H, L,
-                new MembershipView(K, new Node(serverAddr)), true);
+                new MembershipView(K, serverAddr), true);
         service.startServer(interceptors);
         return service;
     }
@@ -148,7 +150,7 @@ public class MessagingTest {
         final MembershipView membershipView = new MembershipView(K);
         for (int i = serverPortBase; i < serverPortBase + N; i++) {
             try {
-                membershipView.ringAdd(new Node(HostAndPort.fromParts(localhostIp, i)));
+                membershipView.ringAdd(HostAndPort.fromParts(localhostIp, i), UUID.randomUUID());
             } catch (final Exception e){
                 fail();
             }

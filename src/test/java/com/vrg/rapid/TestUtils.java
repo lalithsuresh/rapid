@@ -27,13 +27,15 @@ final class TestUtils {
     static LinkUpdateMessage[] getMessagesArray(final int K) {
         final String ip1 = "192.168.1.1";
         final int startingPort = 1;
+        final String configurationId = "-1";
         final HostAndPort src1 = HostAndPort.fromParts(ip1, startingPort);
         final LinkUpdateMessage[] messages = new LinkUpdateMessage[2*K];
         int arrIndex = 0;
         for (int i = 0; i < K; i++) {
             messages[arrIndex] = new LinkUpdateMessage(src1,
                     HostAndPort.fromParts(ip1, startingPort + i + 1),
-                    Status.UP);
+                    Status.UP,
+                    configurationId);
             arrIndex++;
         }
 
@@ -42,7 +44,8 @@ final class TestUtils {
         for (int i = 0; i < K; i++) {
             messages[arrIndex] = new LinkUpdateMessage(src2,
                     HostAndPort.fromParts(ip2, startingPort + K + i + 2),
-                    Status.UP);
+                    Status.UP,
+                    configurationId);
             arrIndex++;
         }
         return messages;

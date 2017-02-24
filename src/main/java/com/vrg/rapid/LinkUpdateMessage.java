@@ -27,21 +27,26 @@ final class LinkUpdateMessage {
     private final HostAndPort src;
     private final HostAndPort dst;
     private final Status status;
+    private final String configurationId;
 
     LinkUpdateMessage(final HostAndPort src,
                       final HostAndPort dst,
-                      final Status status) {
+                      final Status status,
+                      final String configurationId) {
         this.src = Objects.requireNonNull(src);
         this.dst = Objects.requireNonNull(dst);
         this.status = Objects.requireNonNull(status);
+        this.configurationId = configurationId;
     }
 
     LinkUpdateMessage(final String src,
                       final String dst,
-                      final Status status) {
+                      final Status status,
+                      final String configurationId) {
         this.src = HostAndPort.fromString(Objects.requireNonNull(src));
         this.dst = HostAndPort.fromString(Objects.requireNonNull(dst));
         this.status = Objects.requireNonNull(status);
+        this.configurationId = configurationId;
     }
 
     HostAndPort getSrc() {
@@ -54,5 +59,9 @@ final class LinkUpdateMessage {
 
     Status getStatus() {
         return status;
+    }
+
+    String getConfigurationId() {
+        return configurationId;
     }
 }

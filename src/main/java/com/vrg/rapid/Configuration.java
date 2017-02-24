@@ -18,6 +18,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeSet;
+import java.util.UUID;
 
 
 /**
@@ -31,32 +33,26 @@ import java.util.Set;
  */
 public class Configuration {
     private final ArrayList<String> configHistory;
-    private final ArrayList<List<Long>> opHistory;
-    private final Set<Long> identifiersSeen = new HashSet<>(); // TODO: when to gc?
+    private final Set<UUID> identifiersSeen = new TreeSet<>(); // TODO: when to gc?
     private static final String ZERO = "zero"; // All histories start from zero.
     private static final String NONE = ""; // Indicates no common ancestor
 
-    public Configuration() {
+    Configuration() {
         this.configHistory = new ArrayList<>();
-        this.opHistory = new ArrayList<>();
-        this.configHistory.add(Utils.sha1HexStringToString(ZERO));
+        this.configHistory.add(Utils.sha1Hex(ZERO));
     }
 
-    public Configuration(final ArrayList<String> configHistory,
-                         final ArrayList<List<Long>> opHistory) {
+    Configuration(final ArrayList<String> configHistory,
+                         final ArrayList<List<UUID>> opHistory) {
         this.configHistory = Objects.requireNonNull(configHistory);
-        this.opHistory = Objects.requireNonNull(opHistory);
-        this.configHistory.add(Utils.sha1HexStringToString(ZERO));
+        this.configHistory.add(Utils.sha1Hex(ZERO));
     }
 
-    public static ComparisonResult compare(final Configuration c1, final Configuration c2) {
+    static ComparisonResult compare(final Configuration c1, final Configuration c2) {
         return compare(c1, c2.configHistory);
     }
 
-    public static ComparisonResult compare(final Configuration c1, final List<String> c2) {
-        assert c1 != null;
-        assert c2 != null;
-
+    static ComparisonResult compare(final Configuration c1, final List<String> c2) {
         // c1 either subsumes c2 or vice versa
         final int o1size = c1.configHistory.size();
         final int o2size = c2.size();
@@ -90,17 +86,11 @@ public class Configuration {
         return ComparisonResult.MERGE;
     }
 
-    public void updateConfiguration(final List<Long> operations) {
+    void updateConfiguration(final List<UUID> operations) {
         assert operations.size() > 0;
-        // operation can either be add id, or remove id
-        opHistory.add(operations);
         identifiersSeen.addAll(operations);
-        configHistory.add(Utils.sha1HexStringToString(Utils.sha1HexLongsToString(identifiersSeen)));
+        configHistory.add(Utils.sha1Hex(identifiersSeen));
     }
-
-//    private String findDivergingCommit(final Configuration c2) {
-//        return findDivergingCommit(c2.configHistory);
-//    }
 
     private String findDivergingCommit(final List<String> remoteConfigHistory) {
         final Set<String> localConfig = new HashSet<>(configHistory);
@@ -115,7 +105,7 @@ public class Configuration {
         return NONE;
     }
 
-    private String head() {
+    String head() {
         final int size = configHistory.size();
         assert size > 0;
         return configHistory.get(size - 1);

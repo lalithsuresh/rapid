@@ -18,6 +18,7 @@ import org.junit.Test;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.UUID;
 
 import static org.junit.Assert.assertEquals;
 
@@ -33,12 +34,12 @@ public class ConfigurationTests {
         final Configuration conf1 = new Configuration();
         final Configuration conf2 = new Configuration();
 
-        final long[] longs = new Random().longs().distinct().limit(6).toArray();
-        final List<Long> conf1List = new ArrayList<>();
-        final List<Long> conf2List = new ArrayList<>();
-        for (final long l : longs) {
-            conf1List.add(l);
-            conf2List.add(l);
+        final UUID[] ids = generateUUIDArray(6);
+        final List<UUID> conf1List = new ArrayList<>();
+        final List<UUID> conf2List = new ArrayList<>();
+        for (final UUID id : ids) {
+            conf1List.add(id);
+            conf2List.add(id);
         }
         conf1.updateConfiguration(conf1List);
         conf2.updateConfiguration(conf2List);
@@ -52,10 +53,10 @@ public class ConfigurationTests {
         final Configuration conf1 = new Configuration();
         final Configuration conf2 = new Configuration();
 
-        final long[] longs = new Random().longs().distinct().limit(6).toArray();
-        final List<Long> conf1List = new ArrayList<>();
-        for (final long l : longs) {
-            conf1List.add(l);
+        final UUID[] ids = generateUUIDArray(6);
+        final List<UUID> conf1List = new ArrayList<>();
+        for (final UUID id : ids) {
+            conf1List.add(id);
         }
 
         conf1.updateConfiguration(conf1List);
@@ -80,18 +81,18 @@ public class ConfigurationTests {
         final Configuration conf1 = new Configuration();
         final Configuration conf2 = new Configuration();
 
-        final long[] commits1 = new Random().longs().distinct().limit(6).toArray();
-        final List<Long> commitList1 = new ArrayList<>();
-        final List<Long> commitList2 = new ArrayList<>();
-        for (final long commit : commits1) {
+        final UUID[] commits1 = generateUUIDArray(6);
+        final List<UUID> commitList1 = new ArrayList<>();
+        final List<UUID> commitList2 = new ArrayList<>();
+        for (final UUID commit : commits1) {
             commitList1.add(commit);
             commitList2.add(commit);
         }
 
         // Conf1 makes progress from here
-        final long[] commits2 = new Random().longs().distinct().limit(6).toArray();
-        for (final long commit : commits2) {
-            final List<Long> tmp = new ArrayList<>();
+        final UUID[] commits2 = generateUUIDArray(6);
+        for (final UUID commit : commits2) {
+            final List<UUID> tmp = new ArrayList<>();
             tmp.add(commit);
             conf1.updateConfiguration(tmp); // conf1 will have increments of single commits
         }
@@ -107,10 +108,10 @@ public class ConfigurationTests {
         final Configuration conf1 = new Configuration();
         final Configuration conf2 = new Configuration();
 
-        final long[] commits1 = new Random().longs().distinct().limit(6).toArray();
-        final List<Long> commitList1 = new ArrayList<>();
-        final List<Long> commitList2 = new ArrayList<>();
-        for (final long commit : commits1) {
+        final UUID[] commits1 = generateUUIDArray(6);
+        final List<UUID> commitList1 = new ArrayList<>();
+        final List<UUID> commitList2 = new ArrayList<>();
+        for (final UUID commit : commits1) {
             commitList1.add(commit);
             commitList2.add(commit);
         }
@@ -120,9 +121,9 @@ public class ConfigurationTests {
         assertEquals(Configuration.ComparisonResult.EQUAL, Configuration.compare(conf2, conf1));
 
         // Conf1 makes progress from here
-        final long[] commits2 = new Random().longs().distinct().limit(6).toArray();
-        for (final long commit : commits2) {
-            final List<Long> tmp = new ArrayList<>();
+        final UUID[] commits2 = generateUUIDArray(6);
+        for (final UUID commit : commits2) {
+            final List<UUID> tmp = new ArrayList<>();
             tmp.add(commit);
             conf1.updateConfiguration(tmp); // conf1 will have increments of single commits
         }
@@ -137,10 +138,10 @@ public class ConfigurationTests {
         final Configuration conf1 = new Configuration();
         final Configuration conf2 = new Configuration();
 
-        final long[] commits1 = new Random().longs().distinct().limit(6).toArray();
-        final List<Long> commitList1 = new ArrayList<>();
-        final List<Long> commitList2 = new ArrayList<>();
-        for (final long commit : commits1) {
+        final UUID[] commits1 = generateUUIDArray(6);
+        final List<UUID> commitList1 = new ArrayList<>();
+        final List<UUID> commitList2 = new ArrayList<>();
+        for (final UUID commit : commits1) {
             commitList1.add(commit);
             commitList2.add(commit);
         }
@@ -150,9 +151,9 @@ public class ConfigurationTests {
         assertEquals(Configuration.ComparisonResult.EQUAL, Configuration.compare(conf2, conf1));
 
         // Conf1 makes progress from here
-        final long[] commits2 = new Random().longs().distinct().limit(6).toArray();
-        for (final long commit : commits2) {
-            final List<Long> singleList = new ArrayList<>();
+        final UUID[] commits2 = generateUUIDArray(6);
+        for (final UUID commit : commits2) {
+            final List<UUID> singleList = new ArrayList<>();
             singleList.add(commit);
             conf1.updateConfiguration(singleList); // conf1 will have increments of single commits
         }
@@ -177,10 +178,10 @@ public class ConfigurationTests {
         final Configuration conf1 = new Configuration();
         final Configuration conf2 = new Configuration();
 
-        final long[] commits1 = new Random().longs().distinct().limit(6).toArray();
-        final List<Long> commitList1 = new ArrayList<>();
-        final List<Long> commitList2 = new ArrayList<>();
-        for (final long commit : commits1) {
+        final UUID[] commits1 = generateUUIDArray(6);
+        final List<UUID> commitList1 = new ArrayList<>();
+        final List<UUID> commitList2 = new ArrayList<>();
+        for (final UUID commit : commits1) {
             commitList1.add(commit);
             commitList2.add(commit);
         }
@@ -193,11 +194,11 @@ public class ConfigurationTests {
 
         // Diverge from here. conf1 makes 6 individual view changes whereas
         // conf2 applies one view change with 6 operations.
-        final long[] commits2 = new Random().longs().distinct().limit(6).toArray();
-        for (final long commit : commits2) {
+        final UUID[] commits2 = generateUUIDArray(6);
+        for (final UUID commit : commits2) {
             commitList2.add(commit);
 
-            final List<Long> singleList = new ArrayList<>();
+            final List<UUID> singleList = new ArrayList<>();
             singleList.add(commit);
             conf1.updateConfiguration(singleList); // conf1 will have increments of single commits
         }
@@ -205,5 +206,13 @@ public class ConfigurationTests {
 
         assertEquals(Configuration.ComparisonResult.EQUAL, Configuration.compare(conf1, conf2));
         assertEquals(Configuration.ComparisonResult.EQUAL, Configuration.compare(conf2, conf1));
+    }
+
+    private static UUID[] generateUUIDArray(final int length) {
+        final UUID[] array = new UUID[length];
+        for (int i = 0; i < length; i++) {
+            array[i] = UUID.randomUUID();
+        }
+        return array;
     }
 }
