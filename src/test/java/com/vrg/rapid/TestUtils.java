@@ -27,7 +27,7 @@ final class TestUtils {
     static LinkUpdateMessage[] getMessagesArray(final int K) {
         final String ip1 = "192.168.1.1";
         final int startingPort = 1;
-        final String configurationId = "-1";
+        final long configurationId = -1;
         final HostAndPort src1 = HostAndPort.fromParts(ip1, startingPort);
         final LinkUpdateMessage[] messages = new LinkUpdateMessage[2*K];
         int arrIndex = 0;

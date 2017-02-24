@@ -28,7 +28,7 @@ public class WatermarkBufferTest {
     private static final int K = 10;
     private static final int H = 8;
     private static final int L = 3;
-    private static final String configurationId = "-1";  // Should not affect the following tests
+    private static final long configurationId = -1;  // Should not affect the following tests
 
     /**
      * A series of updates.

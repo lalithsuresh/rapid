@@ -41,7 +41,7 @@ public class MessagingTest {
 
     private final int serverPortBase = 1234;
     private static final String localhostIp = "127.0.0.1";
-    private static final String configurationId = new Configuration().head();
+    private static final long configurationId = -1;
 
     @Test
     public void oneWayPing() throws InterruptedException, IOException {

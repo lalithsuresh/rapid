@@ -48,7 +48,7 @@ class MessagingClient {
                                    final HostAndPort src,
                                    final HostAndPort dst,
                                    final Status status,
-                                   final String configurationId) {
+                                   final long configurationId) {
         Objects.requireNonNull(src);
         Objects.requireNonNull(dst);
         Objects.requireNonNull(status);

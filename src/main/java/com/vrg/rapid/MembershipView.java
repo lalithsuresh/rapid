@@ -14,16 +14,17 @@
 package com.vrg.rapid;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
 
 import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.NavigableSet;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReadWriteLock;
@@ -36,14 +37,12 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * TODO: too many scans of the k rings during reads. Maintain a cache.
  */
 class MembershipView {
-    private static final int INITIAL_CAPACITY = 10000;
-
-    private final ConcurrentHashMap<Integer, ArrayList<HostAndPort>> rings;
+    private final ConcurrentHashMap<Integer, NavigableSet<HostAndPort>> rings;
     private final int K;
     private final AddressComparator[] addressComparators;
     private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
     private final Set<UUID> identifiersSeen = new HashSet<>();
-    private long currentConfigurationId;
+    private long currentConfigurationId = -1;
     private boolean shouldUpdateConfigurationId = true;
 
     MembershipView(final int K) {
@@ -52,8 +51,8 @@ class MembershipView {
         this.rings = new ConcurrentHashMap<>(K);
         this.addressComparators = new AddressComparator[K];
         for (int k = 0; k < K; k++) {
-            this.rings.put(k, new ArrayList<>());
-            addressComparators[k] = new AddressComparator(Integer.toString(k));
+            addressComparators[k] = new AddressComparator(k);
+            this.rings.put(k, new TreeSet<>(addressComparators[k]));
         }
     }
 
@@ -64,10 +63,10 @@ class MembershipView {
         this.rings = new ConcurrentHashMap<>(K);
         this.addressComparators = new AddressComparator[K];
         for (int k = 0; k < K; k++) {
-            final ArrayList<HostAndPort> list = new ArrayList<>();
+            addressComparators[k] = new AddressComparator(k);
+            final NavigableSet<HostAndPort> list = new TreeSet<>(addressComparators[k]);
             list.add(node);
             this.rings.put(k, list);
-            addressComparators[k] = new AddressComparator(Integer.toString(k));
         }
     }
 
@@ -83,18 +82,15 @@ class MembershipView {
 
         try {
             rwLock.writeLock().lock();
-            for (int k = 0; k < K; k++) {
-                final ArrayList<HostAndPort> list = rings.get(k);
-                final int index = Collections.binarySearch(list, node, addressComparators[k]);
 
-                if (index >= 0) {
-                    throw new NodeAlreadyInRingException(node);
-                }
-
-                // Indexes being changed are (-1 * index - 1) - 1, (-1 * index - 1), (-1 * index - 1) + 1
-                final int newNodeIndex = (-1 * index - 1);
-                list.add(newNodeIndex, node);
+            if (rings.get(0).contains(node)) {
+                throw new NodeAlreadyInRingException(node);
             }
+
+            for (int k = 0; k < K; k++) {
+                rings.get(k).add(node);
+            }
+
             identifiersSeen.add(uuid);
             shouldUpdateConfigurationId = true;
         } finally {
@@ -107,17 +103,15 @@ class MembershipView {
         Objects.requireNonNull(node);
         try {
             rwLock.writeLock().lock();
-            for (int k = 0; k < K; k++) {
-                final ArrayList<HostAndPort> list = rings.get(k);
-                final int index = Collections.binarySearch(list, node, addressComparators[k]);
 
-                if (index < 0) {
-                    throw new NodeNotInRingException(node);
-                }
-
-                // Indexes being changed are index - 1, index, index + 1
-                list.remove(index);
+            if (!rings.get(0).contains(node)) {
+                throw new NodeNotInRingException(node);
             }
+
+            for (int k = 0; k < K; k++) {
+                rings.get(k).remove(node);
+            }
+
             shouldUpdateConfigurationId = true;
         } finally {
             rwLock.writeLock().unlock();
@@ -134,21 +128,25 @@ class MembershipView {
         Objects.requireNonNull(node);
         try {
             rwLock.readLock().lock();
+
+            if (!rings.get(0).contains(node)) {
+                throw new NodeNotInRingException(node);
+            }
+
             final Set<HostAndPort> monitors = new HashSet<>();
+            if (rings.get(0).size() <= 1) {
+                return monitors;
+            }
+
             for (int k = 0; k < K; k++) {
-                final ArrayList<HostAndPort> list = rings.get(k);
-
-                if (list.size() <= 1) {
-                    return monitors;
+                final NavigableSet<HostAndPort> list = rings.get(k);
+                final HostAndPort successor = list.higher(node);
+                if (successor == null) {
+                    monitors.add(list.first());
                 }
-
-                final int index = Collections.binarySearch(list, node, addressComparators[k]);
-
-                if (index < 0) {
-                    throw new NodeNotInRingException(node);
+                else {
+                    monitors.add(successor);
                 }
-
-                monitors.add(list.get(Math.floorMod(index - 1, list.size()))); // Handles wrap around
             }
             return monitors;
         } finally {
@@ -166,21 +164,24 @@ class MembershipView {
         Objects.requireNonNull(node);
         try {
             rwLock.readLock().lock();
+            if (!rings.get(0).contains(node)) {
+                throw new NodeNotInRingException(node);
+            }
+
             final Set<HostAndPort> monitorees = new HashSet<>();
+            if (rings.get(0).size() <= 1) {
+                return monitorees;
+            }
+
             for (int k = 0; k < K; k++) {
-                final ArrayList<HostAndPort> list = rings.get(k);
-
-                if (list.size() <= 1) {
-                    return monitorees;
+                final NavigableSet<HostAndPort> list = rings.get(k);
+                final HostAndPort predecessor = list.lower(node);
+                if (predecessor == null) {
+                    monitorees.add(list.last());
                 }
-
-                final int index = Collections.binarySearch(list, node, addressComparators[k]);
-
-                if (index < 0) {
-                    throw new NodeNotInRingException(node);
+                else {
+                    monitorees.add(predecessor);
                 }
-
-                monitorees.add(list.get((index + 1) % list.size())); // Handles wrap around
             }
             return monitorees;
         } finally {
@@ -189,8 +190,7 @@ class MembershipView {
     }
 
     boolean isPresent(final HostAndPort address) {
-        final int index = Collections.binarySearch(rings.get(0), address, addressComparators[0]);
-        return index >= 0;
+        return rings.get(0).contains(address);
     }
 
     long getCurrentConfigurationId() {
@@ -212,31 +212,29 @@ class MembershipView {
         try {
             rwLock.readLock().lock();
             assert k >= 0;
-            return Collections.unmodifiableList(rings.get(k));
+            return ImmutableList.copyOf(rings.get(k));
         } finally {
             rwLock.readLock().unlock();
         }
     }
 
+    /**
+     * XXX: May not be stable across processes. Verify.
+     */
     private void updateCurrentConfigurationId() {
-        long result = Utils.murmurHex(identifiersSeen);
-        for (final HostAndPort address: rings.get(0)) {
-            result = result * 31 + Utils.murmurHex(address.toString());
-        }
-        currentConfigurationId = result;
+        currentConfigurationId = identifiersSeen.hashCode() * 31 + rings.get(0).hashCode();
     }
 
     private static final class AddressComparator implements Comparator<HostAndPort>, Serializable {
         private static final long serialVersionUID = -4891729390L;
-        private final String seed;
+        private final long seed;
 
-        AddressComparator(final String seed) {
+        AddressComparator(final long seed) {
             this.seed = seed;
         }
 
         public final int compare(final HostAndPort c1, final HostAndPort c2) {
-            return Utils.sha1Hex(c1.toString() + seed)
-                    .compareTo(Utils.sha1Hex(c2.toString() + seed));
+            return Long.compare(Utils.murmurHex(c1, seed), Utils.murmurHex(c2, seed));
         }
     }
 

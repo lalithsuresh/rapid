@@ -13,10 +13,10 @@
 
 package com.vrg.rapid;
 
-import com.google.common.hash.HashCode;
 import com.google.common.hash.HashFunction;
 import com.google.common.hash.Hasher;
 import com.google.common.hash.Hashing;
+import com.google.common.net.HostAndPort;
 import org.apache.commons.codec.digest.DigestUtils;
 
 import java.nio.ByteBuffer;
@@ -30,7 +30,7 @@ import java.util.UUID;
  */
 final class Utils {
     private static final UUID[] EMPTY_UUID_ARRAY = new UUID[0];
-    private static final HashFunction hashFunction = Hashing.murmur3_32();
+    private static final HashFunction HASH_FUNCTION = Hashing.murmur3_32();
 
     private Utils() {
     }
@@ -50,13 +50,16 @@ final class Utils {
         return DigestUtils.sha1Hex(buffer.array());
     }
 
-    static long murmurHex(final String text) {
-        final Hasher hasher = hashFunction.newHasher();
-        return hasher.putString(text, Charset.defaultCharset()).hash().asInt();
+    static long murmurHex(final HostAndPort address, final long seed) {
+        final Hasher hasher = HASH_FUNCTION.newHasher();
+        return hasher.putString(address.getHostText(), Charset.defaultCharset())
+                     .putInt(address.getPort())
+                     .putLong(seed)
+                     .hash().asInt();
     }
 
     static long murmurHex(final Collection<UUID> input) {
-        final Hasher hasher = hashFunction.newHasher();
+        final Hasher hasher = HASH_FUNCTION.newHasher();
 
         for (final UUID id: input) {
             hasher.putLong(id.getMostSignificantBits())

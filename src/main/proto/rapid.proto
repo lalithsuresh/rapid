@@ -16,7 +16,7 @@ message LinkUpdateMessageWire
     string linkSrc = 2;
     string linkDst = 3;
     Status linkStatus = 4;
-    string configurationId = 5;
+    int64 configurationId = 5;
 }
 
 enum Status {

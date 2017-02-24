@@ -37,7 +37,6 @@ import java.util.Objects;
 public class MembershipService extends MembershipServiceGrpc.MembershipServiceImplBase {
     private final MembershipView membershipView;
     private final WatermarkBuffer watermarkBuffer;
-    private final Configuration configuration;
     private final HostAndPort myAddr;
     private final IBroadcaster broadcaster;
     private final boolean logProposals;
@@ -51,7 +50,6 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
         this.watermarkBuffer = new WatermarkBuffer(K, H, L);
         this.broadcaster = new UnicastToAllBroadcaster(new MessagingClient(myAddr));
         this.logProposals = false;
-        this.configuration = new Configuration();
     }
 
     MembershipService(final HostAndPort myAddr,
@@ -63,7 +61,6 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
         this.watermarkBuffer = new WatermarkBuffer(K, H, L);
         this.broadcaster = new UnicastToAllBroadcaster(new MessagingClient(myAddr));
         this.logProposals = logProposals;
-        this.configuration = new Configuration();
     }
 
     void startServer() throws IOException {
@@ -119,9 +116,10 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
     private void processLinkUpdateMessage(final LinkUpdateMessage msg) {
         Objects.requireNonNull(msg);
 
-        if (!configuration.head().equals(msg.getConfigurationId())) {
+        final long currentConfigurationId = membershipView.getCurrentConfigurationId();
+        if (currentConfigurationId != msg.getConfigurationId()) {
             throw new RuntimeException("Configuration ID mismatch: {incoming: " +
-                    msg.getConfigurationId() + ", local:" + configuration.head());
+                    msg.getConfigurationId() + ", local:" + currentConfigurationId + "}");
         }
 
         // The invariant we want to maintain is that a node can only go into the

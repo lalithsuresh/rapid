@@ -18,7 +18,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import java.util.TreeSet;
 import java.util.UUID;
 
 
@@ -33,7 +32,7 @@ import java.util.UUID;
  */
 public class Configuration {
     private final ArrayList<String> configHistory;
-    private final Set<UUID> identifiersSeen = new TreeSet<>(); // TODO: when to gc?
+    private final Set<UUID> identifiersSeen = new HashSet<>(); // TODO: when to gc?
     private static final String ZERO = "zero"; // All histories start from zero.
     private static final String NONE = ""; // Indicates no common ancestor
 
@@ -89,7 +88,7 @@ public class Configuration {
     void updateConfiguration(final List<UUID> operations) {
         assert operations.size() > 0;
         identifiersSeen.addAll(operations);
-        configHistory.add(Utils.sha1Hex(identifiersSeen));
+        configHistory.add(Utils.sha1Hex(Utils.sha1Hex(identifiersSeen)));
     }
 
     private String findDivergingCommit(final List<String> remoteConfigHistory) {
