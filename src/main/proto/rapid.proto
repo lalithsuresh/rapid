@@ -19,6 +19,18 @@ message LinkUpdateMessageWire
     int64 configurationId = 5;
 }
 
+message Join
+{
+   string sender = 1;
+   string senderUuid = 2;
+}
+
+message JoinResponse
+{
+   string sender = 1;
+   string senderUuid = 2;
+}
+
 enum Status {
     UP = 0;
     DOWN = 1;

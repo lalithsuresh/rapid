@@ -39,7 +39,6 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 class MembershipView {
     private final ConcurrentHashMap<Integer, NavigableSet<HostAndPort>> rings;
     private final int K;
-    private final AddressComparator[] addressComparators;
     private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
     private final Set<UUID> identifiersSeen = new HashSet<>();
     private long currentConfigurationId = -1;
@@ -49,10 +48,8 @@ class MembershipView {
         assert K > 0;
         this.K = K;
         this.rings = new ConcurrentHashMap<>(K);
-        this.addressComparators = new AddressComparator[K];
         for (int k = 0; k < K; k++) {
-            addressComparators[k] = new AddressComparator(k);
-            this.rings.put(k, new TreeSet<>(addressComparators[k]));
+            this.rings.put(k, new TreeSet<>(new AddressComparator(k)));
         }
     }
 
@@ -61,10 +58,8 @@ class MembershipView {
         Objects.requireNonNull(node);
         this.K = K;
         this.rings = new ConcurrentHashMap<>(K);
-        this.addressComparators = new AddressComparator[K];
         for (int k = 0; k < K; k++) {
-            addressComparators[k] = new AddressComparator(k);
-            final NavigableSet<HostAndPort> list = new TreeSet<>(addressComparators[k]);
+            final NavigableSet<HostAndPort> list = new TreeSet<>(new AddressComparator(k));
             list.add(node);
             this.rings.put(k, list);
         }

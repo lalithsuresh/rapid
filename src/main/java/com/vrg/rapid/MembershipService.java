@@ -43,24 +43,43 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
     private final List<List<HostAndPort>> logProposalList = new ArrayList<>();
     private Server server;
 
-    MembershipService(final HostAndPort myAddr,
-                      final int K, final int H, final int L) {
-        this.myAddr = Objects.requireNonNull(myAddr);
-        this.membershipView = new MembershipView(K, this.myAddr);
-        this.watermarkBuffer = new WatermarkBuffer(K, H, L);
-        this.broadcaster = new UnicastToAllBroadcaster(new MessagingClient(myAddr));
-        this.logProposals = false;
+    public static class Builder {
+        private final MembershipView membershipView;
+        private final WatermarkBuffer watermarkBuffer;
+        private final HostAndPort myAddr;
+        private IBroadcaster broadcaster;
+        private boolean logProposals;
+
+        public Builder(final HostAndPort myAddr,
+                       final WatermarkBuffer watermarkBuffer,
+                       final MembershipView membershipView) {
+            this.myAddr = Objects.requireNonNull(myAddr);
+            this.watermarkBuffer = Objects.requireNonNull(watermarkBuffer);
+            this.membershipView = Objects.requireNonNull(membershipView);
+            this.broadcaster = new UnicastToAllBroadcaster(new MessagingClient(myAddr));
+        }
+
+        public Builder setBroadcaster(final IBroadcaster broadcaster) {
+            this.broadcaster = broadcaster;
+            return this;
+        }
+
+        public Builder setLogProposals(final boolean logProposals) {
+            this.logProposals = logProposals;
+            return this;
+        }
+
+        public MembershipService build() {
+            return new MembershipService(this);
+        }
     }
 
-    MembershipService(final HostAndPort myAddr,
-                      final int K, final int H, final int L,
-                      final MembershipView membershipView,
-                      final boolean logProposals) {
-        this.myAddr = Objects.requireNonNull(myAddr);
-        this.membershipView = membershipView;
-        this.watermarkBuffer = new WatermarkBuffer(K, H, L);
-        this.broadcaster = new UnicastToAllBroadcaster(new MessagingClient(myAddr));
-        this.logProposals = logProposals;
+    private MembershipService(final Builder builder) {
+        this.myAddr = builder.myAddr;
+        this.membershipView = builder.membershipView;
+        this.watermarkBuffer = builder.watermarkBuffer;
+        this.broadcaster = builder.broadcaster;
+        this.logProposals = builder.logProposals;
     }
 
     void startServer() throws IOException {

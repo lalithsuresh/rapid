@@ -101,8 +101,11 @@ public class MessagingTest {
     }
 
     private MembershipService createAndStartMembershipService(final HostAndPort serverAddr) throws IOException {
-        final MembershipService service = new MembershipService(serverAddr, K, H, L,
-                new MembershipView(K, serverAddr), true);
+        final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
+        final MembershipService service =
+                new MembershipService.Builder(serverAddr, watermarkBuffer, new MembershipView(K, serverAddr))
+                                    .setLogProposals(true)
+                                    .build();
         service.startServer();
         return service;
     }
@@ -110,8 +113,11 @@ public class MessagingTest {
     private MembershipService createAndStartMembershipService(final HostAndPort serverAddr,
                                                               final List<ServerInterceptor> interceptors)
                                                                 throws IOException {
-        final MembershipService service = new MembershipService(serverAddr, K, H, L,
-                new MembershipView(K, serverAddr), true);
+        final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
+        final MembershipService service =
+                new MembershipService.Builder(serverAddr, watermarkBuffer, new MembershipView(K, serverAddr))
+                        .setLogProposals(true)
+                        .build();
         service.startServer(interceptors);
         return service;
     }
@@ -120,7 +126,11 @@ public class MessagingTest {
                                                               final List<ServerInterceptor> interceptors,
                                                               final MembershipView membershipView)
             throws IOException {
-        final MembershipService service = new MembershipService(serverAddr, K, H, L, membershipView, true);
+        final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
+        final MembershipService service =
+                new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView)
+                        .setLogProposals(true)
+                        .build();
         service.startServer(interceptors);
         return service;
     }
