@@ -14,7 +14,7 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
-import com.vrg.rapid.pb.Status;
+import com.vrg.rapid.pb.LinkStatus;
 
 import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
@@ -34,7 +34,7 @@ final class TestUtils {
         for (int i = 0; i < K; i++) {
             messages[arrIndex] = new LinkUpdateMessage(src1,
                     HostAndPort.fromParts(ip1, startingPort + i + 1),
-                    Status.UP,
+                    LinkStatus.UP,
                     configurationId);
             arrIndex++;
         }
@@ -44,7 +44,7 @@ final class TestUtils {
         for (int i = 0; i < K; i++) {
             messages[arrIndex] = new LinkUpdateMessage(src2,
                     HostAndPort.fromParts(ip2, startingPort + K + i + 2),
-                    Status.UP,
+                    LinkStatus.UP,
                     configurationId);
             arrIndex++;
         }

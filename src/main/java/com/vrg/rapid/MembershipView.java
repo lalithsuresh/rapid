@@ -16,6 +16,7 @@ package com.vrg.rapid;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
+import com.vrg.rapid.pb.JoinStatusCode;
 
 import java.io.Serializable;
 import java.util.Comparator;
@@ -53,16 +54,16 @@ class MembershipView {
         }
     }
 
-    MembershipView(final int K, final HostAndPort node) {
-        assert K > 0;
-        Objects.requireNonNull(node);
-        this.K = K;
-        this.rings = new ConcurrentHashMap<>(K);
-        for (int k = 0; k < K; k++) {
-            final NavigableSet<HostAndPort> list = new TreeSet<>(new AddressComparator(k));
-            list.add(node);
-            this.rings.put(k, list);
+    JoinStatusCode isSafeToJoin(final HostAndPort node, final UUID uuid) {
+        if (rings.get(0).contains(node)) {
+            return JoinStatusCode.HOSTNAME_ALREADY_IN_RING;
         }
+
+        if (identifiersSeen.contains(uuid)) {
+            return JoinStatusCode.UUID_ALREADY_IN_RING;
+        }
+
+        return JoinStatusCode.SAFE_TO_JOIN;
     }
 
     @VisibleForTesting
@@ -196,6 +197,17 @@ class MembershipView {
                 shouldUpdateConfigurationId = false;
             }
             return currentConfigurationId;
+        }
+        finally {
+            rwLock.readLock().unlock();
+        }
+    }
+
+    Utils.Pair<List<UUID>, List<HostAndPort>> getConfiguration() {
+        try {
+            rwLock.readLock().lock();
+            return new Utils.Pair<>(ImmutableList.copyOf(identifiersSeen),
+                                    ImmutableList.copyOf(rings.get(0)));
         }
         finally {
             rwLock.readLock().unlock();

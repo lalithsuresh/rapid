@@ -17,6 +17,7 @@ import com.google.common.net.HostAndPort;
 import org.junit.Test;
 
 import java.util.List;
+import java.util.Random;
 import java.util.UUID;
 
 import static org.junit.Assert.assertEquals;
@@ -33,9 +34,10 @@ public class MembershipWithWatermarkTest {
      * A ring initialized with self
      */
     @Test
-    public void oneRingAddition() {
+    public void oneRingAddition() throws MembershipView.NodeAlreadyInRingException {
         final HostAndPort addr = HostAndPort.fromParts("127.0.0.1", 123);
-        final MembershipView mview = new MembershipView(K, addr);
+        final MembershipView mview = new MembershipView(K);
+        mview.ringAdd(addr, UUID.randomUUID());
         for (int k = 0; k < K; k++) {
             final List<HostAndPort> list = mview.viewRing(k);
             assertEquals(1, list.size());

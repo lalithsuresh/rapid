@@ -14,7 +14,7 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
-import com.vrg.rapid.pb.Status;
+import com.vrg.rapid.pb.LinkStatus;
 
 import java.util.Objects;
 
@@ -26,12 +26,12 @@ import java.util.Objects;
 final class LinkUpdateMessage {
     private final HostAndPort src;
     private final HostAndPort dst;
-    private final Status status;
+    private final LinkStatus status;
     private final long configurationId;
 
     LinkUpdateMessage(final HostAndPort src,
                       final HostAndPort dst,
-                      final Status status,
+                      final LinkStatus status,
                       final long configurationId) {
         this.src = Objects.requireNonNull(src);
         this.dst = Objects.requireNonNull(dst);
@@ -41,7 +41,7 @@ final class LinkUpdateMessage {
 
     LinkUpdateMessage(final String src,
                       final String dst,
-                      final Status status,
+                      final LinkStatus status,
                       final long configurationId) {
         this.src = HostAndPort.fromString(Objects.requireNonNull(src));
         this.dst = HostAndPort.fromString(Objects.requireNonNull(dst));
@@ -57,7 +57,7 @@ final class LinkUpdateMessage {
         return dst;
     }
 
-    Status getStatus() {
+    LinkStatus getStatus() {
         return status;
     }
 

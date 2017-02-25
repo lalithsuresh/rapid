@@ -14,15 +14,18 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
+import com.vrg.rapid.pb.JoinMessage;
+import com.vrg.rapid.pb.JoinResponse;
+import com.vrg.rapid.pb.LinkStatus;
 import com.vrg.rapid.pb.MembershipServiceGrpc;
 import com.vrg.rapid.pb.MembershipServiceGrpc.MembershipServiceBlockingStub;
 import com.vrg.rapid.pb.LinkUpdateMessageWire;
 import com.vrg.rapid.pb.Response;
-import com.vrg.rapid.pb.Status;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 
 import java.util.Objects;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
@@ -39,6 +42,27 @@ class MessagingClient {
         this.address = address;
     }
 
+    JoinResponse sendJoinMessage(final HostAndPort remote, final HostAndPort sender, final UUID uuid) {
+        Objects.requireNonNull(remote);
+        Objects.requireNonNull(sender);
+        Objects.requireNonNull(uuid);
+
+        final JoinMessage.Builder builder = JoinMessage.newBuilder();
+        final JoinMessage msg = builder.setSender(sender.toString())
+                .setSenderUuid(uuid.toString())
+                .build();
+        return sendJoinMessage(remote, msg);
+    }
+
+    JoinResponse sendJoinMessage(final HostAndPort remote, final JoinMessage msg) {
+        Objects.requireNonNull(msg);
+        Objects.requireNonNull(remote);
+
+        final MembershipServiceBlockingStub stub = stubs.computeIfAbsent(remote, this::createBlockingStub);
+        return stub.withDeadlineAfter(1, TimeUnit.SECONDS).receiveJoinMessage(msg);
+    }
+
+
     Response sendLinkUpdateMessage(final HostAndPort remote, final LinkUpdateMessage msg) {
         Objects.requireNonNull(msg);
         return sendLinkUpdateMessage(remote, msg.getSrc(), msg.getDst(), msg.getStatus(), msg.getConfigurationId());
@@ -47,7 +71,7 @@ class MessagingClient {
     Response sendLinkUpdateMessage(final HostAndPort remote,
                                    final HostAndPort src,
                                    final HostAndPort dst,
-                                   final Status status,
+                                   final LinkStatus status,
                                    final long configurationId) {
         Objects.requireNonNull(src);
         Objects.requireNonNull(dst);

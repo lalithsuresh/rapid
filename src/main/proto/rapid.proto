@@ -8,6 +8,7 @@ package remoting;
 
 service MembershipService {
   rpc receiveLinkUpdateMessage (LinkUpdateMessageWire) returns (Response) {}
+  rpc receiveJoinMessage (JoinMessage) returns (JoinResponse) {}
 }
 
 message LinkUpdateMessageWire
@@ -15,11 +16,11 @@ message LinkUpdateMessageWire
     string sender = 1;
     string linkSrc = 2;
     string linkDst = 3;
-    Status linkStatus = 4;
+    LinkStatus linkStatus = 4;
     int64 configurationId = 5;
 }
 
-message Join
+message JoinMessage
 {
    string sender = 1;
    string senderUuid = 2;
@@ -28,10 +29,18 @@ message Join
 message JoinResponse
 {
    string sender = 1;
-   string senderUuid = 2;
+   JoinStatusCode statusCode = 2;
+   repeated string hosts = 3;
+   repeated string identifiers = 4;
 }
 
-enum Status {
+enum JoinStatusCode {
+    HOSTNAME_ALREADY_IN_RING = 0;
+    UUID_ALREADY_IN_RING = 1;
+    SAFE_TO_JOIN = 2;
+};
+
+enum LinkStatus {
     UP = 0;
     DOWN = 1;
 };

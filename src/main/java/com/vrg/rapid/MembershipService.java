@@ -14,8 +14,12 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
+import com.vrg.rapid.pb.JoinMessage;
+import com.vrg.rapid.pb.JoinResponse;
+import com.vrg.rapid.pb.JoinResponseOrBuilder;
+import com.vrg.rapid.pb.JoinStatusCode;
 import com.vrg.rapid.pb.MembershipServiceGrpc;
-import com.vrg.rapid.pb.Status;
+import com.vrg.rapid.pb.LinkStatus;
 import com.vrg.rapid.pb.LinkUpdateMessageWire;
 import com.vrg.rapid.pb.Response;
 import io.grpc.Server;
@@ -29,6 +33,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 
 /**
@@ -124,6 +130,14 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
         responseObserver.onCompleted();
     }
 
+    @Override
+    public void receiveJoinMessage(final JoinMessage joinMessage,
+                                   final StreamObserver<JoinResponse> responseObserver) {
+        final JoinResponse response = processJoinMessage(joinMessage);
+        responseObserver.onNext(response);
+        responseObserver.onCompleted();
+    }
+
     /**
      * This method receives link update events and delivers them to
      * the watermark buffer to check if it will return a valid
@@ -143,10 +157,10 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
 
         // The invariant we want to maintain is that a node can only go into the
         // membership set once and leave it once.
-        if (msg.getStatus().equals(Status.UP) && membershipView.isPresent(msg.getDst())) {
+        if (msg.getStatus().equals(LinkStatus.UP) && membershipView.isPresent(msg.getDst())) {
             throw new RuntimeException("Received UP message for node already in set");
         }
-        if (msg.getStatus().equals(Status.DOWN) && !membershipView.isPresent(msg.getDst())) {
+        if (msg.getStatus().equals(LinkStatus.DOWN) && !membershipView.isPresent(msg.getDst())) {
             throw new RuntimeException("Received DOWN message for node not in set");
         }
 
@@ -161,6 +175,22 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
         }
 
         // continue gossipping
+    }
+
+    private JoinResponse processJoinMessage(final JoinMessage joinMessage) {
+        final HostAndPort joiningHost = HostAndPort.fromString(joinMessage.getSender());
+        final UUID uuid = UUID.fromString(joinMessage.getSenderUuid());
+        final JoinStatusCode statusCode = membershipView.isSafeToJoin(joiningHost, uuid);
+        final JoinResponse.Builder builder = JoinResponse.newBuilder()
+                                                   .setSender(this.myAddr.toString())
+                                                   .setStatusCode(statusCode);
+        if (statusCode.equals(JoinStatusCode.SAFE_TO_JOIN)) {
+            final Utils.Pair<List<UUID>, List<HostAndPort>> pair = membershipView.getConfiguration();
+            builder.addAllIdentifiers(pair.first.stream().map(UUID::toString).collect(Collectors.toList()))
+                   .addAllHosts(pair.second.stream().map(HostAndPort::toString).collect(Collectors.toList()));
+        }
+
+        return builder.build();
     }
 
     void broadcastLinkUpdateMessage(final LinkUpdateMessage msg) {
