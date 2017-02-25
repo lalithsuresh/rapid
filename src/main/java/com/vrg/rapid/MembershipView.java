@@ -15,7 +15,6 @@ package com.vrg.rapid;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.JoinStatusCode;
 
@@ -54,6 +53,21 @@ final class MembershipView {
         for (int k = 0; k < K; k++) {
             this.rings.put(k, new TreeSet<>(new AddressComparator(k)));
         }
+    }
+
+    /**
+     * Used during bootstrapping process.
+     */
+    MembershipView(final int K, final Collection<UUID> uuids,
+                   final Collection<HostAndPort> hostAndPorts) {
+        assert K > 0;
+        this.K = K;
+        this.rings = new ConcurrentHashMap<>(K);
+        for (int k = 0; k < K; k++) {
+            this.rings.put(k, new TreeSet<>(new AddressComparator(k)));
+            this.rings.get(k).addAll(hostAndPorts);
+        }
+        this.identifiersSeen.addAll(uuids);
     }
 
     JoinStatusCode isSafeToJoin(final HostAndPort node, final UUID uuid) {
@@ -194,7 +208,6 @@ final class MembershipView {
      *
      * @param node input node
      * @return the set of nodes monitored by {@code node}
-     * @throws NodeNotInRingException thrown if {@code node} is not in the ring
      */
     Set<HostAndPort> expectedMonitorsOf(final HostAndPort node) {
         Objects.requireNonNull(node);
@@ -251,9 +264,13 @@ final class MembershipView {
         }
     }
 
-    @VisibleForTesting
-    Set<UUID> getIdentifiersSeen() {
-        return ImmutableSet.copyOf(identifiersSeen);
+    public int getMembershipSize() {
+        try {
+            rwLock.readLock().lock();
+            return rings.get(0).size();
+        } finally {
+            rwLock.readLock().unlock();
+        }
     }
 
     /**
@@ -307,6 +324,10 @@ final class MembershipView {
             this.hostAndPorts = ImmutableList.copyOf(hostAndPorts);
         }
 
+        public long getConfigurationId() {
+            return getConfigurationId(this.uuids, this.hostAndPorts);
+        }
+
         static long getConfigurationId(final Collection<UUID> identifiers,
                                        final Collection<HostAndPort> hostAndPorts) {
             int hash = 1;
@@ -318,5 +339,6 @@ final class MembershipView {
             }
             return hash;
         }
+
     }
 }

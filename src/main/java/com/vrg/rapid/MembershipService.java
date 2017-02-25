@@ -136,9 +136,6 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
         final JoinResponse response = processJoinMessage(joinMessage);
         responseObserver.onNext(response);
         responseObserver.onCompleted();
-
-        // Then we need to ask potential monitors of joinMessage.sender
-        // to start a LinkUpdateMessage round.
     }
 
     /**
@@ -210,7 +207,7 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
     }
 
     private List<HostAndPort> proposedViewChange(final LinkUpdateMessage msg) {
-        return watermarkBuffer.aggregateForProposal(msg);
+        return watermarkBuffer.aggregateForProposal(msg, membershipView.getMembershipSize());
     }
 
     List<List<HostAndPort>> getProposalLog() {

@@ -25,8 +25,8 @@ import org.junit.Test;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
-import java.util.TreeSet;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -48,6 +48,10 @@ public class MessagingTest {
     private static final long configurationId = -1;
 
 
+    /**
+     * Single node gets a join request from a peer with non conflicting
+     * hostname and UUID
+     */
     @Test
     public void joinFirstNode() throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException {
         final int serverPort = 1234;
@@ -67,6 +71,10 @@ public class MessagingTest {
         service.blockUntilShutdown();
     }
 
+    /**
+     * Single node gets a join request from a peer with conflicting
+     * hostnames and UUID
+     */
     @Test
     public void joinFirstNodeRetryWithErrors()
             throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException {
@@ -102,11 +110,16 @@ public class MessagingTest {
         service.blockUntilShutdown();
     }
 
+    /**
+     * A node in a cluster gets a join request from a peer with non conflicting
+     * hostnames and UUID. Verify the cluster Configuration relayed to
+     * the requesting peer.
+     */
     @Test
     public void joinWithMultipleNodesCheckConfiguration()
             throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException {
         final UUID uuid = UUID.randomUUID();
-        final int numNodes = 20000;
+        final int numNodes = 1000;
         final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, serverPortBase);
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, uuid);
@@ -126,17 +139,36 @@ public class MessagingTest {
             assertEquals(numNodes, result1.getHostsCount());
             assertEquals(numNodes, result1.getIdentifiersCount());
 
-
+            // Verify that the identifiers and hostnames retrieved at the joining peer
+            // can be used to construct an identical membership view object as the
+            // seed node that relayed it.
             final List<UUID> identifiersList = result1.getIdentifiersList().stream()
                                                 .map(UUID::fromString)
                                                 .collect(Collectors.toList());
             final List<HostAndPort> hostnameList = result1.getHostsList().stream()
                                                 .map(HostAndPort::fromString)
                                                 .collect(Collectors.toList());
+
             final long retrievedConfigurationId =
                     MembershipView.Configuration.getConfigurationId(identifiersList,
                                                                     hostnameList);
             assertEquals(membershipView.getCurrentConfigurationId(), retrievedConfigurationId);
+
+            final MembershipView membershipViewJoiningNode = new MembershipView(K, identifiersList, hostnameList);
+            assertEquals(membershipView.getMembershipSize(),
+                         membershipViewJoiningNode.getMembershipSize());
+            assertEquals(membershipView.getCurrentConfigurationId(),
+                         membershipViewJoiningNode.getCurrentConfigurationId());
+
+            // We're being a little paranoid here, but verify that the rings look identical
+            // between both nodes
+            for (int k = 0; k < K; k++) {
+                final Iterator seedRingIter = membershipView.viewRing(k).iterator();
+                final Iterator joinerRingIter = membershipView.viewRing(k).iterator();
+                for (int i = 0; i < numNodes; i++) {
+                    assertEquals(seedRingIter.next(), joinerRingIter.next());
+                }
+            }
         }
         finally {
             service.stopServer();

@@ -33,6 +33,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 class WatermarkBuffer {
     private static final int K_MIN = 3;
+    private final int K;
     private final int H;
     private final int L;
     private final AtomicInteger proposalCount = new AtomicInteger(0);
@@ -48,6 +49,7 @@ class WatermarkBuffer {
             throw new IllegalArgumentException("Arguments do not satisfy K > H >= L >= 0:" +
                                                " (K: " + K + ", H: " + H + ", L: " + L);
         }
+        this.K = K;
         this.H = H;
         this.L = L;
         this.reportsPerHost = new HashMap<>();
@@ -58,7 +60,12 @@ class WatermarkBuffer {
     }
 
     List<HostAndPort> aggregateForProposal(final LinkUpdateMessage msg) {
+        return aggregateForProposal(msg, K);
+    }
+
+    List<HostAndPort> aggregateForProposal(final LinkUpdateMessage msg, final int Kmax) {
         Objects.requireNonNull(msg);
+        assert Kmax > 0;
 
         synchronized (lock) {
 
@@ -67,11 +74,11 @@ class WatermarkBuffer {
             reportsForHost.add(msg.getSrc());
             final int numReportsForHost = reportsForHost.size();
 
-            if (numReportsForHost == L) {
+            if (numReportsForHost == Math.min(L, Kmax - 1)) {
                 updatesInProgress.incrementAndGet();
             }
 
-            if (numReportsForHost == H) {
+            if (numReportsForHost == Math.min(H, K)) {
                  // Enough reports about "msg.getDst()" have been received that it is safe to act upon,
                  // provided there are no other nodes with L < #reports < H.
                 proposal.add(msg.getDst());
