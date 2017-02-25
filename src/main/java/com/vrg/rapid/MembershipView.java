@@ -39,7 +39,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  *
  * TODO: too many scans of the k rings during reads. Maintain a cache.
  */
-class MembershipView {
+final class MembershipView {
     private final ConcurrentHashMap<Integer, NavigableSet<HostAndPort>> rings;
     private final int K;
     private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
@@ -168,6 +168,41 @@ class MembershipView {
 
             final Set<HostAndPort> monitorees = new HashSet<>();
             if (rings.get(0).size() <= 1) {
+                return monitorees;
+            }
+
+            for (int k = 0; k < K; k++) {
+                final NavigableSet<HostAndPort> list = rings.get(k);
+                final HostAndPort predecessor = list.lower(node);
+                if (predecessor == null) {
+                    monitorees.add(list.last());
+                }
+                else {
+                    monitorees.add(predecessor);
+                }
+            }
+            return monitorees;
+        } finally {
+            rwLock.readLock().unlock();
+        }
+    }
+
+    /**
+     * Returns the expected monitors of {@code node}, even before it is
+     * added to the ring. Used during the bootstrap protocol to identify
+     * the nodes responsible for gatekeeping a joining peer.
+     *
+     * @param node input node
+     * @return the set of nodes monitored by {@code node}
+     * @throws NodeNotInRingException thrown if {@code node} is not in the ring
+     */
+    Set<HostAndPort> expectedMonitorsOf(final HostAndPort node) {
+        Objects.requireNonNull(node);
+        try {
+            rwLock.readLock().lock();
+
+            final Set<HostAndPort> monitorees = new HashSet<>();
+            if (rings.get(0).size() == 0) {
                 return monitorees;
             }
 

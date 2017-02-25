@@ -21,8 +21,6 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
-import java.util.SortedSet;
-import java.util.TreeSet;
 import java.util.UUID;
 
 import static org.junit.Assert.assertEquals;
@@ -296,6 +294,57 @@ public class MembershipViewTest {
             }
         }
     }
+
+    /**
+     * Verify the monitoring relationships during bootstrap.
+     */
+    @Test
+    public void monitoringRelationshipBootstrap() {
+        final MembershipView mview = new MembershipView(K);
+        final int serverPort = 1234;
+        final HostAndPort n = HostAndPort.fromParts("127.0.0.1", serverPort);
+        try {
+            mview.ringAdd(n, UUID.randomUUID());
+        } catch (final MembershipView.NodeAlreadyInRingException e) {
+            fail();
+        }
+
+        final HostAndPort joiningNode = HostAndPort.fromParts("127.0.0.1", serverPort + 1);
+        assertEquals(1, mview.expectedMonitorsOf(joiningNode).size());
+        assertEquals(n,  mview.expectedMonitorsOf(joiningNode).toArray()[0]);
+    }
+
+    /**
+     * Verify the monitoring relationships during bootstrap with up to K nodes
+     */
+    @Test
+    public void monitoringRelationshipBootstrapMultiple() {
+        final MembershipView mview = new MembershipView(K);
+        final int numNodes = 20;
+        final int serverPortBase = 1234;
+        final HostAndPort joiningNode = HostAndPort.fromParts("127.0.0.1", serverPortBase - 1);
+        int numMonitors = 0;
+        for (int i = 0; i < numNodes; i++) {
+            final HostAndPort n = HostAndPort.fromParts("127.0.0.1", serverPortBase + i);
+            try {
+                mview.ringAdd(n, UUID.randomUUID());
+            } catch (final MembershipView.NodeAlreadyInRingException e) {
+                fail();
+            }
+
+            final int numMonitorsActual = mview.expectedMonitorsOf(joiningNode).size();
+
+            // we could compare against i + 1 but that condition is not guaranteed
+            // to hold true since we are not constructing deterministic expanders
+            assertTrue(numMonitors <= numMonitorsActual);
+            numMonitors = numMonitorsActual;
+        }
+
+        // See if we have roughly K monitors.
+        assertTrue(K - 3 <= numMonitors);
+        assertTrue(K >= numMonitors);
+    }
+
 
     /**
      * Test for different combinations of a host joining with a unique ID
