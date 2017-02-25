@@ -38,7 +38,7 @@ class WatermarkBuffer {
     private final int L;
     private final AtomicInteger proposalCount = new AtomicInteger(0);
     private final AtomicInteger updatesInProgress = new AtomicInteger(0);
-    private final Map<HostAndPort, HashSet<HostAndPort>> reportsPerHost;
+    private final Map<HostAndPort, Set<HostAndPort>> reportsPerHost;
     private final ArrayList<HostAndPort> proposal = new ArrayList<>();
     private final Object lock = new Object();
     private static final List<HostAndPort> EMPTY_LIST =
@@ -70,7 +70,7 @@ class WatermarkBuffer {
         synchronized (lock) {
 
             final Set<HostAndPort> reportsForHost = reportsPerHost.computeIfAbsent(msg.getDst(),
-                                             (k) -> new HashSet());
+                                             (k) -> new HashSet<>());
             reportsForHost.add(msg.getSrc());
             final int numReportsForHost = reportsForHost.size();
 

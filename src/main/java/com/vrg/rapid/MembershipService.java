@@ -13,7 +13,9 @@
 
 package com.vrg.rapid;
 
+import com.google.common.base.Charsets;
 import com.google.common.net.HostAndPort;
+import com.google.protobuf.ByteString;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
@@ -38,7 +40,7 @@ import java.util.stream.Collectors;
 
 
 /**
- * Created by MembershipService
+ * Membership server class that implements the Rapid protocol.
  */
 public class MembershipService extends MembershipServiceGrpc.MembershipServiceImplBase {
     private final MembershipView membershipView;
@@ -190,11 +192,11 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
             final MembershipView.Configuration configuration = membershipView.getConfiguration();
             builder.addAllIdentifiers(configuration.uuids
                                         .stream()
-                                        .map(UUID::toString)
+                                        .map(e -> ByteString.copyFromUtf8(e.toString()))
                                         .collect(Collectors.toList()))
                    .addAllHosts(configuration.hostAndPorts
                                 .stream()
-                                .map(HostAndPort::toString)
+                                .map(e -> ByteString.copyFromUtf8(e.toString()))
                                 .collect(Collectors.toList()));
         }
 

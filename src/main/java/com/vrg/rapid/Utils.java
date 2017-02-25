@@ -68,14 +68,4 @@ final class Utils {
 
         return  hasher.hash().asInt();
     }
-
-    static class Pair<T1, T2> {
-        final T1 first;
-        final T2 second;
-
-        Pair(final T1 first, final T2 second) {
-            this.first = first;
-            this.second = second;
-        }
-    }
 }

@@ -13,6 +13,7 @@
 
 package com.vrg.rapid;
 
+import com.google.common.base.Charsets;
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
@@ -143,10 +144,10 @@ public class MessagingTest {
             // can be used to construct an identical membership view object as the
             // seed node that relayed it.
             final List<UUID> identifiersList = result1.getIdentifiersList().stream()
-                                                .map(UUID::fromString)
+                                                .map(e -> UUID.fromString(e.toStringUtf8()))
                                                 .collect(Collectors.toList());
             final List<HostAndPort> hostnameList = result1.getHostsList().stream()
-                                                .map(HostAndPort::fromString)
+                                                .map(e -> HostAndPort.fromString(e.toStringUtf8()))
                                                 .collect(Collectors.toList());
 
             final long retrievedConfigurationId =
