@@ -23,6 +23,7 @@ import com.vrg.rapid.pb.LinkUpdateMessageWire;
 import com.vrg.rapid.pb.Response;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
+import io.grpc.netty.NettyChannelBuilder;
 
 import java.util.Objects;
 import java.util.UUID;
@@ -90,7 +91,7 @@ class MessagingClient {
 
     private MembershipServiceBlockingStub createBlockingStub(final HostAndPort remote) {
         // TODO: allow configuring SSL/TLS
-        final ManagedChannel channel = ManagedChannelBuilder
+        final ManagedChannel channel = NettyChannelBuilder
                                         .forAddress(remote.getHostText(), remote.getPort())
                                         .usePlaintext(true)
                                         .build();

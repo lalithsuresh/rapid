@@ -15,10 +15,12 @@ package com.vrg.rapid;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.JoinStatusCode;
 
 import java.io.Serializable;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -41,7 +43,7 @@ class MembershipView {
     private final ConcurrentHashMap<Integer, NavigableSet<HostAndPort>> rings;
     private final int K;
     private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
-    private final Set<UUID> identifiersSeen = new HashSet<>();
+    private final Set<UUID> identifiersSeen = new TreeSet<>();
     private long currentConfigurationId = -1;
     private boolean shouldUpdateConfigurationId = true;
 
@@ -203,17 +205,6 @@ class MembershipView {
         }
     }
 
-    Utils.Pair<List<UUID>, List<HostAndPort>> getConfiguration() {
-        try {
-            rwLock.readLock().lock();
-            return new Utils.Pair<>(ImmutableList.copyOf(identifiersSeen),
-                                    ImmutableList.copyOf(rings.get(0)));
-        }
-        finally {
-            rwLock.readLock().unlock();
-        }
-    }
-
     @VisibleForTesting
     List<HostAndPort> viewRing(final int k) {
         try {
@@ -225,11 +216,26 @@ class MembershipView {
         }
     }
 
+    @VisibleForTesting
+    Set<UUID> getIdentifiersSeen() {
+        return ImmutableSet.copyOf(identifiersSeen);
+    }
+
     /**
      * XXX: May not be stable across processes. Verify.
      */
     private void updateCurrentConfigurationId() {
-        currentConfigurationId = identifiersSeen.hashCode() * 31 + rings.get(0).hashCode();
+        currentConfigurationId = Configuration.getConfigurationId(identifiersSeen, rings.get(0));
+    }
+
+    Configuration getConfiguration() {
+        try {
+            rwLock.readLock().lock();
+            return new Configuration(identifiersSeen, rings.get(0));
+        }
+        finally {
+            rwLock.readLock().unlock();
+        }
     }
 
     private static final class AddressComparator implements Comparator<HostAndPort>, Serializable {
@@ -254,6 +260,28 @@ class MembershipView {
     static class NodeNotInRingException extends Exception {
         NodeNotInRingException(final HostAndPort node) {
             super(node.toString());
+        }
+    }
+
+    static class Configuration {
+        final List<UUID> uuids;
+        final List<HostAndPort> hostAndPorts;
+
+        public Configuration(final Set<UUID> uuids, final Set<HostAndPort> hostAndPorts) {
+            this.uuids = ImmutableList.copyOf(uuids);
+            this.hostAndPorts = ImmutableList.copyOf(hostAndPorts);
+        }
+
+        static long getConfigurationId(final Collection<UUID> identifiers,
+                                       final Collection<HostAndPort> hostAndPorts) {
+            int hash = 1;
+            for (final UUID id: identifiers) {
+                hash = hash * 31 + id.hashCode();
+            }
+            for (final HostAndPort hostAndPort: hostAndPorts) {
+                hash = hash * 31 + hostAndPort.hashCode();
+            }
+            return hash;
         }
     }
 }

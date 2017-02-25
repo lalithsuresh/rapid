@@ -21,9 +21,12 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+import java.util.SortedSet;
+import java.util.TreeSet;
 import java.util.UUID;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -356,7 +359,8 @@ public class MembershipViewTest {
 
 
     /**
-     * Test for different combinations of a host joining with a unique ID
+     * Test for different combinations of a host and unique ID
+     * after it was removed
      */
     @Test
     public void nodeUniqueIdWithDeletions() {
@@ -413,7 +417,8 @@ public class MembershipViewTest {
 
 
     /**
-     * Test for different combinations of a host joining with a unique ID
+     * Ensure that N different configuration IDs are generated
+     * when N nodes are added to the rings
      */
     @Test
     public void nodeConfigurationChange() {
@@ -435,44 +440,49 @@ public class MembershipViewTest {
 
 
     /**
-     * Test for different combinations of a host joining with a unique ID
+     * Add hosts to the two membership view objects in different
+     * orders. All except the last generated configuration identifier
+     * should be different.
      */
     @Test
     public void nodeConfigurationsAcrossMViews() {
         final MembershipView mview1 = new MembershipView(K);
         final MembershipView mview2 = new MembershipView(K);
         final int numNodes = 1000;
-        final Set<Long> set1 = new HashSet<>(numNodes);
-        final Set<Long> set2 = new HashSet<>(numNodes);
+        final List<Long> list1 = new ArrayList<>(numNodes);
+        final List<Long> list2 = new ArrayList<>(numNodes);
+
 
         for (int i = 0; i < numNodes; i++) {
             final HostAndPort n = HostAndPort.fromParts("127.0.0.1", i);
             try {
                 mview1.ringAdd(n, UUID.nameUUIDFromBytes(n.toString().getBytes()));
-                set1.add(mview1.getCurrentConfigurationId());
-
+                list1.add(mview1.getCurrentConfigurationId());
             } catch (final Exception e) {
                 fail();
             }
         }
 
-        for (int i = numNodes; i > 0; i--) {
+        for (int i = numNodes - 1; i > -1; i--) {
             final HostAndPort n = HostAndPort.fromParts("127.0.0.1", i);
             try {
                 mview2.ringAdd(n, UUID.nameUUIDFromBytes(n.toString().getBytes()));
-                set2.add(mview2.getCurrentConfigurationId());
+                list2.add(mview2.getCurrentConfigurationId());
             } catch (final Exception e) {
                 fail();
             }
         }
 
-        assertEquals(numNodes, set1.size());
-        assertEquals(numNodes, set2.size());
+        assertEquals(numNodes, list1.size());
+        assertEquals(numNodes, list2.size());
 
-        final Iterator<Long> iter1 = set1.iterator();
-        final Iterator<Long> iter2 = set1.iterator();
-        for (int i = 0; i < numNodes; i++) {
-            assertEquals(iter1.next(), iter2.next());
+        // Only the last added elements in the sequence
+        // of configurations should have the same value
+        final Iterator<Long> iter1 = list1.iterator();
+        final Iterator<Long> iter2 = list2.iterator();
+        for (int i = 0; i < numNodes - 1; i++) {
+            assertNotEquals(iter1.next(), iter2.next());
         }
+        assertEquals(iter1.next(), iter2.next());
     }
 }

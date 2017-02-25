@@ -30,8 +30,8 @@ message JoinResponse
 {
    string sender = 1;
    JoinStatusCode statusCode = 2;
-   repeated string hosts = 3;
-   repeated string identifiers = 4;
+   repeated bytes hosts = 3;
+   repeated bytes identifiers = 4;
 }
 
 enum JoinStatusCode {

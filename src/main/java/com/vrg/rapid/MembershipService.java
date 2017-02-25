@@ -16,7 +16,6 @@ package com.vrg.rapid;
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
-import com.vrg.rapid.pb.JoinResponseOrBuilder;
 import com.vrg.rapid.pb.JoinStatusCode;
 import com.vrg.rapid.pb.MembershipServiceGrpc;
 import com.vrg.rapid.pb.LinkStatus;
@@ -26,6 +25,7 @@ import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import io.grpc.ServerInterceptor;
 import io.grpc.ServerInterceptors;
+import io.grpc.netty.NettyServerBuilder;
 import io.grpc.stub.StreamObserver;
 
 import java.io.IOException;
@@ -94,11 +94,11 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
 
     void startServer(final List<ServerInterceptor> interceptors) throws IOException {
         Objects.requireNonNull(interceptors);
-        final ServerBuilder builder = ServerBuilder.forPort(myAddr.getPort());
+        final ServerBuilder builder = NettyServerBuilder.forPort(myAddr.getPort());
         server = builder.addService(ServerInterceptors
-                             .intercept(this, interceptors))
-                        .build()
-                        .start();
+                                   .intercept(this, interceptors))
+                .build()
+                .start();
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             // Use stderr here since the logger may have been reset by its JVM shutdown hook.
             System.err.println("*** shutting down gRPC server since JVM is shutting down");
@@ -185,9 +185,17 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
                                                    .setSender(this.myAddr.toString())
                                                    .setStatusCode(statusCode);
         if (statusCode.equals(JoinStatusCode.SAFE_TO_JOIN)) {
-            final Utils.Pair<List<UUID>, List<HostAndPort>> pair = membershipView.getConfiguration();
-            builder.addAllIdentifiers(pair.first.stream().map(UUID::toString).collect(Collectors.toList()))
-                   .addAllHosts(pair.second.stream().map(HostAndPort::toString).collect(Collectors.toList()));
+            // Return the list of IDs and hosts to the joining node so that it
+            // is ready to be part of the new configuration.
+            final MembershipView.Configuration configuration = membershipView.getConfiguration();
+            builder.addAllIdentifiers(configuration.uuids
+                                        .stream()
+                                        .map(UUID::toString)
+                                        .collect(Collectors.toList()))
+                   .addAllHosts(configuration.hostAndPorts
+                                .stream()
+                                .map(HostAndPort::toString)
+                                .collect(Collectors.toList()));
         }
 
         return builder.build();

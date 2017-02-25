@@ -14,7 +14,6 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
-import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
 import com.vrg.rapid.pb.Response;
@@ -27,7 +26,9 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.TreeSet;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -105,7 +106,7 @@ public class MessagingTest {
     public void joinWithMultipleNodesCheckConfiguration()
             throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException {
         final UUID uuid = UUID.randomUUID();
-        final int numNodes = 100;
+        final int numNodes = 20000;
         final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, serverPortBase);
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, uuid);
@@ -116,7 +117,7 @@ public class MessagingTest {
                 new ArrayList<>(), membershipView);
 
         try {
-            final int clientPort = 2445;
+            final int clientPort = serverPortBase - 1;
             final HostAndPort clientAddr1 = HostAndPort.fromParts(localhostIp, clientPort);
             final MessagingClient client1 = new MessagingClient(clientAddr1);
             final JoinResponse result1 = client1.sendJoinMessage(serverAddr, clientAddr1, UUID.randomUUID());
@@ -124,6 +125,18 @@ public class MessagingTest {
             assertEquals(JoinStatusCode.SAFE_TO_JOIN, result1.getStatusCode());
             assertEquals(numNodes, result1.getHostsCount());
             assertEquals(numNodes, result1.getIdentifiersCount());
+
+
+            final List<UUID> identifiersList = result1.getIdentifiersList().stream()
+                                                .map(UUID::fromString)
+                                                .collect(Collectors.toList());
+            final List<HostAndPort> hostnameList = result1.getHostsList().stream()
+                                                .map(HostAndPort::fromString)
+                                                .collect(Collectors.toList());
+            final long retrievedConfigurationId =
+                    MembershipView.Configuration.getConfigurationId(identifiersList,
+                                                                    hostnameList);
+            assertEquals(membershipView.getCurrentConfigurationId(), retrievedConfigurationId);
         }
         finally {
             service.stopServer();
