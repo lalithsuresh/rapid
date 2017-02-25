@@ -57,15 +57,4 @@ final class Utils {
                      .putLong(seed)
                      .hash().asInt();
     }
-
-    static long murmurHex(final Collection<UUID> input) {
-        final Hasher hasher = HASH_FUNCTION.newHasher();
-
-        for (final UUID id: input) {
-            hasher.putLong(id.getMostSignificantBits())
-                  .putLong(id.getLeastSignificantBits());
-        }
-
-        return  hasher.hash().asInt();
-    }
 }

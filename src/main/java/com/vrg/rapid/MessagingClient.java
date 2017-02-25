@@ -55,6 +55,24 @@ class MessagingClient {
         return sendJoinMessage(remote, msg);
     }
 
+
+    JoinResponse sendJoinPhase2Message(final HostAndPort remote,
+                                       final HostAndPort sender,
+                                       final UUID uuid,
+                                       final long configurationId) {
+        Objects.requireNonNull(remote);
+        Objects.requireNonNull(sender);
+        Objects.requireNonNull(uuid);
+
+        final JoinMessage.Builder builder = JoinMessage.newBuilder();
+        final JoinMessage msg = builder.setSender(sender.toString())
+                .setSenderUuid(uuid.toString())
+                .setConfigurationId(configurationId)
+                .build();
+        final MembershipServiceBlockingStub stub = stubs.computeIfAbsent(remote, this::createBlockingStub);
+        return stub.withDeadlineAfter(1, TimeUnit.SECONDS).receiveJoinPhase2Message(msg);
+    }
+
     JoinResponse sendJoinMessage(final HostAndPort remote, final JoinMessage msg) {
         Objects.requireNonNull(msg);
         Objects.requireNonNull(remote);
@@ -63,10 +81,10 @@ class MessagingClient {
         return stub.withDeadlineAfter(1, TimeUnit.SECONDS).receiveJoinMessage(msg);
     }
 
-
-    Response sendLinkUpdateMessage(final HostAndPort remote, final LinkUpdateMessage msg) {
+    Response sendLinkUpdateMessage(final HostAndPort remote, final LinkUpdateMessageWire msg) {
         Objects.requireNonNull(msg);
-        return sendLinkUpdateMessage(remote, msg.getSrc(), msg.getDst(), msg.getStatus(), msg.getConfigurationId());
+        final MembershipServiceBlockingStub stub = stubs.computeIfAbsent(remote, this::createBlockingStub);
+        return stub.withDeadlineAfter(1, TimeUnit.SECONDS).receiveLinkUpdateMessage(msg);
     }
 
     Response sendLinkUpdateMessage(final HostAndPort remote,

@@ -13,7 +13,6 @@
 
 package com.vrg.rapid;
 
-import com.google.common.base.Charsets;
 import com.google.common.net.HostAndPort;
 import com.google.protobuf.ByteString;
 import com.vrg.rapid.pb.JoinMessage;
@@ -121,6 +120,10 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
         }
     }
 
+    /**
+     * gRPC handlers (see rapid.proto)
+     */
+
     @Override
     public void receiveLinkUpdateMessage(final LinkUpdateMessageWire request,
                                          final StreamObserver<Response> responseObserver) {
@@ -138,6 +141,43 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
         final JoinResponse response = processJoinMessage(joinMessage);
         responseObserver.onNext(response);
         responseObserver.onCompleted();
+    }
+
+    @Override
+    public void receiveJoinPhase2Message(final JoinMessage joinMessage,
+                                   final StreamObserver<JoinResponse> responseObserver) {
+        // This is a request by joinMessage.sender to its monitor.
+
+        if (membershipView.getCurrentConfigurationId() == joinMessage.getConfigurationId()) {
+
+            // TODO: insert some health checks between monitor and client
+
+            final LinkUpdateMessageWire msg =
+                    LinkUpdateMessageWire.newBuilder()
+                            .setSender(this.myAddr.toString())
+                            .setLinkSrc(this.myAddr.toString())
+                            .setLinkDst(joinMessage.getSender())
+                            .setLinkStatus(LinkStatus.UP)
+                            .setConfigurationId(membershipView.getCurrentConfigurationId())
+                            .build();
+            final List<HostAndPort> recipients = getMembershipView();
+            broadcaster.broadcast(recipients, msg);
+            broadcaster.broadcast(Collections.singletonList(HostAndPort.fromString(joinMessage.getSender())), msg);
+
+            final JoinResponse response = JoinResponse.newBuilder()
+                    .setSender(this.myAddr.toString())
+                    .setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
+                    .build();
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+        }
+        else {
+            responseObserver.onError(
+                    new RuntimeException("ConfigurationID mismatch: {incoming: " +
+                            joinMessage.getConfigurationId() +
+                            ", local: " + membershipView.getCurrentConfigurationId() + "}")
+            );
+        }
     }
 
     /**
@@ -201,11 +241,6 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
         }
 
         return builder.build();
-    }
-
-    void broadcastLinkUpdateMessage(final LinkUpdateMessage msg) {
-        final List<HostAndPort> nodes = membershipView.viewRing(0);
-        broadcaster.broadcast(nodes, msg);
     }
 
     private List<HostAndPort> proposedViewChange(final LinkUpdateMessage msg) {

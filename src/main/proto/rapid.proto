@@ -9,6 +9,7 @@ package remoting;
 service MembershipService {
   rpc receiveLinkUpdateMessage (LinkUpdateMessageWire) returns (Response) {}
   rpc receiveJoinMessage (JoinMessage) returns (JoinResponse) {}
+  rpc receiveJoinPhase2Message (JoinMessage) returns (JoinResponse) {}
 }
 
 message LinkUpdateMessageWire
@@ -18,12 +19,14 @@ message LinkUpdateMessageWire
     string linkDst = 3;
     LinkStatus linkStatus = 4;
     int64 configurationId = 5;
+    string senderUuid = 6;      // Required for join protocol
 }
 
 message JoinMessage
 {
    string sender = 1;
    string senderUuid = 2;
+   int64 configurationId = 3;
 }
 
 message JoinResponse

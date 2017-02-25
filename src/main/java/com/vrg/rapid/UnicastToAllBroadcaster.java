@@ -14,6 +14,7 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
+import com.vrg.rapid.pb.LinkUpdateMessageWire;
 
 import java.util.List;
 
@@ -28,7 +29,7 @@ public class UnicastToAllBroadcaster implements IBroadcaster {
     }
 
     @Override
-    public void broadcast(final List<HostAndPort> recipients, final LinkUpdateMessage msg) {
+    public void broadcast(final List<HostAndPort> recipients, final LinkUpdateMessageWire msg) {
         recipients.parallelStream().forEach(remote -> messagingClient.sendLinkUpdateMessage(remote, msg));
     }
 }
