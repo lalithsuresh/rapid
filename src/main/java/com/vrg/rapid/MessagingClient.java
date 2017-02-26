@@ -22,7 +22,6 @@ import com.vrg.rapid.pb.MembershipServiceGrpc.MembershipServiceBlockingStub;
 import com.vrg.rapid.pb.LinkUpdateMessageWire;
 import com.vrg.rapid.pb.Response;
 import io.grpc.ManagedChannel;
-import io.grpc.ManagedChannelBuilder;
 import io.grpc.netty.NettyChannelBuilder;
 
 import java.util.Objects;
@@ -50,7 +49,7 @@ class MessagingClient {
 
         final JoinMessage.Builder builder = JoinMessage.newBuilder();
         final JoinMessage msg = builder.setSender(sender.toString())
-                .setSenderUuid(uuid.toString())
+                .setUuid(uuid.toString())
                 .build();
         return sendJoinMessage(remote, msg);
     }
@@ -66,14 +65,14 @@ class MessagingClient {
 
         final JoinMessage.Builder builder = JoinMessage.newBuilder();
         final JoinMessage msg = builder.setSender(sender.toString())
-                .setSenderUuid(uuid.toString())
+                .setUuid(uuid.toString())
                 .setConfigurationId(configurationId)
                 .build();
         final MembershipServiceBlockingStub stub = stubs.computeIfAbsent(remote, this::createBlockingStub);
         return stub.withDeadlineAfter(1, TimeUnit.SECONDS).receiveJoinPhase2Message(msg);
     }
 
-    JoinResponse sendJoinMessage(final HostAndPort remote, final JoinMessage msg) {
+    private JoinResponse sendJoinMessage(final HostAndPort remote, final JoinMessage msg) {
         Objects.requireNonNull(msg);
         Objects.requireNonNull(remote);
 

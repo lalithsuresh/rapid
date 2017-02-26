@@ -13,10 +13,13 @@
 
 package com.vrg.rapid;
 
+import com.google.common.base.Charsets;
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.LinkStatus;
 
+import java.nio.charset.Charset;
 import java.util.Objects;
+import java.util.UUID;
 
 /**
  * LinkUpdateMessage is used by nodes to announce changes in link status
@@ -28,6 +31,7 @@ final class LinkUpdateMessage {
     private final HostAndPort dst;
     private final LinkStatus status;
     private final long configurationId;
+    private final UUID uuid;
 
     LinkUpdateMessage(final HostAndPort src,
                       final HostAndPort dst,
@@ -37,16 +41,19 @@ final class LinkUpdateMessage {
         this.dst = Objects.requireNonNull(dst);
         this.status = Objects.requireNonNull(status);
         this.configurationId = configurationId;
+        this.uuid = UUID.nameUUIDFromBytes(dst.toString().getBytes(Charsets.UTF_8));
     }
 
     LinkUpdateMessage(final String src,
                       final String dst,
                       final LinkStatus status,
-                      final long configurationId) {
+                      final long configurationId,
+                      final UUID uuid) {
         this.src = HostAndPort.fromString(Objects.requireNonNull(src));
         this.dst = HostAndPort.fromString(Objects.requireNonNull(dst));
         this.status = Objects.requireNonNull(status);
         this.configurationId = configurationId;
+        this.uuid = uuid;
     }
 
     HostAndPort getSrc() {
@@ -63,5 +70,9 @@ final class LinkUpdateMessage {
 
     long getConfigurationId() {
         return configurationId;
+    }
+
+    UUID getUuid() {
+        return uuid;
     }
 }

@@ -272,7 +272,6 @@ public class MessagingTest {
                     new ArrayList<>(), membershipViewJoiningNode);
             services.add(clientService);
             for (final HostAndPort monitor: membershipViewJoiningNode.expectedMonitorsOf(joinerAddr)) {
-                System.out.println(monitor);
                 final JoinResponse joinPhase2response =
                         joinerClient.sendJoinPhase2Message(monitor, joinerAddr,
                                 joinerUuid, membershipViewJoiningNode.getCurrentConfigurationId());
@@ -283,7 +282,7 @@ public class MessagingTest {
             for (int i = 0; i < N; i++) {
                 assertEquals(1, services.get(i).getProposalLog().size());
                 assertEquals(1, services.get(i).getProposalLog().get(0).size());
-                assertEquals(joinerAddr, services.get(i).getProposalLog().get(0).get(0));
+                assertEquals(joinerAddr, services.get(i).getProposalLog().get(0).get(0).hostAndPort);
             }
         } finally {
             shutDownServices(services);
@@ -356,7 +355,6 @@ public class MessagingTest {
         final List<MembershipService> services = new ArrayList<>(N);
         for (int i = serverPortBase; i < serverPortBase + N; i++) {
             final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, i);
-            System.out.println(serverAddr);
             services.add(createAndStartMembershipService(serverAddr, Collections.emptyList(), createMembershipView(N)));
         }
 

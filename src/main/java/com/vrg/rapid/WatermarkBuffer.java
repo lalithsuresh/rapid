@@ -16,6 +16,7 @@ package com.vrg.rapid;
 import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
 
+import javax.annotation.Nonnull;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -24,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -38,11 +40,11 @@ class WatermarkBuffer {
     private final int L;
     private final AtomicInteger proposalCount = new AtomicInteger(0);
     private final AtomicInteger updatesInProgress = new AtomicInteger(0);
-    private final Map<HostAndPort, Set<HostAndPort>> reportsPerHost;
-    private final ArrayList<HostAndPort> proposal = new ArrayList<>();
+    private final Map<Node, Set<HostAndPort>> reportsPerHost;
+    private final ArrayList<Node> proposal = new ArrayList<>();
     private final Object lock = new Object();
-    private static final List<HostAndPort> EMPTY_LIST =
-            Collections.unmodifiableList(new ArrayList<HostAndPort>());
+    private static final List<Node> EMPTY_LIST =
+            Collections.unmodifiableList(new ArrayList<Node>());
 
     WatermarkBuffer(final int K, final int H, final int L) {
         if (H > K || L > H || K < K_MIN) {
@@ -59,36 +61,37 @@ class WatermarkBuffer {
         return proposalCount.get();
     }
 
-    List<HostAndPort> aggregateForProposal(final LinkUpdateMessage msg) {
+    List<Node> aggregateForProposal(final LinkUpdateMessage msg) {
         return aggregateForProposal(msg, K);
     }
 
-    List<HostAndPort> aggregateForProposal(final LinkUpdateMessage msg, final int Kmax) {
+    List<Node> aggregateForProposal(final LinkUpdateMessage msg, final int Kmax) {
         Objects.requireNonNull(msg);
         assert Kmax > 0;
 
         synchronized (lock) {
-
-            final Set<HostAndPort> reportsForHost = reportsPerHost.computeIfAbsent(msg.getDst(),
+            final Node node = new Node(msg.getDst(), msg.getUuid());
+            final Set<HostAndPort> reportsForHost = reportsPerHost.computeIfAbsent(
+                                             node,
                                              (k) -> new HashSet<>());
             reportsForHost.add(msg.getSrc());
             final int numReportsForHost = reportsForHost.size();
 
-            if (numReportsForHost == Math.min(L, Kmax - 1)) {
+            if (numReportsForHost == Math.min(Kmax, L)) {
                 updatesInProgress.incrementAndGet();
             }
 
-            if (numReportsForHost == Math.min(H, K)) {
+            if (numReportsForHost == Math.min(Kmax, H)) {
                  // Enough reports about "msg.getDst()" have been received that it is safe to act upon,
                  // provided there are no other nodes with L < #reports < H.
-                proposal.add(msg.getDst());
+                proposal.add(node);
                 final int updatesInProgressVal = updatesInProgress.decrementAndGet();
 
                 if (updatesInProgressVal == 0) {
                     // No outstanding updates, so all nodes that have crossed the H threshold of reports are
                     // now part of a single proposal.
                     this.proposalCount.incrementAndGet();
-                    for (final HostAndPort n: proposal) {
+                    for (final Node n: proposal) {
                         // The counter below should never be null.
                         final Set reportsSet = reportsPerHost.get(n);
                         if (reportsSet == null) {
@@ -96,13 +99,54 @@ class WatermarkBuffer {
                         }
                         reportsSet.clear();
                     }
-                    final List<HostAndPort> ret = ImmutableList.copyOf(proposal);
+                    final List<Node> ret = ImmutableList.copyOf(proposal);
                     proposal.clear();
                     return ret;
                 }
             }
 
             return EMPTY_LIST;
+        }
+    }
+
+    void printMetrics() {
+        System.out.println("===============================");
+        System.out.println(updatesInProgress);
+        System.out.println(proposal);
+        for (final Map.Entry<Node, Set<HostAndPort>> entry: reportsPerHost.entrySet()) {
+            System.out.println(entry);
+        }
+        System.out.println("===============================");
+    }
+
+
+    static final class Node {
+        final HostAndPort hostAndPort;
+        final UUID uuid;
+
+        Node(final HostAndPort hostAndPort, final UUID uuid) {
+            this.hostAndPort = hostAndPort;
+            this.uuid = uuid;
+        }
+
+        @Override
+        public boolean equals(final Object obj) {
+            if (obj instanceof Node) {
+                final Node other = (Node) obj;
+                return (this.hostAndPort.equals(other.hostAndPort) &&
+                        this.uuid.equals(other.uuid));
+            }
+            return false;
+        }
+
+        @Override
+        public int hashCode() {
+            return 31 * hostAndPort.hashCode() + uuid.hashCode();
+        }
+
+        @Override
+        public String toString() {
+            return "[" + hostAndPort.toString() + "," + uuid + "]";
         }
     }
 }

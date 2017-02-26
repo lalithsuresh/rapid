@@ -37,7 +37,7 @@ public class WatermarkBufferTest {
     public void waterMarkTest() {
         final WatermarkBuffer wb = new WatermarkBuffer(K, H, L);
         final HostAndPort dst = HostAndPort.fromParts("127.0.0.2", 2);
-        List<HostAndPort> ret;
+        List<WatermarkBuffer.Node> ret;
 
         for (int i = 0; i < H - 1; i++) {
             ret = wb.aggregateForProposal(new LinkUpdateMessage(
@@ -57,7 +57,7 @@ public class WatermarkBufferTest {
         final WatermarkBuffer wb = new WatermarkBuffer(K, H, L);
         final HostAndPort dst1 = HostAndPort.fromParts("127.0.0.2", 2);
         final HostAndPort dst2 = HostAndPort.fromParts("127.0.0.3", 2);
-        List<HostAndPort> ret;
+        List<WatermarkBuffer.Node> ret;
 
         for (int i = 0; i < H - 1; i++) {
             ret = wb.aggregateForProposal(new LinkUpdateMessage(
@@ -91,7 +91,7 @@ public class WatermarkBufferTest {
         final HostAndPort dst1 = HostAndPort.fromParts("127.0.0.2", 2);
         final HostAndPort dst2 = HostAndPort.fromParts("127.0.0.3", 2);
         final HostAndPort dst3 = HostAndPort.fromParts("127.0.0.4", 2);
-        List<HostAndPort> ret;
+        List<WatermarkBuffer.Node> ret;
 
         for (int i = 0; i < H - 1; i++) {
             ret = wb.aggregateForProposal(new LinkUpdateMessage(
@@ -136,7 +136,7 @@ public class WatermarkBufferTest {
         final HostAndPort dst1 = HostAndPort.fromParts("127.0.0.2", 2);
         final HostAndPort dst2 = HostAndPort.fromParts("127.0.0.3", 2);
         final HostAndPort dst3 = HostAndPort.fromParts("127.0.0.4", 2);
-        List<HostAndPort> ret;
+        List<WatermarkBuffer.Node> ret;
 
         for (int i = 0; i < H - 1; i++) {
             ret = wb.aggregateForProposal(new LinkUpdateMessage(
@@ -188,7 +188,7 @@ public class WatermarkBufferTest {
         final HostAndPort dst1 = HostAndPort.fromParts("127.0.0.2", 2);
         final HostAndPort dst2 = HostAndPort.fromParts("127.0.0.3", 2);
         final HostAndPort dst3 = HostAndPort.fromParts("127.0.0.4", 2);
-        List<HostAndPort> ret;
+        List<WatermarkBuffer.Node> ret;
 
         for (int i = 0; i < H - 1; i++) {
             ret = wb.aggregateForProposal(new LinkUpdateMessage(

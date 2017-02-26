@@ -19,13 +19,13 @@ message LinkUpdateMessageWire
     string linkDst = 3;
     LinkStatus linkStatus = 4;
     int64 configurationId = 5;
-    string senderUuid = 6;      // Required for join protocol
+    string uuid = 6;      // Required for join protocol
 }
 
 message JoinMessage
 {
    string sender = 1;
-   string senderUuid = 2;
+   string uuid = 2;
    int64 configurationId = 3;
 }
 
