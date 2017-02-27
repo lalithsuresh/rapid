@@ -27,6 +27,7 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
 import static org.junit.Assert.assertEquals;
@@ -46,13 +47,13 @@ public class MessagingTest {
     private static final String localhostIp = "127.0.0.1";
     private static final long configurationId = -1;
 
-
     /**
      * Single node gets a join request from a peer with non conflicting
      * hostname and UUID
      */
     @Test
-    public void joinFirstNode() throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException {
+    public void joinFirstNode() throws InterruptedException, IOException,
+            MembershipView.NodeAlreadyInRingException, ExecutionException {
         final int serverPort = 1234;
         final int clientPort = 1235;
         final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, serverPort);
@@ -60,7 +61,7 @@ public class MessagingTest {
 
         final HostAndPort clientAddr = HostAndPort.fromParts(localhostIp, clientPort);
         final MessagingClient client = new MessagingClient(clientAddr);
-        final JoinResponse result = client.sendJoinMessage(serverAddr, clientAddr, UUID.randomUUID());
+        final JoinResponse result = client.sendJoinMessage(serverAddr, clientAddr, UUID.randomUUID()).get();
         assertNotNull(result);
         assertEquals(JoinStatusCode.SAFE_TO_JOIN, result.getStatusCode());
         assertEquals(1, result.getHostsCount());
@@ -76,7 +77,7 @@ public class MessagingTest {
      */
     @Test
     public void joinFirstNodeRetryWithErrors()
-            throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException {
+            throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException, ExecutionException {
         final int serverPort = 1234;
         final UUID uuid = UUID.randomUUID();
         final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, serverPort);
@@ -88,7 +89,7 @@ public class MessagingTest {
         // Try with the same host details as the server
         final HostAndPort clientAddr1 = HostAndPort.fromParts(localhostIp, serverPort);
         final MessagingClient client1 = new MessagingClient(clientAddr1);
-        final JoinResponse result1 = client1.sendJoinMessage(serverAddr, clientAddr1, UUID.randomUUID());
+        final JoinResponse result1 = client1.sendJoinMessage(serverAddr, clientAddr1, UUID.randomUUID()).get();
         assertNotNull(result1);
         assertEquals(JoinStatusCode.HOSTNAME_ALREADY_IN_RING, result1.getStatusCode());
         assertEquals(0, result1.getHostsCount());
@@ -99,7 +100,7 @@ public class MessagingTest {
         final int clientPort2 = 1235;
         final HostAndPort clientAddr2 = HostAndPort.fromParts(localhostIp, clientPort2);
         final MessagingClient client2 = new MessagingClient(clientAddr2);
-        final JoinResponse result2 = client2.sendJoinMessage(serverAddr, clientAddr2, uuid);
+        final JoinResponse result2 = client2.sendJoinMessage(serverAddr, clientAddr2, uuid).get();
         assertNotNull(result2);
         assertEquals(JoinStatusCode.UUID_ALREADY_IN_RING, result2.getStatusCode());
         assertEquals(0, result2.getHostsCount());
@@ -116,7 +117,7 @@ public class MessagingTest {
      */
     @Test
     public void joinWithMultipleNodesCheckConfiguration()
-            throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException {
+            throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException, ExecutionException {
         final UUID uuid = UUID.randomUUID();
         final int numNodes = 1000;
         final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, serverPortBase);
@@ -132,7 +133,7 @@ public class MessagingTest {
             final int clientPort = serverPortBase - 1;
             final HostAndPort clientAddr1 = HostAndPort.fromParts(localhostIp, clientPort);
             final MessagingClient client1 = new MessagingClient(clientAddr1);
-            final JoinResponse result1 = client1.sendJoinMessage(serverAddr, clientAddr1, UUID.randomUUID());
+            final JoinResponse result1 = client1.sendJoinMessage(serverAddr, clientAddr1, UUID.randomUUID()).get();
             assertNotNull(result1);
             assertEquals(JoinStatusCode.SAFE_TO_JOIN, result1.getStatusCode());
             assertEquals(numNodes, result1.getHostsCount());
@@ -181,7 +182,7 @@ public class MessagingTest {
      */
     @Test
     public void joinWithMultipleNodesBootstrap()
-            throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException {
+            throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException, ExecutionException {
         final UUID uuid = UUID.randomUUID();
         final int numNodes = 1;
         final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, serverPortBase);
@@ -196,7 +197,7 @@ public class MessagingTest {
             final HostAndPort clientAddr1 = HostAndPort.fromParts(localhostIp, clientPort);
             final MessagingClient client1 = new MessagingClient(clientAddr1);
             final UUID clientUuid = UUID.randomUUID();
-            final JoinResponse result1 = client1.sendJoinMessage(serverAddr, clientAddr1, clientUuid);
+            final JoinResponse result1 = client1.sendJoinMessage(serverAddr, clientAddr1, clientUuid).get();
             assertNotNull(result1);
             assertEquals(JoinStatusCode.SAFE_TO_JOIN, result1.getStatusCode());
             assertEquals(numNodes, result1.getHostsCount());
@@ -223,7 +224,7 @@ public class MessagingTest {
 
             final JoinResponse joinPhase2response =
                     client1.sendJoinPhase2Message(serverAddr, clientAddr1,
-                            clientUuid, membershipViewJoiningNode.getCurrentConfigurationId());
+                            clientUuid, membershipViewJoiningNode.getCurrentConfigurationId()).get();
             assertNotNull(joinPhase2response);
             assertEquals(JoinStatusCode.SAFE_TO_JOIN, joinPhase2response.getStatusCode());
         }
@@ -243,7 +244,7 @@ public class MessagingTest {
      */
     @Test
     public void joinWithMultipleServicesBootstrap()
-            throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException {
+            throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException, ExecutionException {
         List<MembershipService> services = new ArrayList<>();
         MembershipService clientService = null;
         try {
@@ -256,7 +257,7 @@ public class MessagingTest {
             final MessagingClient joinerClient = new MessagingClient(joinerAddr);
             final UUID joinerUuid = UUID.randomUUID();
             final HostAndPort seed = HostAndPort.fromParts("127.0.0.1", serverPortBase + 1);
-            final JoinResponse joinPhaseOneResult = joinerClient.sendJoinMessage(seed, joinerAddr, joinerUuid);
+            final JoinResponse joinPhaseOneResult = joinerClient.sendJoinMessage(seed, joinerAddr, joinerUuid).get();
             assertNotNull(joinPhaseOneResult);
             assertEquals(JoinStatusCode.SAFE_TO_JOIN, joinPhaseOneResult.getStatusCode());
             final List<UUID> identifiersList = joinPhaseOneResult.getIdentifiersList().stream()
@@ -274,7 +275,7 @@ public class MessagingTest {
             for (final HostAndPort monitor: membershipViewJoiningNode.expectedMonitorsOf(joinerAddr)) {
                 final JoinResponse joinPhase2response =
                         joinerClient.sendJoinPhase2Message(monitor, joinerAddr,
-                                joinerUuid, membershipViewJoiningNode.getCurrentConfigurationId());
+                                joinerUuid, membershipViewJoiningNode.getCurrentConfigurationId()).get();
                 assertNotNull(joinPhase2response);
                 assertEquals(JoinStatusCode.SAFE_TO_JOIN, joinPhase2response.getStatusCode());
             }

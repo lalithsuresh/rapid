@@ -28,6 +28,8 @@ import io.grpc.ServerInterceptor;
 import io.grpc.ServerInterceptors;
 import io.grpc.netty.NettyServerBuilder;
 import io.grpc.stub.StreamObserver;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -42,6 +44,7 @@ import java.util.stream.Collectors;
  * Membership server class that implements the Rapid protocol.
  */
 public class MembershipService extends MembershipServiceGrpc.MembershipServiceImplBase {
+    private static final Logger log = LoggerFactory.getLogger(MembershipService.class);
     private final MembershipView membershipView;
     private final WatermarkBuffer watermarkBuffer;
     private final HostAndPort myAddr;
@@ -144,9 +147,10 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
     public void receiveJoinPhase2Message(final JoinMessage joinMessage,
                                    final StreamObserver<JoinResponse> responseObserver) {
         // This is a request by joinMessage.sender to its monitor.
+        final long currentConfiguration = membershipView.getCurrentConfigurationId();
 
-        if (membershipView.getCurrentConfigurationId() == joinMessage.getConfigurationId()) {
-
+        if (currentConfiguration == joinMessage.getConfigurationId()) {
+            log.trace("Join phase 2 message received during configuration {}", currentConfiguration);
             // TODO: insert some health checks between monitor and client
             final LinkUpdateMessageWire msg =
                     LinkUpdateMessageWire.newBuilder()
@@ -154,7 +158,7 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
                             .setLinkSrc(this.myAddr.toString())
                             .setLinkDst(joinMessage.getSender())
                             .setLinkStatus(LinkStatus.UP)
-                            .setConfigurationId(membershipView.getCurrentConfigurationId())
+                            .setConfigurationId(currentConfiguration)
                             .setUuid(joinMessage.getUuid())
                             .build();
             final List<HostAndPort> recipients = getMembershipView();
@@ -169,11 +173,14 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
             responseObserver.onCompleted();
         }
         else {
-            responseObserver.onError(
-                    new RuntimeException("ConfigurationID mismatch: {incoming: " +
-                            joinMessage.getConfigurationId() +
-                            ", local: " + membershipView.getCurrentConfigurationId() + "}")
-            );
+            log.info("Join phase 2 message for configuration {} received during configuration {}",
+                    joinMessage.getConfigurationId(), currentConfiguration);
+            final JoinResponse response = JoinResponse.newBuilder()
+                    .setSender(this.myAddr.toString())
+                    .setStatusCode(JoinStatusCode.CONFIG_CHANGED)
+                    .build();
+            responseObserver.onNext(response);
+            responseObserver.onCompleted(); // no response
         }
     }
 
@@ -190,8 +197,6 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
 
         final long currentConfigurationId = membershipView.getCurrentConfigurationId();
         if (currentConfigurationId != msg.getConfigurationId()) {
-//            throw new RuntimeException("Configuration ID mismatch: {incoming: " +
-//                    msg.getConfigurationId() + ", local:" + currentConfigurationId + "}");
             return;
         }
 

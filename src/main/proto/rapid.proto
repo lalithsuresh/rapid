@@ -10,6 +10,13 @@ service MembershipService {
   rpc receiveLinkUpdateMessage (LinkUpdateMessageWire) returns (Response) {}
   rpc receiveJoinMessage (JoinMessage) returns (JoinResponse) {}
   rpc receiveJoinPhase2Message (JoinMessage) returns (JoinResponse) {}
+  rpc gossip (GossipMessage) returns (JoinResponse) {}
+}
+
+message GossipMessage
+{
+    int32 ttl = 1;
+    LinkUpdateMessageWire linkUpdateMessage = 2;
 }
 
 message LinkUpdateMessageWire
@@ -41,6 +48,7 @@ enum JoinStatusCode {
     HOSTNAME_ALREADY_IN_RING = 0;
     UUID_ALREADY_IN_RING = 1;
     SAFE_TO_JOIN = 2;
+    CONFIG_CHANGED = 3;
 };
 
 enum LinkStatus {

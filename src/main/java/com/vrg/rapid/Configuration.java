@@ -28,7 +28,7 @@ import java.util.UUID;
  *
  * The configuration mandates that identifier additions are always unique.
  *
- * XXX: Not thread safe
+ * TODO: Not used as of now. Remove.
  */
 public class Configuration {
     private final ArrayList<String> configHistory;

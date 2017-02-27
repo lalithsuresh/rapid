@@ -14,11 +14,12 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
+import com.google.common.util.concurrent.ListenableFuture;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.LinkStatus;
 import com.vrg.rapid.pb.MembershipServiceGrpc;
-import com.vrg.rapid.pb.MembershipServiceGrpc.MembershipServiceBlockingStub;
+import com.vrg.rapid.pb.MembershipServiceGrpc.MembershipServiceFutureStub;
 import com.vrg.rapid.pb.LinkUpdateMessageWire;
 import com.vrg.rapid.pb.Response;
 import io.grpc.ManagedChannel;
@@ -34,7 +35,7 @@ import java.util.concurrent.TimeUnit;
  * MessagingServiceGrpc client.
  */
 class MessagingClient {
-    private final ConcurrentHashMap<HostAndPort, MembershipServiceBlockingStub> stubs;
+    private final ConcurrentHashMap<HostAndPort, MembershipServiceFutureStub> stubs;
     private final HostAndPort address;
 
     MessagingClient(final HostAndPort address) {
@@ -42,7 +43,8 @@ class MessagingClient {
         this.address = address;
     }
 
-    JoinResponse sendJoinMessage(final HostAndPort remote, final HostAndPort sender, final UUID uuid) {
+    ListenableFuture<JoinResponse> sendJoinMessage(final HostAndPort remote,
+                                                   final HostAndPort sender, final UUID uuid) {
         Objects.requireNonNull(remote);
         Objects.requireNonNull(sender);
         Objects.requireNonNull(uuid);
@@ -54,8 +56,7 @@ class MessagingClient {
         return sendJoinMessage(remote, msg);
     }
 
-
-    JoinResponse sendJoinPhase2Message(final HostAndPort remote,
+    ListenableFuture<JoinResponse> sendJoinPhase2Message(final HostAndPort remote,
                                        final HostAndPort sender,
                                        final UUID uuid,
                                        final long configurationId) {
@@ -68,34 +69,34 @@ class MessagingClient {
                 .setUuid(uuid.toString())
                 .setConfigurationId(configurationId)
                 .build();
-        final MembershipServiceBlockingStub stub = stubs.computeIfAbsent(remote, this::createBlockingStub);
+        final MembershipServiceFutureStub stub = stubs.computeIfAbsent(remote, this::createBlockingStub);
         return stub.withDeadlineAfter(1, TimeUnit.SECONDS).receiveJoinPhase2Message(msg);
     }
 
-    private JoinResponse sendJoinMessage(final HostAndPort remote, final JoinMessage msg) {
+    private ListenableFuture<JoinResponse> sendJoinMessage(final HostAndPort remote, final JoinMessage msg) {
         Objects.requireNonNull(msg);
         Objects.requireNonNull(remote);
 
-        final MembershipServiceBlockingStub stub = stubs.computeIfAbsent(remote, this::createBlockingStub);
+        final MembershipServiceFutureStub stub = stubs.computeIfAbsent(remote, this::createBlockingStub);
         return stub.withDeadlineAfter(1, TimeUnit.SECONDS).receiveJoinMessage(msg);
     }
 
-    Response sendLinkUpdateMessage(final HostAndPort remote, final LinkUpdateMessageWire msg) {
+    ListenableFuture<Response> sendLinkUpdateMessage(final HostAndPort remote, final LinkUpdateMessageWire msg) {
         Objects.requireNonNull(msg);
-        final MembershipServiceBlockingStub stub = stubs.computeIfAbsent(remote, this::createBlockingStub);
+        final MembershipServiceFutureStub stub = stubs.computeIfAbsent(remote, this::createBlockingStub);
         return stub.withDeadlineAfter(1, TimeUnit.SECONDS).receiveLinkUpdateMessage(msg);
     }
 
-    Response sendLinkUpdateMessage(final HostAndPort remote,
-                                   final HostAndPort src,
-                                   final HostAndPort dst,
-                                   final LinkStatus status,
-                                   final long configurationId) {
+    ListenableFuture<Response> sendLinkUpdateMessage(final HostAndPort remote,
+                                           final HostAndPort src,
+                                           final HostAndPort dst,
+                                           final LinkStatus status,
+                                           final long configurationId) {
         Objects.requireNonNull(src);
         Objects.requireNonNull(dst);
         Objects.requireNonNull(status);
 
-        final MembershipServiceBlockingStub stub = stubs.computeIfAbsent(remote, this::createBlockingStub);
+        final MembershipServiceFutureStub stub = stubs.computeIfAbsent(remote, this::createBlockingStub);
 
         final LinkUpdateMessageWire msg = LinkUpdateMessageWire.newBuilder()
                                             .setSender(address.toString())
@@ -106,13 +107,13 @@ class MessagingClient {
         return stub.withDeadlineAfter(1, TimeUnit.SECONDS).receiveLinkUpdateMessage(msg);
     }
 
-    private MembershipServiceBlockingStub createBlockingStub(final HostAndPort remote) {
+    private MembershipServiceFutureStub createBlockingStub(final HostAndPort remote) {
         // TODO: allow configuring SSL/TLS
         final ManagedChannel channel = NettyChannelBuilder
                                         .forAddress(remote.getHostText(), remote.getPort())
                                         .usePlaintext(true)
                                         .build();
 
-        return MembershipServiceGrpc.newBlockingStub(channel);
+        return MembershipServiceGrpc.newFutureStub(channel);
     }
 }

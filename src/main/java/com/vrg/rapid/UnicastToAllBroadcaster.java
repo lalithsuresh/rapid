@@ -14,9 +14,14 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
 import com.vrg.rapid.pb.LinkUpdateMessageWire;
+import com.vrg.rapid.pb.Response;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 
 /**
  * Simple best-effort broadcaster.
@@ -30,6 +35,14 @@ public class UnicastToAllBroadcaster implements IBroadcaster {
 
     @Override
     public void broadcast(final List<HostAndPort> recipients, final LinkUpdateMessageWire msg) {
-        recipients.parallelStream().forEach(remote -> messagingClient.sendLinkUpdateMessage(remote, msg));
+        final List<ListenableFuture<Response>> futures = new ArrayList<>();
+        for (final HostAndPort recipient: recipients) {
+            futures.add(messagingClient.sendLinkUpdateMessage(recipient, msg));
+        }
+        try {
+            Futures.allAsList(futures).get();
+        } catch (final ExecutionException | InterruptedException e) {
+            e.printStackTrace();
+        }
     }
 }
