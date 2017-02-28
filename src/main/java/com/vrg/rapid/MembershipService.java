@@ -250,8 +250,15 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
 
     private List<WatermarkBuffer.Node> proposedViewChange(final LinkUpdateMessage msg) {
         // TODO: temporary solution for the lack of a deterministic expander
-        final int Kmax = membershipView.expectedMonitorsOf(msg.getDst()).size();
-        return watermarkBuffer.aggregateForProposal(msg, Kmax);
+        final List<HostAndPort> monitors = membershipView.expectedMonitorsOf(msg.getDst());
+        int monitorNumber = 0;
+        for (final HostAndPort monitor: monitors) {
+            if (msg.getSrc().equals(monitor)) {
+                break;
+            }
+            monitorNumber++;
+        }
+        return watermarkBuffer.aggregateForProposal(msg, monitorNumber);
     }
 
     List<List<WatermarkBuffer.Node>> getProposalLog() {

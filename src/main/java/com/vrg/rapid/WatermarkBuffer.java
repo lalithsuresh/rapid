@@ -39,8 +39,8 @@ class WatermarkBuffer {
     private final int H;
     private final int L;
     private final AtomicInteger proposalCount = new AtomicInteger(0);
-    private final Set<HostAndPort> staging = new HashSet<>();
-    private final Map<Node, Set<HostAndPort>> reportsPerHost;
+    private final AtomicInteger updatesInProgress = new AtomicInteger(0);
+    private final Map<Node, Map<Integer, HostAndPort>> reportsPerHost;
     private final ArrayList<Node> proposal = new ArrayList<>();
     private final Object lock = new Object();
     private static final List<Node> EMPTY_LIST =
@@ -61,32 +61,32 @@ class WatermarkBuffer {
         return proposalCount.get();
     }
 
-    List<Node> aggregateForProposal(final LinkUpdateMessage msg) {
-        return aggregateForProposal(msg, K);
-    }
-
-    List<Node> aggregateForProposal(final LinkUpdateMessage msg, final int Kmax) {
+    List<Node> aggregateForProposal(final LinkUpdateMessage msg, final int ringNumber) {
         Objects.requireNonNull(msg);
-        assert Kmax > 0;
+        assert ringNumber <= K;
 
         synchronized (lock) {
             final Node node = new Node(msg.getDst(), msg.getUuid());
-            final Set<HostAndPort> reportsForHost = reportsPerHost.computeIfAbsent(
+            final Map<Integer, HostAndPort> reportsForHost = reportsPerHost.computeIfAbsent(
                                              node,
-                                             (k) -> new HashSet<>());
-            reportsForHost.add(msg.getSrc());
-            final int numReportsForHost = reportsForHost.size();
+                                             (k) -> new HashMap<>(K));
 
-            if (numReportsForHost == Math.min(Kmax, L)) {
-                staging.add(node.hostAndPort);
+            if (reportsForHost.containsKey(ringNumber)) {
+                return EMPTY_LIST;  // duplicate announcement, ignore.
             }
 
-            if (numReportsForHost == Math.min(Kmax, H)) {
+            reportsForHost.put(ringNumber, msg.getSrc());
+            final int numReportsForHost = reportsForHost.size();
+
+            if (numReportsForHost == L) {
+                updatesInProgress.incrementAndGet();
+            }
+
+            if (numReportsForHost == H) {
                  // Enough reports about "msg.getDst()" have been received that it is safe to act upon,
                  // provided there are no other nodes with L < #reports < H.
                 proposal.add(node);
-                staging.remove(node.hostAndPort);
-                final int updatesInProgressVal = staging.size();
+                final int updatesInProgressVal = updatesInProgress.decrementAndGet();
 
                 if (updatesInProgressVal == 0) {
                     // No outstanding updates, so all nodes that have crossed the H threshold of reports are
@@ -94,11 +94,12 @@ class WatermarkBuffer {
                     this.proposalCount.incrementAndGet();
                     for (final Node n: proposal) {
                         // The counter below should never be null.
-                        final Set reportsSet = reportsPerHost.get(n);
+                        final Map<Integer, HostAndPort> reportsSet = reportsPerHost.get(n);
                         if (reportsSet == null) {
                             throw new RuntimeException("Host for proposal not in UpdateCounters map: " + n);
                         }
                         reportsSet.clear();
+                        // TODO: clear reportsPerHost[n]
                     }
                     final List<Node> ret = ImmutableList.copyOf(proposal);
                     proposal.clear();
@@ -112,9 +113,9 @@ class WatermarkBuffer {
 
     void printMetrics() {
         System.out.println("===============================");
-        System.out.println(staging.size());
+        System.out.println(updatesInProgress);
         System.out.println(proposal);
-        for (final Map.Entry<Node, Set<HostAndPort>> entry: reportsPerHost.entrySet()) {
+        for (final Map.Entry<Node, Map<Integer, HostAndPort>> entry: reportsPerHost.entrySet()) {
             System.out.println(entry);
         }
         System.out.println("===============================");

@@ -13,6 +13,7 @@
 
 package com.vrg.rapid;
 
+import com.google.common.collect.ImmutableSet;
 import com.google.common.net.HostAndPort;
 import org.junit.Test;
 
@@ -232,8 +233,10 @@ public class MembershipViewTest {
             final HostAndPort n2 = HostAndPort.fromParts("127.0.0.1", 2);
             mview.ringAdd(n1, UUID.randomUUID());
             mview.ringAdd(n2, UUID.randomUUID());
-            assertEquals(1, mview.monitoreesOf(n1).size());
-            assertEquals(1, mview.monitorsOf(n1).size());
+            assertEquals(K, mview.monitoreesOf(n1).size());
+            assertEquals(K, mview.monitorsOf(n1).size());
+            assertEquals(1, ImmutableSet.copyOf(mview.monitoreesOf(n1)).size());
+            assertEquals(1, ImmutableSet.copyOf(mview.monitorsOf(n1)).size());
         } catch (final MembershipView.NodeAlreadyInRingException | MembershipView.NodeNotInRingException e) {
             fail();
         }
@@ -252,11 +255,15 @@ public class MembershipViewTest {
             mview.ringAdd(n1, UUID.randomUUID());
             mview.ringAdd(n2, UUID.randomUUID());
             mview.ringAdd(n3, UUID.randomUUID());
-            assertEquals(2, mview.monitoreesOf(n1).size());
-            assertEquals(2, mview.monitorsOf(n1).size());
+            assertEquals(K, mview.monitoreesOf(n1).size());
+            assertEquals(K, mview.monitorsOf(n1).size());
+            assertEquals(2, ImmutableSet.copyOf(mview.monitoreesOf(n1)).size());
+            assertEquals(2, ImmutableSet.copyOf(mview.monitorsOf(n1)).size());
             mview.ringDelete(n2);
-            assertEquals(1, mview.monitoreesOf(n1).size());
-            assertEquals(1, mview.monitorsOf(n1).size());
+            assertEquals(K, mview.monitoreesOf(n1).size());
+            assertEquals(K, mview.monitorsOf(n1).size());
+            assertEquals(1, ImmutableSet.copyOf(mview.monitoreesOf(n1)).size());
+            assertEquals(1, ImmutableSet.copyOf(mview.monitorsOf(n1)).size());
         } catch (final MembershipView.NodeAlreadyInRingException | MembershipView.NodeNotInRingException e) {
             fail();
         }
@@ -310,7 +317,8 @@ public class MembershipViewTest {
         }
 
         final HostAndPort joiningNode = HostAndPort.fromParts("127.0.0.1", serverPort + 1);
-        assertEquals(1, mview.expectedMonitorsOf(joiningNode).size());
+        assertEquals(K, mview.expectedMonitorsOf(joiningNode).size());
+        assertEquals(1, ImmutableSet.copyOf(mview.expectedMonitorsOf(joiningNode)).size());
         assertEquals(n,  mview.expectedMonitorsOf(joiningNode).toArray()[0]);
     }
 

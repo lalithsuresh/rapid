@@ -19,6 +19,7 @@ import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.JoinStatusCode;
 
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -136,7 +137,7 @@ final class MembershipView {
      * @return the set of monitors for {@code node}
      * @throws NodeNotInRingException thrown if {@code node} is not in the ring
      */
-    Set<HostAndPort> monitorsOf(final HostAndPort node) throws NodeNotInRingException {
+    List<HostAndPort> monitorsOf(final HostAndPort node) throws NodeNotInRingException {
         Objects.requireNonNull(node);
         try {
             rwLock.readLock().lock();
@@ -145,7 +146,7 @@ final class MembershipView {
                 throw new NodeNotInRingException(node);
             }
 
-            final Set<HostAndPort> monitors = new HashSet<>();
+            final List<HostAndPort> monitors = new ArrayList<>();
             if (rings.get(0).size() <= 1) {
                 return monitors;
             }
@@ -172,7 +173,7 @@ final class MembershipView {
      * @return the set of nodes monitored by {@code node}
      * @throws NodeNotInRingException thrown if {@code node} is not in the ring
      */
-    Set<HostAndPort> monitoreesOf(final HostAndPort node) throws NodeNotInRingException {
+    List<HostAndPort> monitoreesOf(final HostAndPort node) throws NodeNotInRingException {
         Objects.requireNonNull(node);
         try {
             rwLock.readLock().lock();
@@ -180,7 +181,7 @@ final class MembershipView {
                 throw new NodeNotInRingException(node);
             }
 
-            final Set<HostAndPort> monitorees = new HashSet<>();
+            final List<HostAndPort> monitorees = new ArrayList<>();
             if (rings.get(0).size() <= 1) {
                 return monitorees;
             }
@@ -209,12 +210,12 @@ final class MembershipView {
      * @param node input node
      * @return the set of nodes monitored by {@code node}
      */
-    Set<HostAndPort> expectedMonitorsOf(final HostAndPort node) {
+    List<HostAndPort> expectedMonitorsOf(final HostAndPort node) {
         Objects.requireNonNull(node);
         try {
             rwLock.readLock().lock();
 
-            final Set<HostAndPort> monitorees = new HashSet<>();
+            final List<HostAndPort> monitorees = new ArrayList<>();
             if (rings.get(0).size() == 0) {
                 return monitorees;
             }
