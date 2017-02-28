@@ -10,13 +10,18 @@ service MembershipService {
   rpc receiveLinkUpdateMessage (LinkUpdateMessageWire) returns (Response) {}
   rpc receiveJoinMessage (JoinMessage) returns (JoinResponse) {}
   rpc receiveJoinPhase2Message (JoinMessage) returns (JoinResponse) {}
-  rpc gossip (GossipMessage) returns (JoinResponse) {}
+  rpc gossip (GossipMessage) returns (GossipResponse) {}
 }
 
 message GossipMessage
 {
-    int32 ttl = 1;
-    LinkUpdateMessageWire linkUpdateMessage = 2;
+    string messageId = 1;
+    int32 ttl = 2;
+    repeated LinkUpdateMessageWire linkUpdateMessage = 3;
+}
+
+message GossipResponse
+{
 }
 
 message LinkUpdateMessageWire

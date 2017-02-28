@@ -15,6 +15,8 @@ package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
 import com.google.protobuf.ByteString;
+import com.vrg.rapid.pb.GossipMessage;
+import com.vrg.rapid.pb.GossipResponse;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
@@ -44,12 +46,12 @@ import java.util.stream.Collectors;
  * Membership server class that implements the Rapid protocol.
  */
 public class MembershipService extends MembershipServiceGrpc.MembershipServiceImplBase {
-    private static final Logger log = LoggerFactory.getLogger(MembershipService.class);
+    private static final Logger LOG = LoggerFactory.getLogger(MembershipService.class);
     private final MembershipView membershipView;
     private final WatermarkBuffer watermarkBuffer;
     private final HostAndPort myAddr;
-    private final IBroadcaster broadcaster;
     private final boolean logProposals;
+    private final Gossiper gossiper;
     private final List<List<WatermarkBuffer.Node>> logProposalList = new ArrayList<>();
     private Server server;
 
@@ -57,7 +59,7 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
         private final MembershipView membershipView;
         private final WatermarkBuffer watermarkBuffer;
         private final HostAndPort myAddr;
-        private IBroadcaster broadcaster;
+        private final Gossiper gossiper;
         private boolean logProposals;
 
         public Builder(final HostAndPort myAddr,
@@ -66,12 +68,7 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
             this.myAddr = Objects.requireNonNull(myAddr);
             this.watermarkBuffer = Objects.requireNonNull(watermarkBuffer);
             this.membershipView = Objects.requireNonNull(membershipView);
-            this.broadcaster = new UnicastToAllBroadcaster(new MessagingClient(myAddr));
-        }
-
-        public Builder setBroadcaster(final IBroadcaster broadcaster) {
-            this.broadcaster = broadcaster;
-            return this;
+            this.gossiper = new Gossiper(membershipView, new MessagingClient(myAddr));
         }
 
         public Builder setLogProposals(final boolean logProposals) {
@@ -88,8 +85,8 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
         this.myAddr = builder.myAddr;
         this.membershipView = builder.membershipView;
         this.watermarkBuffer = builder.watermarkBuffer;
-        this.broadcaster = builder.broadcaster;
         this.logProposals = builder.logProposals;
+        this.gossiper = builder.gossiper;
     }
 
     void startServer() throws IOException {
@@ -120,8 +117,14 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
     }
 
     /**
-     * gRPC handlers (see rapid.proto)
+     * rpc implementations for methods defined in rapid.proto.
      */
+    @Override
+    public void gossip(final GossipMessage request,
+                       final StreamObserver<GossipResponse> responseObserver) {
+        responseObserver.onNext(GossipResponse.getDefaultInstance());
+        responseObserver.onCompleted();
+    }
 
     @Override
     public void receiveLinkUpdateMessage(final LinkUpdateMessageWire request,
@@ -130,8 +133,7 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
                                             request.getLinkStatus(), request.getConfigurationId(),
                                             UUID.fromString(request.getUuid()));
         processLinkUpdateMessage(msg);
-        final Response response = Response.newBuilder().build();
-        responseObserver.onNext(response);
+        responseObserver.onNext(Response.getDefaultInstance());
         responseObserver.onCompleted();
     }
 
@@ -150,20 +152,23 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
         final long currentConfiguration = membershipView.getCurrentConfigurationId();
 
         if (currentConfiguration == joinMessage.getConfigurationId()) {
-            log.trace("Join phase 2 message received during configuration {}", currentConfiguration);
+            LOG.trace("Join phase 2 message received during configuration {}", currentConfiguration);
             // TODO: insert some health checks between monitor and client
-            final LinkUpdateMessageWire msg =
-                    LinkUpdateMessageWire.newBuilder()
-                            .setSender(this.myAddr.toString())
-                            .setLinkSrc(this.myAddr.toString())
-                            .setLinkDst(joinMessage.getSender())
-                            .setLinkStatus(LinkStatus.UP)
-                            .setConfigurationId(currentConfiguration)
-                            .setUuid(joinMessage.getUuid())
-                            .build();
-            final List<HostAndPort> recipients = getMembershipView();
-            broadcaster.broadcast(recipients, msg);
-            broadcaster.broadcast(Collections.singletonList(HostAndPort.fromString(joinMessage.getSender())), msg);
+            final LinkUpdateMessageWire msg = LinkUpdateMessageWire.newBuilder()
+                                                .setSender(this.myAddr.toString())
+                                                .setLinkSrc(this.myAddr.toString())
+                                                .setLinkDst(joinMessage.getSender())
+                                                .setLinkStatus(LinkStatus.UP)
+                                                .setConfigurationId(currentConfiguration)
+                                                .setUuid(joinMessage.getUuid())
+                                                .build();
+
+            final GossipMessage gossipMessage = GossipMessage.newBuilder()
+                    .setMessageId(UUID.randomUUID().toString())
+                    .setTtl(0)
+                    .addAllLinkUpdateMessage(Collections.singletonList(msg))
+                    .build();
+            gossiper.gossip(HostAndPort.fromString(joinMessage.getSender()), gossipMessage);
 
             final JoinResponse response = JoinResponse.newBuilder()
                     .setSender(this.myAddr.toString())
@@ -173,7 +178,7 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
             responseObserver.onCompleted();
         }
         else {
-            log.info("Join phase 2 message for configuration {} received during configuration {}",
+            LOG.info("Join phase 2 message for configuration {} received during configuration {}",
                     joinMessage.getConfigurationId(), currentConfiguration);
             final JoinResponse response = JoinResponse.newBuilder()
                     .setSender(this.myAddr.toString())
@@ -216,15 +221,6 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
                 logProposalList.add(proposal);
             }
             // Initiate consensus from here.
-
-            // TODO: temporary until consensus part is implemented
-            for (final WatermarkBuffer.Node node: proposal) {
-                try {
-                    membershipView.ringAdd(node.hostAndPort, node.uuid);
-                } catch (final MembershipView.NodeAlreadyInRingException e) {
-                    throw new RuntimeException("Fatal exception. Node already in ring." + e);
-                }
-            }
         }
     }
 

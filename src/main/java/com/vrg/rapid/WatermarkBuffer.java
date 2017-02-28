@@ -39,7 +39,7 @@ class WatermarkBuffer {
     private final int H;
     private final int L;
     private final AtomicInteger proposalCount = new AtomicInteger(0);
-    private final AtomicInteger updatesInProgress = new AtomicInteger(0);
+    private final Set<HostAndPort> staging = new HashSet<>();
     private final Map<Node, Set<HostAndPort>> reportsPerHost;
     private final ArrayList<Node> proposal = new ArrayList<>();
     private final Object lock = new Object();
@@ -78,14 +78,15 @@ class WatermarkBuffer {
             final int numReportsForHost = reportsForHost.size();
 
             if (numReportsForHost == Math.min(Kmax, L)) {
-                updatesInProgress.incrementAndGet();
+                staging.add(node.hostAndPort);
             }
 
             if (numReportsForHost == Math.min(Kmax, H)) {
                  // Enough reports about "msg.getDst()" have been received that it is safe to act upon,
                  // provided there are no other nodes with L < #reports < H.
                 proposal.add(node);
-                final int updatesInProgressVal = updatesInProgress.decrementAndGet();
+                staging.remove(node.hostAndPort);
+                final int updatesInProgressVal = staging.size();
 
                 if (updatesInProgressVal == 0) {
                     // No outstanding updates, so all nodes that have crossed the H threshold of reports are
@@ -111,7 +112,7 @@ class WatermarkBuffer {
 
     void printMetrics() {
         System.out.println("===============================");
-        System.out.println(updatesInProgress);
+        System.out.println(staging.size());
         System.out.println(proposal);
         for (final Map.Entry<Node, Set<HostAndPort>> entry: reportsPerHost.entrySet()) {
             System.out.println(entry);

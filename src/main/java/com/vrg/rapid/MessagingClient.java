@@ -15,6 +15,8 @@ package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.ListenableFuture;
+import com.vrg.rapid.pb.GossipMessage;
+import com.vrg.rapid.pb.GossipResponse;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.LinkStatus;
@@ -41,6 +43,24 @@ class MessagingClient {
     MessagingClient(final HostAndPort address) {
         stubs = new ConcurrentHashMap<>();
         this.address = address;
+    }
+
+    ListenableFuture<GossipResponse> sendGossip(final HostAndPort remote,
+                                                final GossipMessage gossipMessage) {
+        Objects.requireNonNull(remote);
+        Objects.requireNonNull(gossipMessage);
+
+        if (stubs.containsKey(remote)) {
+            return stubs.get(remote).gossip(gossipMessage);
+        }
+
+        // Since gossip is periodic, we will not cache the channel right away.
+        final ManagedChannel channel = NettyChannelBuilder
+                .forAddress(remote.getHostText(), remote.getPort())
+                .usePlaintext(true)
+                .build();
+
+        return MembershipServiceGrpc.newFutureStub(channel).gossip(gossipMessage);
     }
 
     ListenableFuture<JoinResponse> sendJoinMessage(final HostAndPort remote,
