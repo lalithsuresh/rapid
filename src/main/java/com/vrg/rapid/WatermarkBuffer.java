@@ -61,9 +61,9 @@ class WatermarkBuffer {
         return proposalCount.get();
     }
 
-    List<Node> aggregateForProposal(final LinkUpdateMessage msg, final int ringNumber) {
+    List<Node> aggregateForProposal(final LinkUpdateMessage msg) {
         Objects.requireNonNull(msg);
-        assert ringNumber <= K;
+        assert msg.getRingNumber() <= K;
 
         synchronized (lock) {
             final Node node = new Node(msg.getDst(), msg.getUuid());
@@ -71,11 +71,11 @@ class WatermarkBuffer {
                                              node,
                                              (k) -> new HashMap<>(K));
 
-            if (reportsForHost.containsKey(ringNumber)) {
+            if (reportsForHost.containsKey(msg.getRingNumber())) {
                 return EMPTY_LIST;  // duplicate announcement, ignore.
             }
 
-            reportsForHost.put(ringNumber, msg.getSrc());
+            reportsForHost.put(msg.getRingNumber(), msg.getSrc());
             final int numReportsForHost = reportsForHost.size();
 
             if (numReportsForHost == L) {

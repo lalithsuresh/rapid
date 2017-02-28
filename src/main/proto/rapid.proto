@@ -32,20 +32,24 @@ message LinkUpdateMessageWire
     LinkStatus linkStatus = 4;
     int64 configurationId = 5;
     string uuid = 6;      // Required for join protocol
+    int32 ringNumber = 7;
 }
 
 message JoinMessage
 {
    string sender = 1;
    string uuid = 2;
+   int32 ringNumber = 3;
+   int64 configurationId = 4;
 }
 
 message JoinResponse
 {
    string sender = 1;
    JoinStatusCode statusCode = 2;
-   repeated bytes hosts = 3;
-   repeated bytes identifiers = 4;
+   int64 configurationId = 3;
+   repeated bytes hosts = 4;
+   repeated bytes identifiers = 5;
 }
 
 enum JoinStatusCode {

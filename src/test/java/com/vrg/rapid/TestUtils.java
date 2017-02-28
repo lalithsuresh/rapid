@@ -24,33 +24,6 @@ final class TestUtils {
     private TestUtils() {
     }
 
-    static LinkUpdateMessage[] getMessagesArray(final int K) {
-        final String ip1 = "192.168.1.1";
-        final int startingPort = 1;
-        final long configurationId = -1;
-        final HostAndPort src1 = HostAndPort.fromParts(ip1, startingPort);
-        final LinkUpdateMessage[] messages = new LinkUpdateMessage[2*K];
-        int arrIndex = 0;
-        for (int i = 0; i < K; i++) {
-            messages[arrIndex] = new LinkUpdateMessage(src1,
-                    HostAndPort.fromParts(ip1, startingPort + i + 1),
-                    LinkStatus.UP,
-                    configurationId);
-            arrIndex++;
-        }
-
-        final String ip2 = "10.1.1.1";
-        final HostAndPort src2 = HostAndPort.fromParts(ip2, startingPort + K + 1);
-        for (int i = 0; i < K; i++) {
-            messages[arrIndex] = new LinkUpdateMessage(src2,
-                    HostAndPort.fromParts(ip2, startingPort + K + i + 2),
-                    LinkStatus.UP,
-                    configurationId);
-            arrIndex++;
-        }
-        return messages;
-    }
-
     // Fisher–Yates shuffle
     static void shuffleArray(final LinkUpdateMessage[] ar)
     {

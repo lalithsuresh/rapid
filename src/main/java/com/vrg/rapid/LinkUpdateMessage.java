@@ -32,28 +32,33 @@ final class LinkUpdateMessage {
     private final LinkStatus status;
     private final long configurationId;
     private final UUID uuid;
+    private final int ringNumber;
 
     LinkUpdateMessage(final HostAndPort src,
                       final HostAndPort dst,
                       final LinkStatus status,
-                      final long configurationId) {
+                      final long configurationId,
+                      final int ringNumber) {
         this.src = Objects.requireNonNull(src);
         this.dst = Objects.requireNonNull(dst);
         this.status = Objects.requireNonNull(status);
         this.configurationId = configurationId;
         this.uuid = UUID.nameUUIDFromBytes(dst.toString().getBytes(Charsets.UTF_8));
+        this.ringNumber = ringNumber;
     }
 
     LinkUpdateMessage(final String src,
                       final String dst,
                       final LinkStatus status,
                       final long configurationId,
-                      final UUID uuid) {
+                      final UUID uuid,
+                      final int ringNumber) {
         this.src = HostAndPort.fromString(Objects.requireNonNull(src));
         this.dst = HostAndPort.fromString(Objects.requireNonNull(dst));
         this.status = Objects.requireNonNull(status);
         this.configurationId = configurationId;
         this.uuid = uuid;
+        this.ringNumber = ringNumber;
     }
 
     HostAndPort getSrc() {
@@ -74,5 +79,9 @@ final class LinkUpdateMessage {
 
     UUID getUuid() {
         return uuid;
+    }
+
+    int getRingNumber() {
+        return ringNumber;
     }
 }

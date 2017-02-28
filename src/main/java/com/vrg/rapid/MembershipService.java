@@ -19,6 +19,7 @@ import com.vrg.rapid.pb.GossipMessage;
 import com.vrg.rapid.pb.GossipResponse;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
+import com.vrg.rapid.pb.JoinResponseOrBuilder;
 import com.vrg.rapid.pb.JoinStatusCode;
 import com.vrg.rapid.pb.MembershipServiceGrpc;
 import com.vrg.rapid.pb.LinkStatus;
@@ -39,6 +40,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
 import java.util.stream.Collectors;
 
 
@@ -132,7 +134,7 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
                                          final StreamObserver<Response> responseObserver) {
         final LinkUpdateMessage msg = new LinkUpdateMessage(request.getLinkSrc(), request.getLinkDst(),
                                             request.getLinkStatus(), request.getConfigurationId(),
-                                            UUID.fromString(request.getUuid()));
+                                            UUID.fromString(request.getUuid()), request.getRingNumber());
         processLinkUpdateMessage(msg);
         responseObserver.onNext(Response.getDefaultInstance());
         responseObserver.onCompleted();
@@ -151,26 +153,49 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
                                    final StreamObserver<JoinResponse> responseObserver) {
         // This is a request by joinMessage.sender to its monitor.
         final long currentConfiguration = membershipView.getCurrentConfigurationId();
+        if (currentConfiguration == joinMessage.getConfigurationId()) {
+            LOG.trace("Join phase 2 message received during configuration {}", currentConfiguration);
+            // TODO: insert some health checks between monitor and client
+            final LinkUpdateMessageWire msg = LinkUpdateMessageWire.newBuilder()
+                    .setSender(this.myAddr.toString())
+                    .setLinkSrc(this.myAddr.toString())
+                    .setLinkDst(joinMessage.getSender())
+                    .setLinkStatus(LinkStatus.UP)
+                    .setConfigurationId(joinMessage.getConfigurationId())
+                    .setUuid(joinMessage.getUuid())
+                    .setRingNumber(joinMessage.getRingNumber())
+                    .build();
 
-        LOG.trace("Join phase 2 message received during configuration {}", currentConfiguration);
-        // TODO: insert some health checks between monitor and client
-        final LinkUpdateMessageWire msg = LinkUpdateMessageWire.newBuilder()
-                                            .setSender(this.myAddr.toString())
-                                            .setLinkSrc(this.myAddr.toString())
-                                            .setLinkDst(joinMessage.getSender())
-                                            .setLinkStatus(LinkStatus.UP)
-                                            .setConfigurationId(currentConfiguration)
-                                            .setUuid(joinMessage.getUuid())
-                                            .build();
+            broadcaster.broadcast(membershipView.viewRing(0), msg);
 
-        broadcaster.broadcast(membershipView.viewRing(0), msg);
+            final JoinResponse response = JoinResponse.newBuilder()
+                    .setSender(this.myAddr.toString())
+                    .setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
+                    .setConfigurationId(membershipView.getCurrentConfigurationId())
+                    .build();
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+        }
+        else {
+            final JoinResponse response;
+            JoinResponse.Builder responseBuilder = JoinResponse.newBuilder()
+                    .setSender(this.myAddr.toString())
+                    .setConfigurationId(membershipView.getCurrentConfigurationId());
 
-        final JoinResponse response = JoinResponse.newBuilder()
-                .setSender(this.myAddr.toString())
-                .setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
-                .build();
-        responseObserver.onNext(response);
-        responseObserver.onCompleted();
+            if (membershipView.isPresent(HostAndPort.fromString(joinMessage.getSender()))) {
+                // Race condition where we already crossed H messages for the joiner and changed
+                // the configuration, but the (H + 1)th, (H + 2)th... Kth messages show up
+                // at monitors after they've already added the joiner. In this case, we simply
+                // tell the sender that they're safe to join.
+                responseBuilder = responseBuilder.setStatusCode(JoinStatusCode.SAFE_TO_JOIN);
+            }
+            else {
+                responseBuilder = responseBuilder.setStatusCode(JoinStatusCode.CONFIG_CHANGED);
+            }
+
+            responseObserver.onNext(responseBuilder.build()); // new config
+            responseObserver.onCompleted();
+        }
     }
 
     /**
@@ -223,6 +248,7 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
         final JoinStatusCode statusCode = membershipView.isSafeToJoin(joiningHost, uuid);
         final JoinResponse.Builder builder = JoinResponse.newBuilder()
                                                    .setSender(this.myAddr.toString())
+                                                   .setConfigurationId(membershipView.getCurrentConfigurationId())
                                                    .setStatusCode(statusCode);
 
         if (statusCode.equals(JoinStatusCode.SAFE_TO_JOIN)) {
@@ -237,16 +263,7 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
     }
 
     private List<WatermarkBuffer.Node> proposedViewChange(final LinkUpdateMessage msg) {
-        // TODO: temporary solution for the lack of a deterministic expander
-        final List<HostAndPort> monitors = membershipView.expectedMonitorsOf(msg.getDst());
-        int monitorNumber = 0;
-        for (final HostAndPort monitor: monitors) {
-            if (msg.getSrc().equals(monitor)) {
-                break;
-            }
-            monitorNumber++;
-        }
-        return watermarkBuffer.aggregateForProposal(msg, monitorNumber);
+        return watermarkBuffer.aggregateForProposal(msg);
     }
 
     List<List<WatermarkBuffer.Node>> getProposalLog() {

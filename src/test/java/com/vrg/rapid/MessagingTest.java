@@ -177,23 +177,27 @@ public class MessagingTest {
         final HostAndPort clientAddr1 = HostAndPort.fromParts(localhostIp, clientPort);
         final MessagingClient client1 = new MessagingClient(clientAddr1);
         final UUID clientUuid = UUID.randomUUID();
-        final JoinResponse result1 = client1.sendJoinMessage(serverAddr, clientAddr1, clientUuid).get();
-        assertNotNull(result1);
-        assertEquals(JoinStatusCode.SAFE_TO_JOIN, result1.getStatusCode());
-        assertEquals(K, result1.getHostsCount());
+        final JoinResponse response = client1.sendJoinMessage(serverAddr, clientAddr1, clientUuid).get();
+        assertNotNull(response);
+        assertEquals(JoinStatusCode.SAFE_TO_JOIN, response.getStatusCode());
+        assertEquals(K, response.getHostsCount());
+        assertEquals(response.getConfigurationId(), membershipView.getCurrentConfigurationId());
 
         // Verify that the identifiers and hostnames retrieved at the joining peer
         // can be used to construct an identical membership view object as the
         // seed node that relayed it.
-        final List<HostAndPort> hostnameList = result1.getHostsList().stream()
+        final List<HostAndPort> hostnameList = response.getHostsList().stream()
                 .map(e -> HostAndPort.fromString(e.toStringUtf8()))
                 .collect(Collectors.toList());
 
+        int i = 0;
         for (final HostAndPort host: hostnameList) {
             final JoinResponse joinPhase2response =
-                    client1.sendJoinPhase2Message(host, clientAddr1, clientUuid).get();
+                    client1.sendJoinPhase2Message(host, clientAddr1,
+                                                  clientUuid, i, response.getConfigurationId()).get();
             assertNotNull(joinPhase2response);
             assertEquals(JoinStatusCode.SAFE_TO_JOIN, joinPhase2response.getStatusCode());
+            i++;
         }
     }
 
