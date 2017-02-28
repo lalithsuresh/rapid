@@ -51,7 +51,7 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
     private final WatermarkBuffer watermarkBuffer;
     private final HostAndPort myAddr;
     private final boolean logProposals;
-    private final Gossiper gossiper;
+    private final IBroadcaster broadcaster;
     private final List<List<WatermarkBuffer.Node>> logProposalList = new ArrayList<>();
     private Server server;
 
@@ -59,7 +59,7 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
         private final MembershipView membershipView;
         private final WatermarkBuffer watermarkBuffer;
         private final HostAndPort myAddr;
-        private final Gossiper gossiper;
+        private final IBroadcaster broadcaster;
         private boolean logProposals;
 
         public Builder(final HostAndPort myAddr,
@@ -68,7 +68,8 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
             this.myAddr = Objects.requireNonNull(myAddr);
             this.watermarkBuffer = Objects.requireNonNull(watermarkBuffer);
             this.membershipView = Objects.requireNonNull(membershipView);
-            this.gossiper = new Gossiper(membershipView, new MessagingClient(myAddr));
+            final MessagingClient messagingClient = new MessagingClient(myAddr);
+            this.broadcaster = new UnicastToAllBroadcaster(messagingClient);
         }
 
         public Builder setLogProposals(final boolean logProposals) {
@@ -86,7 +87,7 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
         this.membershipView = builder.membershipView;
         this.watermarkBuffer = builder.watermarkBuffer;
         this.logProposals = builder.logProposals;
-        this.gossiper = builder.gossiper;
+        this.broadcaster = builder.broadcaster;
     }
 
     void startServer() throws IOException {
@@ -151,42 +152,25 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
         // This is a request by joinMessage.sender to its monitor.
         final long currentConfiguration = membershipView.getCurrentConfigurationId();
 
-        if (currentConfiguration == joinMessage.getConfigurationId()) {
-            LOG.trace("Join phase 2 message received during configuration {}", currentConfiguration);
-            // TODO: insert some health checks between monitor and client
-            final LinkUpdateMessageWire msg = LinkUpdateMessageWire.newBuilder()
-                                                .setSender(this.myAddr.toString())
-                                                .setLinkSrc(this.myAddr.toString())
-                                                .setLinkDst(joinMessage.getSender())
-                                                .setLinkStatus(LinkStatus.UP)
-                                                .setConfigurationId(currentConfiguration)
-                                                .setUuid(joinMessage.getUuid())
-                                                .build();
+        LOG.trace("Join phase 2 message received during configuration {}", currentConfiguration);
+        // TODO: insert some health checks between monitor and client
+        final LinkUpdateMessageWire msg = LinkUpdateMessageWire.newBuilder()
+                                            .setSender(this.myAddr.toString())
+                                            .setLinkSrc(this.myAddr.toString())
+                                            .setLinkDst(joinMessage.getSender())
+                                            .setLinkStatus(LinkStatus.UP)
+                                            .setConfigurationId(currentConfiguration)
+                                            .setUuid(joinMessage.getUuid())
+                                            .build();
 
-            final GossipMessage gossipMessage = GossipMessage.newBuilder()
-                    .setMessageId(UUID.randomUUID().toString())
-                    .setTtl(0)
-                    .addAllLinkUpdateMessage(Collections.singletonList(msg))
-                    .build();
-            gossiper.gossip(HostAndPort.fromString(joinMessage.getSender()), gossipMessage);
+        broadcaster.broadcast(membershipView.viewRing(0), msg);
 
-            final JoinResponse response = JoinResponse.newBuilder()
-                    .setSender(this.myAddr.toString())
-                    .setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
-                    .build();
-            responseObserver.onNext(response);
-            responseObserver.onCompleted();
-        }
-        else {
-            LOG.info("Join phase 2 message for configuration {} received during configuration {}",
-                    joinMessage.getConfigurationId(), currentConfiguration);
-            final JoinResponse response = JoinResponse.newBuilder()
-                    .setSender(this.myAddr.toString())
-                    .setStatusCode(JoinStatusCode.CONFIG_CHANGED)
-                    .build();
-            responseObserver.onNext(response);
-            responseObserver.onCompleted(); // no response
-        }
+        final JoinResponse response = JoinResponse.newBuilder()
+                .setSender(this.myAddr.toString())
+                .setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
+                .build();
+        responseObserver.onNext(response);
+        responseObserver.onCompleted();
     }
 
     /**
@@ -221,6 +205,15 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
                 logProposalList.add(proposal);
             }
             // Initiate consensus from here.
+
+            // TODO: for now, we just apply the proposal directly.
+            for (final WatermarkBuffer.Node node: proposal) {
+                try {
+                    membershipView.ringAdd(node.hostAndPort, node.uuid);
+                } catch (final MembershipView.NodeAlreadyInRingException e) {
+                    e.printStackTrace();
+                }
+            }
         }
     }
 
@@ -231,15 +224,10 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
         final JoinResponse.Builder builder = JoinResponse.newBuilder()
                                                    .setSender(this.myAddr.toString())
                                                    .setStatusCode(statusCode);
+
         if (statusCode.equals(JoinStatusCode.SAFE_TO_JOIN)) {
-            // Return the list of IDs and hosts to the joining node so that it
-            // is ready to be part of the new configuration.
-            final MembershipView.Configuration configuration = membershipView.getConfiguration();
-            builder.addAllIdentifiers(configuration.uuids
-                                        .stream()
-                                        .map(e -> ByteString.copyFromUtf8(e.toString()))
-                                        .collect(Collectors.toList()))
-                   .addAllHosts(configuration.hostAndPorts
+            // Return a list of monitors for the
+            builder.addAllHosts(membershipView.expectedMonitorsOf(joiningHost)
                                 .stream()
                                 .map(e -> ByteString.copyFromUtf8(e.toString()))
                                 .collect(Collectors.toList()));

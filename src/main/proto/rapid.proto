@@ -38,7 +38,6 @@ message JoinMessage
 {
    string sender = 1;
    string uuid = 2;
-   int64 configurationId = 3;
 }
 
 message JoinResponse
@@ -52,8 +51,9 @@ message JoinResponse
 enum JoinStatusCode {
     HOSTNAME_ALREADY_IN_RING = 0;
     UUID_ALREADY_IN_RING = 1;
-    SAFE_TO_JOIN = 2;
-    CONFIG_CHANGED = 3;
+    OK = 2;
+    SAFE_TO_JOIN = 3;
+    CONFIG_CHANGED = 4;
 };
 
 enum LinkStatus {

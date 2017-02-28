@@ -77,9 +77,8 @@ class MessagingClient {
     }
 
     ListenableFuture<JoinResponse> sendJoinPhase2Message(final HostAndPort remote,
-                                       final HostAndPort sender,
-                                       final UUID uuid,
-                                       final long configurationId) {
+                                                         final HostAndPort sender,
+                                                         final UUID uuid) {
         Objects.requireNonNull(remote);
         Objects.requireNonNull(sender);
         Objects.requireNonNull(uuid);
@@ -87,7 +86,6 @@ class MessagingClient {
         final JoinMessage.Builder builder = JoinMessage.newBuilder();
         final JoinMessage msg = builder.setSender(sender.toString())
                 .setUuid(uuid.toString())
-                .setConfigurationId(configurationId)
                 .build();
         final MembershipServiceFutureStub stub = stubs.computeIfAbsent(remote, this::createBlockingStub);
         return stub.withDeadlineAfter(1, TimeUnit.SECONDS).receiveJoinPhase2Message(msg);

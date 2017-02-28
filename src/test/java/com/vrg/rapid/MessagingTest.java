@@ -19,6 +19,7 @@ import com.vrg.rapid.pb.JoinStatusCode;
 import com.vrg.rapid.pb.LinkStatus;
 import io.grpc.ServerInterceptor;
 import io.grpc.StatusRuntimeException;
+import org.junit.After;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -26,6 +27,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
+import java.util.NavigableSet;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
@@ -46,6 +50,16 @@ public class MessagingTest {
     private final int serverPortBase = 1234;
     private static final String localhostIp = "127.0.0.1";
     private static final long configurationId = -1;
+    private final List<MembershipService> services = new ArrayList<>();
+
+    @After
+    public void cleanup() throws InterruptedException {
+        for (final MembershipService service: services) {
+            service.stopServer();
+            service.blockUntilShutdown();
+        }
+        services.clear();
+    }
 
     /**
      * Single node gets a join request from a peer with non conflicting
@@ -64,11 +78,7 @@ public class MessagingTest {
         final JoinResponse result = client.sendJoinMessage(serverAddr, clientAddr, UUID.randomUUID()).get();
         assertNotNull(result);
         assertEquals(JoinStatusCode.SAFE_TO_JOIN, result.getStatusCode());
-        assertEquals(1, result.getHostsCount());
-        assertEquals(1, result.getIdentifiersCount());
-
-        service.stopServer();
-        service.blockUntilShutdown();
+        assertEquals(K, result.getHostsCount());
     }
 
     /**
@@ -105,9 +115,6 @@ public class MessagingTest {
         assertEquals(JoinStatusCode.UUID_ALREADY_IN_RING, result2.getStatusCode());
         assertEquals(0, result2.getHostsCount());
         assertEquals(0, result2.getIdentifiersCount());
-
-        service.stopServer();
-        service.blockUntilShutdown();
     }
 
     /**
@@ -129,50 +136,26 @@ public class MessagingTest {
         final MembershipService service = createAndStartMembershipService(serverAddr,
                 new ArrayList<>(), membershipView);
 
-        try {
-            final int clientPort = serverPortBase - 1;
-            final HostAndPort clientAddr1 = HostAndPort.fromParts(localhostIp, clientPort);
-            final MessagingClient client1 = new MessagingClient(clientAddr1);
-            final JoinResponse result1 = client1.sendJoinMessage(serverAddr, clientAddr1, UUID.randomUUID()).get();
-            assertNotNull(result1);
-            assertEquals(JoinStatusCode.SAFE_TO_JOIN, result1.getStatusCode());
-            assertEquals(numNodes, result1.getHostsCount());
-            assertEquals(numNodes, result1.getIdentifiersCount());
+        final int clientPort = serverPortBase - 1;
+        final HostAndPort joinerAddr = HostAndPort.fromParts(localhostIp, clientPort);
+        final MessagingClient joinerClient = new MessagingClient(joinerAddr);
+        final JoinResponse result1 = joinerClient.sendJoinMessage(serverAddr, joinerAddr, UUID.randomUUID()).get();
+        assertNotNull(result1);
+        assertEquals(JoinStatusCode.SAFE_TO_JOIN, result1.getStatusCode());
+        assertEquals(K, result1.getHostsCount());
 
-            // Verify that the identifiers and hostnames retrieved at the joining peer
-            // can be used to construct an identical membership view object as the
-            // seed node that relayed it.
-            final List<UUID> identifiersList = result1.getIdentifiersList().stream()
-                                                .map(e -> UUID.fromString(e.toStringUtf8()))
-                                                .collect(Collectors.toList());
-            final List<HostAndPort> hostnameList = result1.getHostsList().stream()
-                                                .map(e -> HostAndPort.fromString(e.toStringUtf8()))
-                                                .collect(Collectors.toList());
+        // Verify that the monitors retrieved from the seed are the same
+        final List<HostAndPort> monitorsAtClient = result1.getHostsList().stream()
+                                            .map(e -> HostAndPort.fromString(e.toStringUtf8()))
+                                            .collect(Collectors.toList());
 
-            final long retrievedConfigurationId =
-                    MembershipView.Configuration.getConfigurationId(identifiersList,
-                                                                    hostnameList);
-            assertEquals(membershipView.getCurrentConfigurationId(), retrievedConfigurationId);
+        final List<HostAndPort> monitorsOriginal = membershipView.expectedMonitorsOf(joinerAddr);
+        assertEquals(monitorsAtClient.size(), monitorsOriginal.size());
 
-            final MembershipView membershipViewJoiningNode = new MembershipView(K, identifiersList, hostnameList);
-            assertEquals(membershipView.getMembershipSize(),
-                         membershipViewJoiningNode.getMembershipSize());
-            assertEquals(membershipView.getCurrentConfigurationId(),
-                         membershipViewJoiningNode.getCurrentConfigurationId());
-
-            // We're being a little paranoid here, but verify that the rings look identical
-            // between both nodes
-            for (int k = 0; k < K; k++) {
-                final Iterator seedRingIter = membershipView.viewRing(k).iterator();
-                final Iterator joinerRingIter = membershipView.viewRing(k).iterator();
-                for (int i = 0; i < numNodes; i++) {
-                    assertEquals(seedRingIter.next(), joinerRingIter.next());
-                }
-            }
-        }
-        finally {
-            service.stopServer();
-            service.blockUntilShutdown();
+        final Iterator iter1 = monitorsAtClient.iterator();
+        final Iterator iter2 = monitorsOriginal.iterator();
+        for (int i = 0; i < monitorsAtClient.size(); i++) {
+            assertEquals(iter1.next(), iter2.next());
         }
     }
 
@@ -184,109 +167,33 @@ public class MessagingTest {
     public void joinWithMultipleNodesBootstrap()
             throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException, ExecutionException {
         final UUID uuid = UUID.randomUUID();
-        final int numNodes = 1;
         final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, serverPortBase);
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, uuid);
-        final MembershipService service = createAndStartMembershipService(serverAddr,
+        createAndStartMembershipService(serverAddr,
                 new ArrayList<>(), membershipView);
-        MembershipService clientService = null;
 
-        try {
-            final int clientPort = serverPortBase - 1;
-            final HostAndPort clientAddr1 = HostAndPort.fromParts(localhostIp, clientPort);
-            final MessagingClient client1 = new MessagingClient(clientAddr1);
-            final UUID clientUuid = UUID.randomUUID();
-            final JoinResponse result1 = client1.sendJoinMessage(serverAddr, clientAddr1, clientUuid).get();
-            assertNotNull(result1);
-            assertEquals(JoinStatusCode.SAFE_TO_JOIN, result1.getStatusCode());
-            assertEquals(numNodes, result1.getHostsCount());
-            assertEquals(numNodes, result1.getIdentifiersCount());
+        final int clientPort = serverPortBase - 1;
+        final HostAndPort clientAddr1 = HostAndPort.fromParts(localhostIp, clientPort);
+        final MessagingClient client1 = new MessagingClient(clientAddr1);
+        final UUID clientUuid = UUID.randomUUID();
+        final JoinResponse result1 = client1.sendJoinMessage(serverAddr, clientAddr1, clientUuid).get();
+        assertNotNull(result1);
+        assertEquals(JoinStatusCode.SAFE_TO_JOIN, result1.getStatusCode());
+        assertEquals(K, result1.getHostsCount());
 
-            // Verify that the identifiers and hostnames retrieved at the joining peer
-            // can be used to construct an identical membership view object as the
-            // seed node that relayed it.
-            final List<UUID> identifiersList = result1.getIdentifiersList().stream()
-                    .map(e -> UUID.fromString(e.toStringUtf8()))
-                    .collect(Collectors.toList());
-            final List<HostAndPort> hostnameList = result1.getHostsList().stream()
-                    .map(e -> HostAndPort.fromString(e.toStringUtf8()))
-                    .collect(Collectors.toList());
+        // Verify that the identifiers and hostnames retrieved at the joining peer
+        // can be used to construct an identical membership view object as the
+        // seed node that relayed it.
+        final List<HostAndPort> hostnameList = result1.getHostsList().stream()
+                .map(e -> HostAndPort.fromString(e.toStringUtf8()))
+                .collect(Collectors.toList());
 
-            final MembershipView membershipViewJoiningNode = new MembershipView(K, identifiersList, hostnameList);
-            assertEquals(membershipView.getMembershipSize(),
-                    membershipViewJoiningNode.getMembershipSize());
-            assertEquals(membershipView.getCurrentConfigurationId(),
-                    membershipViewJoiningNode.getCurrentConfigurationId());
-
-            clientService = createAndStartMembershipService(clientAddr1,
-                    new ArrayList<>(), membershipViewJoiningNode);
-
+        for (final HostAndPort host: hostnameList) {
             final JoinResponse joinPhase2response =
-                    client1.sendJoinPhase2Message(serverAddr, clientAddr1,
-                            clientUuid, membershipViewJoiningNode.getCurrentConfigurationId()).get();
+                    client1.sendJoinPhase2Message(host, clientAddr1, clientUuid).get();
             assertNotNull(joinPhase2response);
             assertEquals(JoinStatusCode.SAFE_TO_JOIN, joinPhase2response.getStatusCode());
-        }
-        finally {
-            service.stopServer();
-            service.blockUntilShutdown();
-
-            if (clientService != null) {
-                clientService.stopServer();
-                clientService.blockUntilShutdown();
-            }
-        }
-    }
-
-    /**
-     * Test bootstrap with multiple services
-     */
-    @Test
-    public void joinWithMultipleServicesBootstrap()
-            throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException, ExecutionException {
-        List<MembershipService> services = new ArrayList<>();
-        MembershipService clientService = null;
-        try {
-            final int N = 50;
-            services = createAndStartMembershipServices(N);
-
-            // This will be the joining node
-            final int joinerPort = serverPortBase - 1;
-            final HostAndPort joinerAddr = HostAndPort.fromParts(localhostIp, joinerPort);
-            final MessagingClient joinerClient = new MessagingClient(joinerAddr);
-            final UUID joinerUuid = UUID.randomUUID();
-            final HostAndPort seed = HostAndPort.fromParts("127.0.0.1", serverPortBase + 1);
-            final JoinResponse joinPhaseOneResult = joinerClient.sendJoinMessage(seed, joinerAddr, joinerUuid).get();
-            assertNotNull(joinPhaseOneResult);
-            assertEquals(JoinStatusCode.SAFE_TO_JOIN, joinPhaseOneResult.getStatusCode());
-            final List<UUID> identifiersList = joinPhaseOneResult.getIdentifiersList().stream()
-                    .map(e -> UUID.fromString(e.toStringUtf8()))
-                    .collect(Collectors.toList());
-            final List<HostAndPort> hostnameList = joinPhaseOneResult.getHostsList().stream()
-                    .map(e -> HostAndPort.fromString(e.toStringUtf8()))
-                    .collect(Collectors.toList());
-            final MembershipView membershipViewJoiningNode = new MembershipView(K, identifiersList, hostnameList);
-
-            // Use the constructed membership service to find the monitors
-            clientService = createAndStartMembershipService(joinerAddr,
-                    new ArrayList<>(), membershipViewJoiningNode);
-            services.add(clientService);
-            for (final HostAndPort monitor: membershipViewJoiningNode.expectedMonitorsOf(joinerAddr)) {
-                final JoinResponse joinPhase2response =
-                        joinerClient.sendJoinPhase2Message(monitor, joinerAddr,
-                                joinerUuid, membershipViewJoiningNode.getCurrentConfigurationId()).get();
-                assertNotNull(joinPhase2response);
-                assertEquals(JoinStatusCode.SAFE_TO_JOIN, joinPhase2response.getStatusCode());
-            }
-
-            for (int i = 0; i < N; i++) {
-                assertEquals(1, services.get(i).getProposalLog().size());
-                assertEquals(1, services.get(i).getProposalLog().get(0).size());
-                assertEquals(joinerAddr, services.get(i).getProposalLog().get(0).get(0).hostAndPort);
-            }
-        } finally {
-            shutDownServices(services);
         }
     }
 
@@ -308,8 +215,6 @@ public class MessagingTest {
             exceptionCaught = true;
         }
         assertTrue(exceptionCaught);
-        service.stopServer();
-        service.blockUntilShutdown();
     }
 
     private MembershipService createAndStartMembershipService(final HostAndPort serverAddr)
@@ -322,6 +227,7 @@ public class MessagingTest {
                                     .setLogProposals(true)
                                     .build();
         service.startServer();
+        services.add(service);
         return service;
     }
 
@@ -336,6 +242,7 @@ public class MessagingTest {
                         .setLogProposals(true)
                         .build();
         service.startServer(interceptors);
+        services.add(service);
         return service;
     }
 
@@ -349,28 +256,17 @@ public class MessagingTest {
                         .setLogProposals(true)
                         .build();
         service.startServer(interceptors);
+        services.add(service);
         return service;
     }
 
     private List<MembershipService> createAndStartMembershipServices(final int N) throws IOException {
-        final List<MembershipService> services = new ArrayList<>(N);
         for (int i = serverPortBase; i < serverPortBase + N; i++) {
             final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, i);
             services.add(createAndStartMembershipService(serverAddr, Collections.emptyList(), createMembershipView(N)));
         }
 
         return services;
-    }
-
-    private void shutDownServices(final List<MembershipService> services) {
-        services.parallelStream().forEach(service -> {
-            service.stopServer();
-            try {
-                service.blockUntilShutdown();
-            } catch (final InterruptedException e) {
-                fail();
-            }
-        });
     }
 
     private MembershipView createMembershipView(final int N) {
