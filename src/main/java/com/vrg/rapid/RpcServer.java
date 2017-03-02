@@ -53,6 +53,7 @@ class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     @Override
     public void gossip(final GossipMessage request,
                        final StreamObserver<GossipResponse> responseObserver) {
+        // TODO: unused
         responseObserver.onNext(GossipResponse.getDefaultInstance());
         responseObserver.onCompleted();
     }
