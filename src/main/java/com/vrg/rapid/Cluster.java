@@ -107,6 +107,7 @@ public class Cluster {
             }
         }
 
+        // TODO: need to handle retries before giving up
         throw new RuntimeException("Join attempt unsuccessful");
     }
 
@@ -130,11 +131,22 @@ public class Cluster {
         return new Cluster(rpcServer, membershipService);
     }
 
+    /**
+     * Returns the list of hosts currently in the membership set.
+     *
+     * @return
+     */
     public List<HostAndPort> getMemberlist() {
         return membershipService.getMembershipView();
     }
 
+    /**
+     * Shutdown the RpcServer
+     *
+     * @throws InterruptedException
+     */
     public void shutdown() throws InterruptedException {
+        // TODO: this should probably be a "leave" method
         rpcServer.stopServer();
         rpcServer.blockUntilShutdown();
     }
