@@ -20,4 +20,5 @@
 <suppressions>
     <suppress files="com[\\/]vrg[\\/]thrift" checks=".*"/>
     <suppress files="com[\\/]vrg[\\/]grpc" checks=".*"/>
+    <suppress files="com[\\/]vrg[\\/]rapid[\\/]package-info.java" checks=".*"/>
 </suppressions>

@@ -12,10 +12,16 @@
  */
 
 /**
- * This informs FindBugs to check parameters for NonNull.
+ * This informs FindBugs to mark parameters, fields and methods as NonNull.
  */
-@ParametersAreNonnullByDefault
 
+@ParametersAreNonnullByDefault
+@FieldsAreNonnullByDefault
+@MethodsAreNonnullByDefault
 package com.vrg.rapid;
 
+import com.vrg.rapid.annotations.FieldsAreNonnullByDefault;
+import com.vrg.rapid.annotations.MethodsAreNonnullByDefault;
+
 import javax.annotation.ParametersAreNonnullByDefault;
+

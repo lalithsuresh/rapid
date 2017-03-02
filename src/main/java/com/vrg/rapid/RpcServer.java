@@ -28,6 +28,7 @@ import io.grpc.ServerInterceptors;
 import io.grpc.netty.NettyServerBuilder;
 import io.grpc.stub.StreamObserver;
 
+import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
@@ -37,9 +38,9 @@ import java.util.Objects;
  * Created by lsuresh on 2/28/17.
  */
 public class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
-    private MembershipService membershipService;
+    private final MembershipService membershipService;
     private final HostAndPort address;
-    private Server server;
+    @Nullable private Server server;
 
     public RpcServer(final HostAndPort address, final MembershipService service) {
         this.address = address;
@@ -95,14 +96,10 @@ public class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     }
 
     void stopServer() {
-        if (server != null) {
-            server.shutdown();
-        }
+        server.shutdown();
     }
 
     void blockUntilShutdown() throws InterruptedException {
-        if (server != null) {
-            server.awaitTermination();
-        }
+        server.awaitTermination();
     }
 }
