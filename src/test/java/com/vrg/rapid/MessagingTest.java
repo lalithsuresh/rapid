@@ -18,7 +18,6 @@ import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
 import com.vrg.rapid.pb.LinkStatus;
 import io.grpc.ServerInterceptor;
-import io.grpc.StatusRuntimeException;
 import org.junit.After;
 import org.junit.Test;
 

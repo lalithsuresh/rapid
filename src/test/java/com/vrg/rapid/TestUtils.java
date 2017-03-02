@@ -13,9 +13,6 @@
 
 package com.vrg.rapid;
 
-import com.google.common.net.HostAndPort;
-import com.vrg.rapid.pb.LinkStatus;
-
 import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
 
