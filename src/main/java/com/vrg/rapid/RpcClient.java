@@ -36,11 +36,11 @@ import java.util.concurrent.TimeUnit;
 /**
  * MessagingServiceGrpc client.
  */
-class MessagingClient {
+class RpcClient {
     private final ConcurrentHashMap<HostAndPort, MembershipServiceFutureStub> stubs;
     private final HostAndPort address;
 
-    MessagingClient(final HostAndPort address) {
+    RpcClient(final HostAndPort address) {
         stubs = new ConcurrentHashMap<>();
         this.address = address;
     }

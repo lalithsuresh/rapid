@@ -15,39 +15,27 @@ package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
 import com.google.protobuf.ByteString;
-import com.vrg.rapid.pb.GossipMessage;
-import com.vrg.rapid.pb.GossipResponse;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
-import com.vrg.rapid.pb.JoinResponseOrBuilder;
 import com.vrg.rapid.pb.JoinStatusCode;
-import com.vrg.rapid.pb.MembershipServiceGrpc;
 import com.vrg.rapid.pb.LinkStatus;
 import com.vrg.rapid.pb.LinkUpdateMessageWire;
-import com.vrg.rapid.pb.Response;
-import io.grpc.Server;
-import io.grpc.ServerBuilder;
-import io.grpc.ServerInterceptor;
-import io.grpc.ServerInterceptors;
-import io.grpc.netty.NettyServerBuilder;
 import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.concurrent.ExecutorService;
 import java.util.stream.Collectors;
 
 
 /**
  * Membership server class that implements the Rapid protocol.
  */
-public class MembershipService extends MembershipServiceGrpc.MembershipServiceImplBase {
+public class MembershipService {
     private static final Logger LOG = LoggerFactory.getLogger(MembershipService.class);
     private final MembershipView membershipView;
     private final WatermarkBuffer watermarkBuffer;
@@ -55,7 +43,6 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
     private final boolean logProposals;
     private final IBroadcaster broadcaster;
     private final List<List<WatermarkBuffer.Node>> logProposalList = new ArrayList<>();
-    private Server server;
 
     public static class Builder {
         private final MembershipView membershipView;
@@ -70,8 +57,8 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
             this.myAddr = Objects.requireNonNull(myAddr);
             this.watermarkBuffer = Objects.requireNonNull(watermarkBuffer);
             this.membershipView = Objects.requireNonNull(membershipView);
-            final MessagingClient messagingClient = new MessagingClient(myAddr);
-            this.broadcaster = new UnicastToAllBroadcaster(messagingClient);
+            final RpcClient rpcClient = new RpcClient(myAddr);
+            this.broadcaster = new UnicastToAllBroadcaster(rpcClient);
         }
 
         public Builder setLogProposals(final boolean logProposals) {
@@ -92,66 +79,39 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
         this.broadcaster = builder.broadcaster;
     }
 
-    void startServer() throws IOException {
-        startServer(Collections.emptyList());
-    }
+    /**
+     * This is invoked by a new node joining the network at a seed node.
+     * The seed responds with the current configuration ID and a list of monitors
+     * for the joiner, who then moves on to phase 2 of the protocol with its monitors.
+     */
+    JoinResponse processJoinMessage(final JoinMessage joinMessage) {
+        final HostAndPort joiningHost = HostAndPort.fromString(joinMessage.getSender());
+        final UUID uuid = UUID.fromString(joinMessage.getUuid());
+        final JoinStatusCode statusCode = membershipView.isSafeToJoin(joiningHost, uuid);
+        final JoinResponse.Builder builder = JoinResponse.newBuilder()
+                                                   .setSender(this.myAddr.toString())
+                                                   .setConfigurationId(membershipView.getCurrentConfigurationId())
+                                                   .setStatusCode(statusCode);
 
-    void startServer(final List<ServerInterceptor> interceptors) throws IOException {
-        Objects.requireNonNull(interceptors);
-        final ServerBuilder builder = NettyServerBuilder.forPort(myAddr.getPort());
-        server = builder.addService(ServerInterceptors
-                                   .intercept(this, interceptors))
-                .build()
-                .start();
-        // Use stderr here since the logger may have been reset by its JVM shutdown hook.
-        Runtime.getRuntime().addShutdownHook(new Thread(this::stopServer));
-    }
-
-    void stopServer() {
-        if (server != null) {
-            server.shutdown();
+        if (statusCode.equals(JoinStatusCode.SAFE_TO_JOIN)) {
+            // Return a list of monitors for the joiner to contact for phase 2 of the protocol
+            builder.addAllHosts(membershipView.expectedMonitorsOf(joiningHost)
+                    .stream()
+                    .map(e -> ByteString.copyFromUtf8(e.toString()))
+                    .collect(Collectors.toList()));
         }
-    }
 
-    void blockUntilShutdown() throws InterruptedException {
-        if (server != null) {
-            server.awaitTermination();
-        }
+        return builder.build();
     }
 
     /**
-     * rpc implementations for methods defined in rapid.proto.
+     * Invoked by a joining node at its (future) monitors. They perform any failure checking
+     * required before propagating a LinkUpdateMessage with the status UP. After the watermarking
+     * and consensus succeeds, the monitor informs the joiner about the new configuration it
+     * is now a part of.
      */
-    @Override
-    public void gossip(final GossipMessage request,
-                       final StreamObserver<GossipResponse> responseObserver) {
-        responseObserver.onNext(GossipResponse.getDefaultInstance());
-        responseObserver.onCompleted();
-    }
-
-    @Override
-    public void receiveLinkUpdateMessage(final LinkUpdateMessageWire request,
-                                         final StreamObserver<Response> responseObserver) {
-        final LinkUpdateMessage msg = new LinkUpdateMessage(request.getLinkSrc(), request.getLinkDst(),
-                                            request.getLinkStatus(), request.getConfigurationId(),
-                                            UUID.fromString(request.getUuid()), request.getRingNumber());
-        processLinkUpdateMessage(msg);
-        responseObserver.onNext(Response.getDefaultInstance());
-        responseObserver.onCompleted();
-    }
-
-    @Override
-    public void receiveJoinMessage(final JoinMessage joinMessage,
-                                   final StreamObserver<JoinResponse> responseObserver) {
-        final JoinResponse response = processJoinMessage(joinMessage);
-        responseObserver.onNext(response);
-        responseObserver.onCompleted();
-    }
-
-    @Override
-    public void receiveJoinPhase2Message(final JoinMessage joinMessage,
-                                   final StreamObserver<JoinResponse> responseObserver) {
-        // This is a request by joinMessage.sender to its monitor.
+    void processJoinPhaseTwoMessage(final JoinMessage joinMessage,
+                                    final StreamObserver<JoinResponse> responseObserver) {
         final long currentConfiguration = membershipView.getCurrentConfigurationId();
         if (currentConfiguration == joinMessage.getConfigurationId()) {
             LOG.trace("Join phase 2 message received during configuration {}", currentConfiguration);
@@ -166,18 +126,31 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
                     .setRingNumber(joinMessage.getRingNumber())
                     .build();
 
+            // TODO: for the time being, perform an all-to-all broadcast. We will later replace this with gossip.
             broadcaster.broadcast(membershipView.viewRing(0), msg);
 
+            // TODO: the below code should only be executed after a successful membership change (using a callback).
+            final MembershipView.Configuration configuration = membershipView.getConfiguration();
             final JoinResponse response = JoinResponse.newBuilder()
                     .setSender(this.myAddr.toString())
                     .setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
                     .setConfigurationId(membershipView.getCurrentConfigurationId())
+                    .addAllHosts(configuration.hostAndPorts
+                            .stream()
+                            .map(e -> ByteString.copyFromUtf8(e.toString()))
+                            .collect(Collectors.toList()))
+                    .addAllIdentifiers(configuration.uuids
+                            .stream()
+                            .map(e -> ByteString.copyFromUtf8(e.toString()))
+                            .collect(Collectors.toList()))
                     .build();
             responseObserver.onNext(response);
             responseObserver.onCompleted();
         }
         else {
-            final JoinResponse response;
+            // This handles the corner case where the configuration changed between phase 1 and phase 2
+            // of the joining node's bootstrap. It should attempt to rejoin the network.
+
             JoinResponse.Builder responseBuilder = JoinResponse.newBuilder()
                     .setSender(this.myAddr.toString())
                     .setConfigurationId(membershipView.getCurrentConfigurationId());
@@ -206,20 +179,31 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
      * Link update messages that do not affect an ongoing proposal
      * needs to be dropped.
      */
-    private void processLinkUpdateMessage(final LinkUpdateMessage msg) {
-        Objects.requireNonNull(msg);
+    void processLinkUpdateMessage(final LinkUpdateMessageWire request) {
+        Objects.requireNonNull(request);
+
+        // TODO: move away from using two classes for the same message type
+        final LinkUpdateMessage msg = new LinkUpdateMessage(request.getLinkSrc(), request.getLinkDst(),
+                request.getLinkStatus(), request.getConfigurationId(),
+                UUID.fromString(request.getUuid()), request.getRingNumber());
 
         final long currentConfigurationId = membershipView.getCurrentConfigurationId();
         if (currentConfigurationId != msg.getConfigurationId()) {
+            LOG.trace("LinkUpdateMessage for configuration {} received during configuration {}",
+                      msg.getConfigurationId(), currentConfigurationId);
             return;
         }
 
         // The invariant we want to maintain is that a node can only go into the
         // membership set once and leave it once.
         if (msg.getStatus().equals(LinkStatus.UP) && membershipView.isPresent(msg.getDst())) {
+            LOG.trace("LinkUpdateMessage with status UP received for node {} already in configuration {} ",
+                      msg.getDst(), currentConfigurationId);
             return;
         }
         if (msg.getStatus().equals(LinkStatus.DOWN) && !membershipView.isPresent(msg.getDst())) {
+            LOG.trace("LinkUpdateMessage with status DOWN received for node {} already in configuration {} ",
+                    msg.getDst(), currentConfigurationId);
             return;
         }
 
@@ -240,26 +224,6 @@ public class MembershipService extends MembershipServiceGrpc.MembershipServiceIm
                 }
             }
         }
-    }
-
-    private JoinResponse processJoinMessage(final JoinMessage joinMessage) {
-        final HostAndPort joiningHost = HostAndPort.fromString(joinMessage.getSender());
-        final UUID uuid = UUID.fromString(joinMessage.getUuid());
-        final JoinStatusCode statusCode = membershipView.isSafeToJoin(joiningHost, uuid);
-        final JoinResponse.Builder builder = JoinResponse.newBuilder()
-                                                   .setSender(this.myAddr.toString())
-                                                   .setConfigurationId(membershipView.getCurrentConfigurationId())
-                                                   .setStatusCode(statusCode);
-
-        if (statusCode.equals(JoinStatusCode.SAFE_TO_JOIN)) {
-            // Return a list of monitors for the
-            builder.addAllHosts(membershipView.expectedMonitorsOf(joiningHost)
-                                .stream()
-                                .map(e -> ByteString.copyFromUtf8(e.toString()))
-                                .collect(Collectors.toList()));
-        }
-
-        return builder.build();
     }
 
     private List<WatermarkBuffer.Node> proposedViewChange(final LinkUpdateMessage msg) {

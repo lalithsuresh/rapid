@@ -21,27 +21,26 @@ import com.vrg.rapid.pb.Response;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ExecutionException;
 
 /**
  * Simple best-effort broadcaster.
  */
 public class UnicastToAllBroadcaster implements IBroadcaster {
-    private final MessagingClient messagingClient;
+    private final RpcClient rpcClient;
 
-    public UnicastToAllBroadcaster(final MessagingClient messagingClient) {
-        this.messagingClient = messagingClient;
+    public UnicastToAllBroadcaster(final RpcClient rpcClient) {
+        this.rpcClient = rpcClient;
     }
 
     @Override
     public void broadcast(final List<HostAndPort> recipients, final LinkUpdateMessageWire msg) {
         final List<ListenableFuture<Response>> futures = new ArrayList<>();
         for (final HostAndPort recipient: recipients) {
-            futures.add(messagingClient.sendLinkUpdateMessage(recipient, msg));
+            futures.add(rpcClient.sendLinkUpdateMessage(recipient, msg));
         }
         try {
             Futures.allAsList(futures).get();
-        } catch (final ExecutionException | InterruptedException e) {
+        } catch (final Exception e) {
             e.printStackTrace();
         }
     }
