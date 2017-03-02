@@ -37,7 +37,7 @@ import java.util.Objects;
 /**
  * gRPC server object.
  */
-public class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
+class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     private final MembershipService membershipService;
     private final HostAndPort address;
     @Nullable private Server server;

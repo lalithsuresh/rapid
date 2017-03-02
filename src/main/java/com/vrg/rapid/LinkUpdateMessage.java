@@ -17,7 +17,6 @@ import com.google.common.base.Charsets;
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.LinkStatus;
 
-import java.nio.charset.Charset;
 import java.util.Objects;
 import java.util.UUID;
 

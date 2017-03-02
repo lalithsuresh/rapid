@@ -365,7 +365,7 @@ public class MembershipViewTest {
         final UUID id1 = UUID.randomUUID();
         try {
             mview.ringAdd(n1, id1);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             fail();
         }
 
