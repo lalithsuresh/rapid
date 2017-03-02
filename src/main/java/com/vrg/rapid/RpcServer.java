@@ -97,10 +97,12 @@ class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     }
 
     void stopServer() {
+        assert server != null;
         server.shutdown();
     }
 
     void blockUntilShutdown() throws InterruptedException {
+        assert server != null;
         server.awaitTermination();
     }
 }
