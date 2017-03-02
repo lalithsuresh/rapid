@@ -41,7 +41,7 @@ public class UnicastToAllBroadcaster implements IBroadcaster {
         try {
             Futures.allAsList(futures).get();
         } catch (final Exception e) {
-            e.printStackTrace();
+            System.err.println("Got an error");
         }
     }
 }

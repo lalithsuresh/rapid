@@ -94,7 +94,7 @@ public class ClusterTests {
         RpcServer.USE_IN_PROCESS_SERVER = true;
         RpcClient.USE_IN_PROCESS_CHANNEL = true;
 
-        final int numNodes = 50;
+        final int numNodes = 100;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
         final List<Cluster> serviceList = new ArrayList<>();
 

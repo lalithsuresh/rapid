@@ -138,7 +138,7 @@ public class MembershipService {
             final JoinResponse response = JoinResponse.newBuilder()
                     .setSender(this.myAddr.toString())
                     .setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
-                    .setConfigurationId(membershipView.getCurrentConfigurationId())
+                    .setConfigurationId(configuration.getConfigurationId()) // RACE CONDITION
                     .addAllHosts(configuration.hostAndPorts
                             .stream()
                             .map(e -> ByteString.copyFromUtf8(e.toString()))
@@ -163,9 +163,9 @@ public class MembershipService {
                 && membershipView.isIdentifierPresent(UUID.fromString(joinMessage.getUuid()))) {
                 final MembershipView.Configuration configuration = membershipView.getConfiguration();
 
-                // Race condition where we already crossed H messages for the joiner and changed
-                // the configuration, but the (H + 1)th, (H + 2)th... Kth messages show up
-                // at monitors after they've already added the joiner. In this case, we simply
+                // Race condition where a monitor already crossed H messages for the joiner and changed
+                // the configuration, but the JoinPhase2 messages show up at the monitor
+                // after it has already added the joiner. In this case, we simply
                 // tell the sender that they're safe to join.
                 responseBuilder = responseBuilder.setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
                                     .addAllHosts(configuration.hostAndPorts

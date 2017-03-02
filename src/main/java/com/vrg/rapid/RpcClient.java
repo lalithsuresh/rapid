@@ -96,7 +96,7 @@ class RpcClient {
                 .setConfigurationId(configurationId)
                 .build();
         final MembershipServiceFutureStub stub = stubs.computeIfAbsent(remote, this::createFutureStub);
-        return stub.withDeadlineAfter(RPC_TIMEOUT_SECONDS, TimeUnit.SECONDS).receiveJoinPhase2Message(msg);
+        return stub.withDeadlineAfter(RPC_TIMEOUT_SECONDS * 10, TimeUnit.SECONDS).receiveJoinPhase2Message(msg);
     }
 
     private ListenableFuture<JoinResponse> sendJoinMessage(final HostAndPort remote, final JoinMessage msg) {

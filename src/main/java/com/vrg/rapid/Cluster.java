@@ -75,6 +75,8 @@ public class Cluster {
                     .map(e -> HostAndPort.fromString(e.toStringUtf8()))
                     .collect(Collectors.toList());
 
+            final RpcServer server = new RpcServer(listenAddress);
+            server.startServer();
             int ringNumber = 0;
             final List<ListenableFuture<JoinResponse>> futures = new ArrayList<>();
             for (final HostAndPort monitor : monitorList) {
@@ -87,10 +89,10 @@ public class Cluster {
             // joined. Else, there's an error and we throw an exception.
 
             final List<JoinResponse> responses = Futures.allAsList(futures).get();
+
             for (final JoinResponse response : responses) {
                 if (response.getStatusCode() == JoinStatusCode.SAFE_TO_JOIN
-                        && response.getConfigurationId() != joinPhaseOneResult.getConfigurationId()) {
-
+                    && response.getConfigurationId() != joinPhaseOneResult.getConfigurationId()) {
                     // Safe to proceed. Extract the list of hosts and identifiers from the message,
                     // assemble a MembershipService object and start an RpcServer.
                     final List<HostAndPort> allHosts = response.getHostsList().stream()
@@ -109,14 +111,15 @@ public class Cluster {
                             membershipViewFinal)
                             .setLogProposals(true)
                             .build();
-                    final RpcServer server = new RpcServer(listenAddress, membershipService);
-                    server.startServer();
+                    server.setMembershipService(membershipService);
                     return new Cluster(server, membershipService);
                 }
             }
+            server.stopServer();
         }
+
         // TODO: need to handle retries before giving up
-        throw new RuntimeException("Join attempt unsuccessful");
+        throw new RuntimeException("Join attempt unsuccessful " + listenAddress);
     }
 
     /**
@@ -127,6 +130,7 @@ public class Cluster {
      */
     public static Cluster start(final HostAndPort listenAddress) throws IOException {
         Objects.requireNonNull(listenAddress);
+        final RpcServer rpcServer = new RpcServer(listenAddress);
         final UUID currentIdentifier = UUID.randomUUID();
         final MembershipView membershipView = new MembershipView(K, Collections.singletonList(currentIdentifier),
                                                                     Collections.singletonList(listenAddress));
@@ -135,7 +139,7 @@ public class Cluster {
                                                                                   membershipView)
                                                 .setLogProposals(true)
                                                 .build();
-        final RpcServer rpcServer = new RpcServer(listenAddress, membershipService);
+        rpcServer.setMembershipService(membershipService);
         rpcServer.startServer();
         return new Cluster(rpcServer, membershipService);
     }

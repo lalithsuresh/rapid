@@ -203,6 +203,48 @@ public class MessagingTest {
         }
     }
 
+
+    /**
+     * Test bootstrap
+     */
+    @Test
+    public void joinWithPartialRpcServer()
+            throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException, ExecutionException {
+        final UUID nodeIdentifier = UUID.randomUUID();
+        final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, serverPortBase);
+        final MembershipView membershipView = new MembershipView(K);
+        membershipView.ringAdd(serverAddr, nodeIdentifier);
+        createAndStartMembershipService(serverAddr,
+                new ArrayList<>(), membershipView);
+
+        final int clientPort = serverPortBase - 1;
+        final HostAndPort clientAddr1 = HostAndPort.fromParts(localhostIp, clientPort);
+        final RpcClient client1 = new RpcClient(clientAddr1);
+        final UUID clientUuid = UUID.randomUUID();
+        final JoinResponse response = client1.sendJoinMessage(serverAddr, clientAddr1, clientUuid).get();
+        assertNotNull(response);
+        assertEquals(JoinStatusCode.SAFE_TO_JOIN, response.getStatusCode());
+        assertEquals(K, response.getHostsCount());
+        assertEquals(response.getConfigurationId(), membershipView.getCurrentConfigurationId());
+
+        // Verify that the identifiers and hostnames retrieved at the joining peer
+        // can be used to construct an identical membership view object as the
+        // seed node that relayed it.
+        final List<HostAndPort> hostnameList = response.getHostsList().stream()
+                .map(e -> HostAndPort.fromString(e.toStringUtf8()))
+                .collect(Collectors.toList());
+
+        int i = 0;
+        for (final HostAndPort host: hostnameList) {
+            final JoinResponse joinPhase2response =
+                    client1.sendJoinPhase2Message(host, clientAddr1,
+                            clientUuid, i, response.getConfigurationId()).get();
+            assertNotNull(joinPhase2response);
+            assertEquals(JoinStatusCode.SAFE_TO_JOIN, joinPhase2response.getStatusCode());
+            i++;
+        }
+    }
+
     @Test
     public void droppedMessage() throws InterruptedException,
             IOException, MembershipView.NodeAlreadyInRingException {
@@ -232,7 +274,8 @@ public class MessagingTest {
                 new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView)
                                     .setLogProposals(true)
                                     .build();
-        final RpcServer rpcServer = new RpcServer(serverAddr, service);
+        final RpcServer rpcServer = new RpcServer(serverAddr);
+        rpcServer.setMembershipService(service);
         rpcServer.startServer();
         services.add(rpcServer);
         return rpcServer;
@@ -248,7 +291,8 @@ public class MessagingTest {
                 new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView)
                         .setLogProposals(true)
                         .build();
-        final RpcServer rpcServer = new RpcServer(serverAddr, service);
+        final RpcServer rpcServer = new RpcServer(serverAddr);
+        rpcServer.setMembershipService(service);
         rpcServer.startServer(interceptors);
         services.add(rpcServer);
         return rpcServer;
@@ -263,7 +307,8 @@ public class MessagingTest {
                 new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView)
                         .setLogProposals(true)
                         .build();
-        final RpcServer rpcServer = new RpcServer(serverAddr, service);
+        final RpcServer rpcServer = new RpcServer(serverAddr);
+        rpcServer.setMembershipService(service);
         rpcServer.startServer(interceptors);
         services.add(rpcServer);
         return rpcServer;
