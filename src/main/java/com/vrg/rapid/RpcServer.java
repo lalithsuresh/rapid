@@ -35,7 +35,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Created by lsuresh on 2/28/17.
+ * gRPC server object.
  */
 public class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     private final MembershipService membershipService;
