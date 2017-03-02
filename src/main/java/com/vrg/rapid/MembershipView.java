@@ -235,8 +235,12 @@ final class MembershipView {
         }
     }
 
-    boolean isPresent(final HostAndPort address) {
+    boolean isHostPresent(final HostAndPort address) {
         return rings.get(0).contains(address);
+    }
+
+    boolean isIdentifierPresent(final UUID identifier) {
+        return identifiersSeen.contains(identifier);
     }
 
     long getCurrentConfigurationId() {

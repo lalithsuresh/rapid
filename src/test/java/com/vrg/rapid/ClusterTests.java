@@ -75,6 +75,7 @@ public class ClusterTests {
             }
         }
         catch (final ExecutionException | InterruptedException | RuntimeException e) {
+            e.printStackTrace();
             fail();
         }
         finally {
@@ -90,6 +91,9 @@ public class ClusterTests {
      */
     @Test
     public void testJoinMoreThanTen() throws IOException, InterruptedException {
+        RpcServer.USE_IN_PROCESS_SERVER = true;
+        RpcClient.USE_IN_PROCESS_CHANNEL = true;
+
         final int numNodes = 50;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
         final List<Cluster> serviceList = new ArrayList<>();

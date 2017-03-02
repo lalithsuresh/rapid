@@ -131,6 +131,10 @@ public class MembershipService {
 
             // TODO: the below code should only be executed after a successful membership change (using a callback).
             final MembershipView.Configuration configuration = membershipView.getConfiguration();
+
+            assert configuration.hostAndPorts.size() > 0;
+            assert configuration.uuids.size() > 0;
+
             final JoinResponse response = JoinResponse.newBuilder()
                     .setSender(this.myAddr.toString())
                     .setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
@@ -155,12 +159,23 @@ public class MembershipService {
                     .setSender(this.myAddr.toString())
                     .setConfigurationId(membershipView.getCurrentConfigurationId());
 
-            if (membershipView.isPresent(HostAndPort.fromString(joinMessage.getSender()))) {
+            if (membershipView.isHostPresent(HostAndPort.fromString(joinMessage.getSender()))
+                && membershipView.isIdentifierPresent(UUID.fromString(joinMessage.getUuid()))) {
+                final MembershipView.Configuration configuration = membershipView.getConfiguration();
+
                 // Race condition where we already crossed H messages for the joiner and changed
                 // the configuration, but the (H + 1)th, (H + 2)th... Kth messages show up
                 // at monitors after they've already added the joiner. In this case, we simply
                 // tell the sender that they're safe to join.
-                responseBuilder = responseBuilder.setStatusCode(JoinStatusCode.SAFE_TO_JOIN);
+                responseBuilder = responseBuilder.setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
+                                    .addAllHosts(configuration.hostAndPorts
+                                            .stream()
+                                            .map(e -> ByteString.copyFromUtf8(e.toString()))
+                                            .collect(Collectors.toList()))
+                                    .addAllIdentifiers(configuration.uuids
+                                            .stream()
+                                            .map(e -> ByteString.copyFromUtf8(e.toString()))
+                                            .collect(Collectors.toList()));
             }
             else {
                 responseBuilder = responseBuilder.setStatusCode(JoinStatusCode.CONFIG_CHANGED);
@@ -196,12 +211,12 @@ public class MembershipService {
 
         // The invariant we want to maintain is that a node can only go into the
         // membership set once and leave it once.
-        if (msg.getStatus().equals(LinkStatus.UP) && membershipView.isPresent(msg.getDst())) {
+        if (msg.getStatus().equals(LinkStatus.UP) && membershipView.isHostPresent(msg.getDst())) {
             LOG.trace("LinkUpdateMessage with status UP received for node {} already in configuration {} ",
                       msg.getDst(), currentConfigurationId);
             return;
         }
-        if (msg.getStatus().equals(LinkStatus.DOWN) && !membershipView.isPresent(msg.getDst())) {
+        if (msg.getStatus().equals(LinkStatus.DOWN) && !membershipView.isHostPresent(msg.getDst())) {
             LOG.trace("LinkUpdateMessage with status DOWN received for node {} already in configuration {} ",
                     msg.getDst(), currentConfigurationId);
             return;

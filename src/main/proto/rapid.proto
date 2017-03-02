@@ -55,9 +55,8 @@ message JoinResponse
 enum JoinStatusCode {
     HOSTNAME_ALREADY_IN_RING = 0;
     UUID_ALREADY_IN_RING = 1;
-    OK = 2;
-    SAFE_TO_JOIN = 3;
-    CONFIG_CHANGED = 4;
+    SAFE_TO_JOIN = 2;
+    CONFIG_CHANGED = 3;
 };
 
 enum LinkStatus {

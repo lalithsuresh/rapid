@@ -21,10 +21,12 @@ import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.LinkUpdateMessageWire;
 import com.vrg.rapid.pb.MembershipServiceGrpc;
 import com.vrg.rapid.pb.Response;
+import io.grpc.Channel;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import io.grpc.ServerInterceptor;
 import io.grpc.ServerInterceptors;
+import io.grpc.inprocess.InProcessServerBuilder;
 import io.grpc.netty.NettyServerBuilder;
 import io.grpc.stub.StreamObserver;
 
@@ -38,6 +40,7 @@ import java.util.Objects;
  * gRPC server object.
  */
 class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
+    static boolean USE_IN_PROCESS_SERVER = false;
     private final MembershipService membershipService;
     private final HostAndPort address;
     @Nullable private Server server;
@@ -87,11 +90,22 @@ class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
 
     void startServer(final List<ServerInterceptor> interceptors) throws IOException {
         Objects.requireNonNull(interceptors);
-        final ServerBuilder builder = NettyServerBuilder.forPort(address.getPort());
-        server = builder.addService(ServerInterceptors
-                .intercept(this, interceptors))
-                .build()
-                .start();
+        final Channel channel;
+
+        if (USE_IN_PROCESS_SERVER) {
+            final ServerBuilder builder = InProcessServerBuilder.forName(address.toString());
+            server = builder.addService(ServerInterceptors
+                    .intercept(this, interceptors))
+                    .build()
+                    .start();
+        } else {
+            final ServerBuilder builder = NettyServerBuilder.forPort(address.getPort());
+            server = builder.addService(ServerInterceptors
+                    .intercept(this, interceptors))
+                    .build()
+                    .start();
+        }
+
         // Use stderr here since the logger may have been reset by its JVM shutdown hook.
         Runtime.getRuntime().addShutdownHook(new Thread(this::stopServer));
     }
