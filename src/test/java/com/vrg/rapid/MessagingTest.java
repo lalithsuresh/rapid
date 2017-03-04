@@ -31,6 +31,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -74,7 +75,7 @@ public class MessagingTest {
         final int serverPort = 1234;
         final int clientPort = 1235;
         final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, serverPort);
-        final RpcServer rpcServer = createAndStartMembershipService(serverAddr);
+        @SuppressWarnings("unused") final RpcServer rpcServer = createAndStartMembershipService(serverAddr);
 
         final HostAndPort clientAddr = HostAndPort.fromParts(localhostIp, clientPort);
         final RpcClient client = new RpcClient(clientAddr);
@@ -96,7 +97,7 @@ public class MessagingTest {
         final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, serverPort);
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, nodeIdentifier);
-        final RpcServer rpcServer = createAndStartMembershipService(serverAddr,
+        @SuppressWarnings("unused") final RpcServer rpcServer = createAndStartMembershipService(serverAddr,
                                             new ArrayList<>(), membershipView);
 
         // Try with the same host details as the server
@@ -136,7 +137,7 @@ public class MessagingTest {
         for (int i = 1; i < numNodes; i++) {
             membershipView.ringAdd(HostAndPort.fromParts(localhostIp, serverPortBase + i), UUID.randomUUID());
         }
-        final RpcServer rpcServer = createAndStartMembershipService(serverAddr,
+        @SuppressWarnings("unused") final RpcServer rpcServer = createAndStartMembershipService(serverAddr,
                 new ArrayList<>(), membershipView);
 
         final int clientPort = serverPortBase - 1;
@@ -163,10 +164,10 @@ public class MessagingTest {
 
 
     /**
-     * Test bootstrap
+     * Test bootstrap with a single node.
      */
     @Test
-    public void joinWithMultipleNodesBootstrap()
+    public void joinWithSingleNodeBootstrap()
             throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException, ExecutionException {
         final UUID nodeIdentifier = UUID.randomUUID();
         final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, serverPortBase);
@@ -176,74 +177,29 @@ public class MessagingTest {
                 new ArrayList<>(), membershipView);
 
         final int clientPort = serverPortBase - 1;
-        final HostAndPort clientAddr1 = HostAndPort.fromParts(localhostIp, clientPort);
-        final RpcClient client1 = new RpcClient(clientAddr1);
-        final UUID clientUuid = UUID.randomUUID();
-        final JoinResponse response = client1.sendJoinMessage(serverAddr, clientAddr1, clientUuid).get();
+        final HostAndPort joinerAddress = HostAndPort.fromParts(localhostIp, clientPort);
+        final RpcClient joinerRpcClient = new RpcClient(joinerAddress);
+        final UUID joinerUuid = UUID.randomUUID();
+        final JoinResponse response = joinerRpcClient.sendJoinMessage(serverAddr, joinerAddress, joinerUuid).get();
         assertNotNull(response);
         assertEquals(JoinStatusCode.SAFE_TO_JOIN, response.getStatusCode());
         assertEquals(K, response.getHostsCount());
         assertEquals(response.getConfigurationId(), membershipView.getCurrentConfigurationId());
 
-        // Verify that the identifiers and hostnames retrieved at the joining peer
-        // can be used to construct an identical membership view object as the
-        // seed node that relayed it.
-        final List<HostAndPort> hostnameList = response.getHostsList().stream()
+        // Verify that the hostnames retrieved at the joining peer
+        // matches that of the seed node.
+        final List<HostAndPort> monitorList = response.getHostsList().stream()
                 .map(e -> HostAndPort.fromString(e.toStringUtf8()))
                 .collect(Collectors.toList());
 
-        int i = 0;
-        for (final HostAndPort host: hostnameList) {
-            final JoinResponse joinPhase2response =
-                    client1.sendJoinPhase2Message(host, clientAddr1,
-                                                  clientUuid, i, response.getConfigurationId()).get();
-            assertNotNull(joinPhase2response);
-            assertEquals(JoinStatusCode.SAFE_TO_JOIN, joinPhase2response.getStatusCode());
-            i++;
+        final Iterator<HostAndPort> iterJoiner = monitorList.iterator();
+        final Iterator<HostAndPort> iterSeed = membershipView.expectedMonitorsOf(joinerAddress).iterator();
+        for (int i = 0; i < K; i++) {
+            assertEquals(iterJoiner.next(), iterSeed.next());
         }
+
     }
 
-
-    /**
-     * Test bootstrap
-     */
-    @Test
-    public void joinWithPartialRpcServer()
-            throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException, ExecutionException {
-        final UUID nodeIdentifier = UUID.randomUUID();
-        final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, serverPortBase);
-        final MembershipView membershipView = new MembershipView(K);
-        membershipView.ringAdd(serverAddr, nodeIdentifier);
-        createAndStartMembershipService(serverAddr,
-                new ArrayList<>(), membershipView);
-
-        final int clientPort = serverPortBase - 1;
-        final HostAndPort clientAddr1 = HostAndPort.fromParts(localhostIp, clientPort);
-        final RpcClient client1 = new RpcClient(clientAddr1);
-        final UUID clientUuid = UUID.randomUUID();
-        final JoinResponse response = client1.sendJoinMessage(serverAddr, clientAddr1, clientUuid).get();
-        assertNotNull(response);
-        assertEquals(JoinStatusCode.SAFE_TO_JOIN, response.getStatusCode());
-        assertEquals(K, response.getHostsCount());
-        assertEquals(response.getConfigurationId(), membershipView.getCurrentConfigurationId());
-
-        // Verify that the identifiers and hostnames retrieved at the joining peer
-        // can be used to construct an identical membership view object as the
-        // seed node that relayed it.
-        final List<HostAndPort> hostnameList = response.getHostsList().stream()
-                .map(e -> HostAndPort.fromString(e.toStringUtf8()))
-                .collect(Collectors.toList());
-
-        int i = 0;
-        for (final HostAndPort host: hostnameList) {
-            final JoinResponse joinPhase2response =
-                    client1.sendJoinPhase2Message(host, clientAddr1,
-                            clientUuid, i, response.getConfigurationId()).get();
-            assertNotNull(joinPhase2response);
-            assertEquals(JoinStatusCode.SAFE_TO_JOIN, joinPhase2response.getStatusCode());
-            i++;
-        }
-    }
 
     @Test
     public void droppedMessage() throws InterruptedException,

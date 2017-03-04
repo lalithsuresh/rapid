@@ -29,7 +29,7 @@ import static org.junit.Assert.fail;
 /**
  * Test public API
  */
-public class ClusterTests {
+public class ClusterTest {
 
     static {
         // gRPC INFO logs clutter the test output
@@ -70,11 +70,12 @@ public class ClusterTests {
         try {
             for (int i = 0; i < numNodes; i++) {
                 final HostAndPort joiningHost = HostAndPort.fromParts("127.0.0.1", 1235 + i);
-                serviceList.add(Cluster.join(seedHost, joiningHost));
-                assertEquals(i + 2, seed.getMemberlist().size());
+                final Cluster nonSeed = Cluster.join(seedHost, joiningHost);
+                serviceList.add(nonSeed);
+                assertEquals(i + 2, nonSeed.getMemberlist().size());
             }
         }
-        catch (final ExecutionException | InterruptedException | RuntimeException e) {
+        catch (final InterruptedException | RuntimeException e) {
             e.printStackTrace();
             fail();
         }
@@ -94,7 +95,7 @@ public class ClusterTests {
         RpcServer.USE_IN_PROCESS_SERVER = true;
         RpcClient.USE_IN_PROCESS_CHANNEL = true;
 
-        final int numNodes = 100;
+        final int numNodes = 300;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
         final List<Cluster> serviceList = new ArrayList<>();
 
@@ -103,8 +104,14 @@ public class ClusterTests {
         try {
             for (int i = 0; i < numNodes; i++) {
                 final HostAndPort joiningHost = HostAndPort.fromParts("127.0.0.1", 1235 + i);
-                serviceList.add(Cluster.join(seedHost, joiningHost));
-                assertEquals(i + 2, seed.getMemberlist().size());
+                final Cluster nonSeed = Cluster.join(seedHost, joiningHost);
+                serviceList.add(nonSeed);
+                assertEquals(i + 2, nonSeed.getMemberlist().size());
+            }
+
+            Thread.sleep(100);
+            for (final Cluster cluster: serviceList) {
+                assertEquals(cluster.getMemberlist().size(), numNodes + 1); // +1 for the seed
             }
         }
         catch (final Exception e) {

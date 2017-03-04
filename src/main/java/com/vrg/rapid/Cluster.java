@@ -14,10 +14,11 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
-import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -32,6 +33,7 @@ import java.util.stream.Collectors;
  * The public API for Rapid.
  */
 public class Cluster {
+    private static final Logger LOG = LoggerFactory.getLogger("Cluster");
     private static final int K = 10;
     private static final int H = 8;
     private static final int L = 3;
@@ -52,22 +54,45 @@ public class Cluster {
      * @throws IOException Thrown if we cannot successfully start a server
      */
     public static Cluster join(final HostAndPort seedAddress,
-                     final HostAndPort listenAddress) throws IOException, ExecutionException, InterruptedException {
+                     final HostAndPort listenAddress) throws IOException, InterruptedException {
         Objects.requireNonNull(seedAddress);
         Objects.requireNonNull(listenAddress);
+        UUID currentIdentifier = UUID.randomUUID();
 
+        final RpcServer server = new RpcServer(listenAddress);
+        server.startServer();
         for (int attempt = 0; attempt < RETRIES; attempt++) {
 
             // First, get the configuration ID and the monitors to contact from the seed node.
             final RpcClient joinerClient = new RpcClient(listenAddress);
-            final UUID currentIdentifier = UUID.randomUUID();  // the logical identifier of the host
-            final JoinResponse joinPhaseOneResult = joinerClient.sendJoinMessage(seedAddress,
-                    listenAddress, currentIdentifier).get();
+            final JoinResponse joinPhaseOneResult;
+            try {
+                joinPhaseOneResult = joinerClient.sendJoinMessage(seedAddress,
+                        listenAddress, currentIdentifier).get();
+            } catch (final ExecutionException e) {
+                LOG.error("Join message to seed {} returned an exception: {}", seedAddress, e.getCause());
+                continue;
+            }
             assert joinPhaseOneResult != null;
 
             // TODO: need to handle other cases
-            if (!joinPhaseOneResult.getStatusCode().equals(JoinStatusCode.SAFE_TO_JOIN)) {
-                throw new RuntimeException(joinPhaseOneResult.getStatusCode().toString());
+            switch (joinPhaseOneResult.getStatusCode()) {
+                case CONFIG_CHANGED:
+                case UUID_ALREADY_IN_RING:
+                    currentIdentifier = UUID.randomUUID();
+                    continue;
+                case HOSTNAME_ALREADY_IN_RING:
+                    LOG.error("Hostname already in configuration {}", joinPhaseOneResult.getConfigurationId());
+                    continue;
+                case SAFE_TO_JOIN:
+                    break;
+                default:
+                    throw new RuntimeException("Unrecognized status code");
+            }
+
+            if (attempt > 0) {
+                LOG.info("{} is retrying a join under a new configuration {}",
+                         listenAddress, joinPhaseOneResult.getConfigurationId());
             }
 
             // We have the list of monitors. Now contact them as part of phase 2.
@@ -75,48 +100,54 @@ public class Cluster {
                     .map(e -> HostAndPort.fromString(e.toStringUtf8()))
                     .collect(Collectors.toList());
 
-            final RpcServer server = new RpcServer(listenAddress);
-            server.startServer();
             int ringNumber = 0;
-            final List<ListenableFuture<JoinResponse>> futures = new ArrayList<>();
+            final List<ListenableFuture<JoinResponse>> responseFutures = new ArrayList<>();
             for (final HostAndPort monitor : monitorList) {
-                futures.add(joinerClient.sendJoinPhase2Message(monitor, listenAddress, currentIdentifier, ringNumber,
+                responseFutures.add(joinerClient.sendJoinPhase2Message(monitor, listenAddress,
+                        currentIdentifier, ringNumber,
                         joinPhaseOneResult.getConfigurationId()));
                 ringNumber++;
             }
 
             // The returned list of responses must contain the full configuration (hosts and identifiers) we just
             // joined. Else, there's an error and we throw an exception.
+            int node = 0;
+            for (final ListenableFuture<JoinResponse> future : responseFutures) {
+                final JoinResponse response;
+                try {
+                    response = future.get();
+                    if (response.getStatusCode() == JoinStatusCode.SAFE_TO_JOIN
+                        && response.getConfigurationId() != joinPhaseOneResult.getConfigurationId()) {
+                        // Safe to proceed. Extract the list of hosts and identifiers from the message,
+                        // assemble a MembershipService object and start an RpcServer.
+                        final List<HostAndPort> allHosts = response.getHostsList().stream()
+                                .map(e -> HostAndPort.fromString(e.toStringUtf8()))
+                                .collect(Collectors.toList());
+                        final List<UUID> identifiersSeen = response.getIdentifiersList().stream()
+                                .map(e -> UUID.fromString(e.toStringUtf8()))
+                                .collect(Collectors.toList());
 
-            final List<JoinResponse> responses = Futures.allAsList(futures).get();
-
-            for (final JoinResponse response : responses) {
-                if (response.getStatusCode() == JoinStatusCode.SAFE_TO_JOIN
-                    && response.getConfigurationId() != joinPhaseOneResult.getConfigurationId()) {
-                    // Safe to proceed. Extract the list of hosts and identifiers from the message,
-                    // assemble a MembershipService object and start an RpcServer.
-                    final List<HostAndPort> allHosts = response.getHostsList().stream()
-                            .map(e -> HostAndPort.fromString(e.toStringUtf8()))
-                            .collect(Collectors.toList());
-                    final List<UUID> identifiersSeen = response.getIdentifiersList().stream()
-                            .map(e -> UUID.fromString(e.toStringUtf8()))
-                            .collect(Collectors.toList());
-
-                    assert identifiersSeen.size() > 0;
-                    assert allHosts.size() > 0;
-                    final MembershipView membershipViewFinal = new MembershipView(K, identifiersSeen, allHosts);
-                    final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
-                    final MembershipService membershipService = new MembershipService.Builder(listenAddress,
-                            watermarkBuffer,
-                            membershipViewFinal)
-                            .setLogProposals(true)
-                            .build();
-                    server.setMembershipService(membershipService);
-                    return new Cluster(server, membershipService);
+                        assert identifiersSeen.size() > 0;
+                        assert allHosts.size() > 0;
+                        final MembershipView membershipViewFinal = new MembershipView(K, identifiersSeen, allHosts);
+                        final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
+                        final MembershipService membershipService = new MembershipService.Builder(listenAddress,
+                                watermarkBuffer,
+                                membershipViewFinal)
+                                .setLogProposals(true)
+                                .build();
+                        server.setMembershipService(membershipService);
+                        return new Cluster(server, membershipService);
+                    }
+                    node++;
+                } catch (final ExecutionException e) {
+                    LOG.error("JoinePhaseTwo request by {} to {} for configuration {} threw an exception. Retrying. {}",
+                             listenAddress, monitorList.get(node),
+                             joinPhaseOneResult.getConfigurationId(), e.getMessage());
                 }
             }
-            server.stopServer();
         }
+        server.stopServer();
 
         // TODO: need to handle retries before giving up
         throw new RuntimeException("Join attempt unsuccessful " + listenAddress);

@@ -83,7 +83,7 @@ final class MembershipView {
     }
 
     @VisibleForTesting
-    void ringAdd(final HostAndPort node, final UUID uuid) throws NodeAlreadyInRingException {
+    void ringAdd(final HostAndPort node, final UUID uuid) {
         Objects.requireNonNull(node);
         Objects.requireNonNull(uuid);
 
@@ -111,7 +111,7 @@ final class MembershipView {
     }
 
     @VisibleForTesting
-    void ringDelete(final HostAndPort node) throws NodeNotInRingException {
+    void ringDelete(final HostAndPort node) {
         Objects.requireNonNull(node);
         try {
             rwLock.writeLock().lock();
@@ -136,7 +136,7 @@ final class MembershipView {
      * @return the set of monitors for {@code node}
      * @throws NodeNotInRingException thrown if {@code node} is not in the ring
      */
-    List<HostAndPort> monitorsOf(final HostAndPort node) throws NodeNotInRingException {
+    List<HostAndPort> monitorsOf(final HostAndPort node) {
         Objects.requireNonNull(node);
         try {
             rwLock.readLock().lock();
@@ -172,7 +172,7 @@ final class MembershipView {
      * @return the set of nodes monitored by {@code node}
      * @throws NodeNotInRingException thrown if {@code node} is not in the ring
      */
-    List<HostAndPort> monitoreesOf(final HostAndPort node) throws NodeNotInRingException {
+    List<HostAndPort> monitoreesOf(final HostAndPort node) {
         Objects.requireNonNull(node);
         try {
             rwLock.readLock().lock();
@@ -307,13 +307,13 @@ final class MembershipView {
         }
     }
 
-    static class NodeAlreadyInRingException extends Exception {
+    static class NodeAlreadyInRingException extends RuntimeException {
         NodeAlreadyInRingException(final HostAndPort node) {
             super(node.toString());
         }
     }
 
-    static class NodeNotInRingException extends Exception {
+    static class NodeNotInRingException extends RuntimeException {
         NodeNotInRingException(final HostAndPort node) {
             super(node.toString());
         }

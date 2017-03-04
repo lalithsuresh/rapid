@@ -47,6 +47,7 @@ class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     private final BlockingQueue<Runnable> deferredMessages = new LinkedBlockingDeque<>();
     @Nullable private MembershipService membershipService;
     @Nullable private Server server;
+    private final Object lock = new Object();
 
     public RpcServer(final HostAndPort address) {
         this.address = address;
@@ -73,7 +74,9 @@ class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
             responseObserver.onCompleted();
         };
         if (membershipService == null) {
-            deferredMessages.add(runnable);
+            synchronized (lock) {
+                deferredMessages.add(runnable);
+            }
         }
         else {
             runnable.run();
@@ -85,12 +88,12 @@ class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
                                    final StreamObserver<JoinResponse> responseObserver) {
         final Runnable runnable = () -> {
             assert membershipService != null;
-            final JoinResponse response = membershipService.processJoinMessage(joinMessage);
-            responseObserver.onNext(response);
-            responseObserver.onCompleted();
+            membershipService.processJoinMessage(joinMessage, responseObserver);
         };
         if (membershipService == null) {
-            deferredMessages.add(runnable);
+            synchronized (lock) {
+                deferredMessages.add(runnable);
+            }
         }
         else {
             runnable.run();
@@ -105,7 +108,9 @@ class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
             membershipService.processJoinPhaseTwoMessage(joinMessage, responseObserver);
         };
         if (membershipService == null) {
-            deferredMessages.add(runnable);
+            synchronized (lock) {
+                deferredMessages.add(runnable);
+            }
         }
         else {
             runnable.run();
@@ -114,15 +119,17 @@ class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
 
     void setMembershipService(final MembershipService service) {
         this.membershipService = service;
-        deferredMessages.forEach(runnable -> {
-            try {
-                runnable.run();
-            }
-            catch (final StatusRuntimeException e) {
-                // we need to log this
-                System.err.println("Dropping runnable with status " + e.getStatus());
-            }
-        });
+        synchronized (lock) {
+            deferredMessages.forEach(runnable -> {
+                try {
+                    runnable.run();
+                } catch (final StatusRuntimeException e) {
+                    // we need to log this
+                    System.err.println("Dropping runnable with status " + e.getStatus());
+                }
+            });
+            deferredMessages.clear();
+        }
     }
 
     void startServer() throws IOException {

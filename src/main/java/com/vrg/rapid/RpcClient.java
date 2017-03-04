@@ -60,7 +60,7 @@ class RpcClient {
 
         // Since gossip is periodic, we will not cache the channel right away.
         final ManagedChannel channel = NettyChannelBuilder
-                .forAddress(remote.getHostText(), remote.getPort())
+                .forAddress(remote.getHost(), remote.getPort())
                 .usePlaintext(true)
                 .build();
 
@@ -96,7 +96,7 @@ class RpcClient {
                 .setConfigurationId(configurationId)
                 .build();
         final MembershipServiceFutureStub stub = stubs.computeIfAbsent(remote, this::createFutureStub);
-        return stub.withDeadlineAfter(RPC_TIMEOUT_SECONDS * 10, TimeUnit.SECONDS).receiveJoinPhase2Message(msg);
+        return stub.withDeadlineAfter(RPC_TIMEOUT_SECONDS * 5, TimeUnit.SECONDS).receiveJoinPhase2Message(msg);
     }
 
     private ListenableFuture<JoinResponse> sendJoinMessage(final HostAndPort remote, final JoinMessage msg) {
@@ -104,7 +104,7 @@ class RpcClient {
         Objects.requireNonNull(remote);
 
         final MembershipServiceFutureStub stub = stubs.computeIfAbsent(remote, this::createFutureStub);
-        return stub.withDeadlineAfter(RPC_TIMEOUT_SECONDS, TimeUnit.SECONDS).receiveJoinMessage(msg);
+        return stub.withDeadlineAfter(RPC_TIMEOUT_SECONDS * 5, TimeUnit.SECONDS).receiveJoinMessage(msg);
     }
 
     ListenableFuture<Response> sendLinkUpdateMessage(final HostAndPort remote, final LinkUpdateMessageWire msg) {
@@ -144,7 +144,7 @@ class RpcClient {
                     .build();
         } else {
            channel = NettyChannelBuilder
-                   .forAddress(remote.getHostText(), remote.getPort())
+                   .forAddress(remote.getHost(), remote.getPort())
                    .usePlaintext(true)
                    .build();
         }

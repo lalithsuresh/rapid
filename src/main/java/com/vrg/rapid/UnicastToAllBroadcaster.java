@@ -18,14 +18,20 @@ import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.vrg.rapid.pb.LinkUpdateMessageWire;
 import com.vrg.rapid.pb.Response;
+import io.grpc.StatusRuntimeException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 
 /**
  * Simple best-effort broadcaster.
  */
 public class UnicastToAllBroadcaster implements IBroadcaster {
+    private static final Logger LOG = LoggerFactory.getLogger(UnicastToAllBroadcaster.class);
+
     private final RpcClient rpcClient;
 
     public UnicastToAllBroadcaster(final RpcClient rpcClient) {
@@ -34,14 +40,15 @@ public class UnicastToAllBroadcaster implements IBroadcaster {
 
     @Override
     public void broadcast(final List<HostAndPort> recipients, final LinkUpdateMessageWire msg) {
-        final List<ListenableFuture<Response>> futures = new ArrayList<>();
+        final List<ListenableFuture<Response>> list = new ArrayList<>();
         for (final HostAndPort recipient: recipients) {
-            futures.add(rpcClient.sendLinkUpdateMessage(recipient, msg));
+            list.add(rpcClient.sendLinkUpdateMessage(recipient, msg));
         }
+
         try {
-            Futures.allAsList(futures).get();
-        } catch (final Exception e) {
-            System.err.println("Got an error");
+            Futures.allAsList(list).get();
+        } catch (final InterruptedException | ExecutionException | StatusRuntimeException e) {
+            LOG.error("Broadcast returned an error " + e.getCause());
         }
     }
 }
