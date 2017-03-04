@@ -14,6 +14,7 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
+import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
@@ -111,11 +112,15 @@ public class Cluster {
 
             // The returned list of responses must contain the full configuration (hosts and identifiers) we just
             // joined. Else, there's an error and we throw an exception.
-            int node = 0;
-            for (final ListenableFuture<JoinResponse> future : responseFutures) {
-                final JoinResponse response;
-                try {
-                    response = future.get();
+            try {
+                // TODO: This is only correct if we use consensus for node addition.
+                // Unsuccessful responses will be null.
+                final List<JoinResponse> responses = Futures.successfulAsList(responseFutures)
+                                                            .get()
+                                                            .stream()
+                                                            .filter(Objects::nonNull)
+                                                            .collect(Collectors.toList());
+                for (final JoinResponse response : responses) {
                     if (response.getStatusCode() == JoinStatusCode.SAFE_TO_JOIN
                         && response.getConfigurationId() != joinPhaseOneResult.getConfigurationId()) {
                         // Safe to proceed. Extract the list of hosts and identifiers from the message,
@@ -139,12 +144,10 @@ public class Cluster {
                         server.setMembershipService(membershipService);
                         return new Cluster(server, membershipService);
                     }
-                    node++;
-                } catch (final ExecutionException e) {
-                    LOG.error("JoinePhaseTwo request by {} to {} for configuration {} threw an exception. Retrying. {}",
-                             listenAddress, monitorList.get(node),
-                             joinPhaseOneResult.getConfigurationId(), e.getMessage());
                 }
+            } catch (final ExecutionException e) {
+                    LOG.error("JoinePhaseTwo request by {} for configuration {} threw an exception. Retrying. {}",
+                            listenAddress, joinPhaseOneResult.getConfigurationId(), e.getMessage());
             }
         }
         server.stopServer();

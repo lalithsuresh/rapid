@@ -20,8 +20,10 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.IntStream;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
@@ -125,4 +127,45 @@ public class ClusterTest {
         }
     }
 
+
+    /**
+     * Identical to the previous test, but with more than K nodes joining.
+     */
+    @Test
+    public void testJoinMoreThanTenParallel() throws IOException, InterruptedException {
+        RpcServer.USE_IN_PROCESS_SERVER = true;
+        RpcClient.USE_IN_PROCESS_CHANNEL = true;
+
+        final int numNodes = 10;
+        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
+        final LinkedBlockingQueue<Cluster> serviceList = new LinkedBlockingQueue<>();
+
+        final Cluster seed = Cluster.start(seedHost);
+        serviceList.add(seed);
+        try {
+            IntStream.range(0, numNodes).parallel().forEach( (int i) -> {
+                try {
+                    final HostAndPort joiningHost = HostAndPort.fromParts("127.0.0.1", 1235 + i);
+                    final Cluster nonSeed = Cluster.join(seedHost, joiningHost);
+                    serviceList.add(nonSeed);
+                } catch (final IOException | InterruptedException e) {
+                    fail();
+                }
+            });
+
+            Thread.sleep(1000);
+            for (final Cluster cluster: serviceList) {
+                assertEquals(cluster.getMemberlist().size(), numNodes + 1); // +1 for the seed
+            }
+        }
+        catch (final Exception e) {
+            e.printStackTrace();
+            fail();
+        }
+        finally {
+            for (final Cluster service: serviceList) {
+                service.shutdown();
+            }
+        }
+    }
 }

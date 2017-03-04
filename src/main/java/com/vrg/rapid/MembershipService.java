@@ -170,7 +170,7 @@ public class MembershipService {
                         responseObserver.onNext(response);
                         responseObserver.onCompleted();
                     } catch (final StatusRuntimeException e) {
-                        LOG.error("StatusRuntTimeException of type {} for response join-phase2-response to {}",
+                        LOG.error("StatusRuntimeException of type {} for response join-phase2-response to {}",
                                 e.getStatus(), response.getSender());
                     }
                 };
@@ -270,7 +270,7 @@ public class MembershipService {
 
                 // TODO: for now, we just apply the proposal directly.
                 for (final HostAndPort node : proposal) {
-                    // ringAdd will throw a RuntimeException if the host is already in the ring.
+                    // ringAdd will throw a RuntimeException if the host is already in the ring.F
                     membershipView.ringAdd(node, joinerUuid.get(node));
 
                     if (joinResponseCallbacks.containsKey(node)) {
