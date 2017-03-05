@@ -332,7 +332,7 @@ public class MembershipService {
             synchronized (broadcastSchedulerLock) {
                 // One second since last add
                 if (sendQueue.size() > 0 && lastAdded > 0 && (System.currentTimeMillis() - lastAdded) > 100) {
-                    LOG.info("{}'s scheduler is sending out {} messages", myAddr, sendQueue.size());
+                    LOG.trace("{}'s scheduler is sending out {} messages", myAddr, sendQueue.size());
                     final ArrayList<LinkUpdateMessageWire> messages = new ArrayList<>(sendQueue.size());
                     sendQueue.drainTo(messages);
                     final BatchedLinkUpdateMessageWire batched = BatchedLinkUpdateMessageWire.newBuilder()

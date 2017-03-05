@@ -15,6 +15,7 @@ package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
 import org.junit.Test;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -66,7 +67,7 @@ public class ClusterTest {
      * Test with K nodes joining the network through a single seed.
      */
     @Test
-    public void testJoinUpToTen() throws IOException, InterruptedException {
+    public void testJoinTenSequential() throws IOException, InterruptedException {
         final int numNodes = 10;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
         final List<Cluster> serviceList = new ArrayList<>();
@@ -77,6 +78,7 @@ public class ClusterTest {
                 final HostAndPort joiningHost = HostAndPort.fromParts("127.0.0.1", 1235 + i);
                 final Cluster nonSeed = Cluster.join(seedHost, joiningHost);
                 serviceList.add(nonSeed);
+                Thread.sleep(50);
                 assertEquals(i + 2, nonSeed.getMemberlist().size());
             }
         }
@@ -96,11 +98,11 @@ public class ClusterTest {
      * Identical to the previous test, but with more than K nodes joining in serial.
      */
     @Test
-    public void testJoinMoreThanTen() throws IOException, InterruptedException {
+    public void testJoinMoreThanKSequential() throws IOException, InterruptedException {
         RpcServer.USE_IN_PROCESS_SERVER = true;
         RpcClient.USE_IN_PROCESS_CHANNEL = true;
 
-        final int numNodes = 50;
+        final int numNodes = 20;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
         final List<Cluster> serviceList = new ArrayList<>();
 
@@ -153,9 +155,8 @@ public class ClusterTest {
             for (int i = 0; i < numNodes; i++) {
                 executor.execute(() -> {
                     try {
-                        int nodeNum = nodeCounter.incrementAndGet();
-                        System.out.println("sending " + nodeNum);
-                        final HostAndPort joiningHost = HostAndPort.fromParts("127.0.0.1", 1235 + nodeNum);
+                        final HostAndPort joiningHost =
+                                HostAndPort.fromParts("127.0.0.1", 1235 + nodeCounter.incrementAndGet());
                         final Cluster nonSeed = Cluster.join(seedHost, joiningHost);
                         serviceList.add(nonSeed);
                     } catch (final IOException | InterruptedException e) {
