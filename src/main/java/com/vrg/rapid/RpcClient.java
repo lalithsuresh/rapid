@@ -15,6 +15,7 @@ package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.ListenableFuture;
+import com.vrg.rapid.pb.BatchedLinkUpdateMessageWire;
 import com.vrg.rapid.pb.GossipMessage;
 import com.vrg.rapid.pb.GossipResponse;
 import com.vrg.rapid.pb.JoinMessage;
@@ -29,6 +30,7 @@ import io.grpc.ManagedChannel;
 import io.grpc.inprocess.InProcessChannelBuilder;
 import io.grpc.netty.NettyChannelBuilder;
 
+import java.util.Collections;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -96,7 +98,7 @@ class RpcClient {
                 .setConfigurationId(configurationId)
                 .build();
         final MembershipServiceFutureStub stub = stubs.computeIfAbsent(remote, this::createFutureStub);
-        return stub.withDeadlineAfter(RPC_TIMEOUT_SECONDS * 5, TimeUnit.SECONDS).receiveJoinPhase2Message(msg);
+        return stub.withDeadlineAfter(RPC_TIMEOUT_SECONDS * 20, TimeUnit.SECONDS).receiveJoinPhase2Message(msg);
     }
 
     private ListenableFuture<JoinResponse> sendJoinMessage(final HostAndPort remote, final JoinMessage msg) {
@@ -107,7 +109,7 @@ class RpcClient {
         return stub.withDeadlineAfter(RPC_TIMEOUT_SECONDS * 5, TimeUnit.SECONDS).receiveJoinMessage(msg);
     }
 
-    ListenableFuture<Response> sendLinkUpdateMessage(final HostAndPort remote, final LinkUpdateMessageWire msg) {
+    ListenableFuture<Response> sendLinkUpdateMessage(final HostAndPort remote, final BatchedLinkUpdateMessageWire msg) {
         Objects.requireNonNull(msg);
         final MembershipServiceFutureStub stub = stubs.computeIfAbsent(remote, this::createFutureStub);
         return stub.withDeadlineAfter(RPC_TIMEOUT_SECONDS, TimeUnit.SECONDS).receiveLinkUpdateMessage(msg);
@@ -130,7 +132,11 @@ class RpcClient {
                                             .setLinkDst(dst.toString())
                                             .setLinkStatus(status)
                                             .setConfigurationId(configurationId).build();
-        return stub.withDeadlineAfter(RPC_TIMEOUT_SECONDS, TimeUnit.SECONDS).receiveLinkUpdateMessage(msg);
+        final BatchedLinkUpdateMessageWire batchedMessage = BatchedLinkUpdateMessageWire.newBuilder()
+                                            .setSender(address.toString())
+                                            .addAllMessages(Collections.singletonList(msg))
+                                            .build();
+        return stub.withDeadlineAfter(RPC_TIMEOUT_SECONDS, TimeUnit.SECONDS).receiveLinkUpdateMessage(batchedMessage);
     }
 
     private MembershipServiceFutureStub createFutureStub(final HostAndPort remote) {

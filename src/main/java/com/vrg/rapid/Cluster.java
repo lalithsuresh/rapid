@@ -120,6 +120,7 @@ public class Cluster {
                                                             .stream()
                                                             .filter(Objects::nonNull)
                                                             .collect(Collectors.toList());
+
                 for (final JoinResponse response : responses) {
                     if (response.getStatusCode() == JoinStatusCode.SAFE_TO_JOIN
                         && response.getConfigurationId() != joinPhaseOneResult.getConfigurationId()) {
@@ -146,8 +147,8 @@ public class Cluster {
                     }
                 }
             } catch (final ExecutionException e) {
-                    LOG.error("JoinePhaseTwo request by {} for configuration {} threw an exception. Retrying. {}",
-                            listenAddress, joinPhaseOneResult.getConfigurationId(), e.getMessage());
+                LOG.error("JoinePhaseTwo request by {} for configuration {} threw an exception. Retrying. {}",
+                        listenAddress, joinPhaseOneResult.getConfigurationId(), e.getMessage());
             }
         }
         server.stopServer();

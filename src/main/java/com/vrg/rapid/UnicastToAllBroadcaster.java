@@ -16,7 +16,7 @@ package com.vrg.rapid;
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
-import com.vrg.rapid.pb.LinkUpdateMessageWire;
+import com.vrg.rapid.pb.BatchedLinkUpdateMessageWire;
 import com.vrg.rapid.pb.Response;
 import io.grpc.StatusRuntimeException;
 import org.slf4j.Logger;
@@ -39,7 +39,7 @@ public class UnicastToAllBroadcaster implements IBroadcaster {
     }
 
     @Override
-    public void broadcast(final List<HostAndPort> recipients, final LinkUpdateMessageWire msg) {
+    public void broadcast(final List<HostAndPort> recipients, final BatchedLinkUpdateMessageWire msg) {
         final List<ListenableFuture<Response>> list = new ArrayList<>();
         for (final HostAndPort recipient: recipients) {
             list.add(rpcClient.sendLinkUpdateMessage(recipient, msg));
@@ -48,7 +48,7 @@ public class UnicastToAllBroadcaster implements IBroadcaster {
         try {
             Futures.allAsList(list).get();
         } catch (final InterruptedException | ExecutionException | StatusRuntimeException e) {
-            LOG.error("Broadcast returned an error " + e.getCause());
+            LOG.error("Broadcast returned an error {}, {}", recipients, e.getCause());
         }
     }
 }

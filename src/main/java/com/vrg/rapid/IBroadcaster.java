@@ -14,7 +14,7 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
-import com.vrg.rapid.pb.LinkUpdateMessageWire;
+import com.vrg.rapid.pb.BatchedLinkUpdateMessageWire;
 
 import java.util.List;
 
@@ -22,5 +22,5 @@ import java.util.List;
  * Supports different broadcast implementations (eager flooding, gossip, etc.).
  */
 interface IBroadcaster {
-    void broadcast(List<HostAndPort> recipients, LinkUpdateMessageWire msg);
+    void broadcast(List<HostAndPort> recipients, BatchedLinkUpdateMessageWire msg);
 }

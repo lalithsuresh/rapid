@@ -15,6 +15,7 @@ package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
 import com.google.protobuf.ByteString;
+import com.vrg.rapid.pb.BatchedLinkUpdateMessageWire;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
@@ -36,6 +37,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 
@@ -53,6 +56,13 @@ public class MembershipService {
     private final Map<HostAndPort, UUID> joinerUuid = new ConcurrentHashMap<>();
     private final List<List<HostAndPort>> logProposalList = new ArrayList<>();
     private final Executor executor = Executors.newSingleThreadScheduledExecutor();
+
+
+    private long lastAdded = -1;
+    private final Object broadcastSchedulerLock = new Object();
+    private final ScheduledExecutorService scheduledExecutorService = Executors.newScheduledThreadPool(1);
+    private final LinkedBlockingQueue<LinkUpdateMessageWire> sendQueue = new LinkedBlockingQueue<>();
+
 
     public static class Builder {
         private final MembershipView membershipView;
@@ -88,6 +98,8 @@ public class MembershipService {
         this.logProposals = builder.logProposals;
         this.broadcaster = builder.broadcaster;
         this.joinResponseCallbacks = new ConcurrentHashMap<>();
+        this.scheduledExecutorService.scheduleAtFixedRate(new LinkUpdateBroadcastScheduler(),
+                0, 100, TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -179,7 +191,10 @@ public class MembershipService {
                         (k) -> new LinkedBlockingQueue<>())
                         .add(onComplete);
                 // TODO: for the time being, perform an all-to-all broadcast. We will later replace this with gossip.
-                broadcaster.broadcast(membershipView.viewRing(0), msg);
+                synchronized (broadcastSchedulerLock) {
+                    lastAdded = System.currentTimeMillis();
+                    sendQueue.add(msg);
+                }
             } else {
                 // This handles the corner case where the configuration changed between phase 1 and phase 2
                 // of the joining node's bootstrap. It should attempt to rejoin the network.
@@ -226,41 +241,50 @@ public class MembershipService {
      * Link update messages that do not affect an ongoing proposal
      * needs to be dropped.
      */
-    void processLinkUpdateMessage(final LinkUpdateMessageWire request) {
+    void processLinkUpdateMessage(final BatchedLinkUpdateMessageWire messageBatch) {
         executor.execute(() -> {
-            Objects.requireNonNull(request);
-            LOG.trace("LinkUpdateMessage received for {sender:{}, receiver:{}, config:{}, size:{}}",
-                    request.getSender(), myAddr,
-                    request.getConfigurationId(), membershipView.viewRing(0).size());
+            Objects.requireNonNull(messageBatch);
+            final List<LinkUpdateMessage> linkUpdateMessages = new ArrayList<>(messageBatch.getMessagesList().size());
+            for (final LinkUpdateMessageWire request: messageBatch.getMessagesList()) {
+                LOG.trace("LinkUpdateMessage received for {sender:{}, receiver:{}, config:{}, size:{}}",
+                        request.getSender(), myAddr,
+                        request.getConfigurationId(), membershipView.viewRing(0).size());
 
-            // TODO: move away from using two classes for the same message type
-            final LinkUpdateMessage msg = new LinkUpdateMessage(request.getLinkSrc(), request.getLinkDst(),
-                    request.getLinkStatus(), request.getConfigurationId(),
-                    UUID.fromString(request.getUuid()), request.getRingNumber());
+                // TODO: move away from using two classes for the same message type
+                final LinkUpdateMessage msg = new LinkUpdateMessage(request.getLinkSrc(), request.getLinkDst(),
+                        request.getLinkStatus(), request.getConfigurationId(),
+                        UUID.fromString(request.getUuid()), request.getRingNumber());
 
-            final long currentConfigurationId = membershipView.getCurrentConfigurationId();
-            if (currentConfigurationId != msg.getConfigurationId()) {
-                LOG.trace("LinkUpdateMessage for configuration {} received during configuration {}",
-                        msg.getConfigurationId(), currentConfigurationId);
-                return;
+                final long currentConfigurationId = membershipView.getCurrentConfigurationId();
+                if (currentConfigurationId != msg.getConfigurationId()) {
+                    LOG.trace("LinkUpdateMessage for configuration {} received during configuration {}",
+                            msg.getConfigurationId(), currentConfigurationId);
+                    return;
+                }
+
+                // The invariant we want to maintain is that a node can only go into the
+                // membership set once and leave it once.
+                if (msg.getStatus().equals(LinkStatus.UP) && membershipView.isHostPresent(msg.getDst())) {
+                    LOG.trace("LinkUpdateMessage with status UP received for node {} already in configuration {} ",
+                            msg.getDst(), currentConfigurationId);
+                    return;
+                }
+                if (msg.getStatus().equals(LinkStatus.DOWN) && !membershipView.isHostPresent(msg.getDst())) {
+                    LOG.trace("LinkUpdateMessage with status DOWN received for node {} already in configuration {} ",
+                            msg.getDst(), currentConfigurationId);
+                    return;
+                }
+
+                joinerUuid.put(msg.getDst(), msg.getUuid());
+                linkUpdateMessages.add(msg);
             }
 
-            // The invariant we want to maintain is that a node can only go into the
-            // membership set once and leave it once.
-            if (msg.getStatus().equals(LinkStatus.UP) && membershipView.isHostPresent(msg.getDst())) {
-                LOG.trace("LinkUpdateMessage with status UP received for node {} already in configuration {} ",
-                        msg.getDst(), currentConfigurationId);
-                return;
-            }
-            if (msg.getStatus().equals(LinkStatus.DOWN) && !membershipView.isHostPresent(msg.getDst())) {
-                LOG.trace("LinkUpdateMessage with status DOWN received for node {} already in configuration {} ",
-                        msg.getDst(), currentConfigurationId);
-                return;
+            final List<HostAndPort> proposal = new ArrayList<>();
+
+            for (final LinkUpdateMessage msg : linkUpdateMessages) {
+                proposal.addAll(proposedViewChange(msg));
             }
 
-            joinerUuid.put(msg.getDst(), msg.getUuid());
-
-            final List<HostAndPort> proposal = proposedViewChange(msg);
             if (proposal.size() != 0) {
                 // Initiate proposal
                 if (logProposals) {
@@ -292,5 +316,38 @@ public class MembershipService {
 
     List<HostAndPort> getMembershipView() {
         return membershipView.viewRing(0);
+    }
+
+    public void shutdown() {
+        scheduledExecutorService.shutdown();
+    }
+
+    private class LinkUpdateBroadcastScheduler implements Runnable {
+
+        LinkUpdateBroadcastScheduler() {
+        }
+
+        @Override
+        public void run() {
+            synchronized (broadcastSchedulerLock) {
+                // One second since last add
+                if (sendQueue.size() > 0 && lastAdded > 0 && (System.currentTimeMillis() - lastAdded) > 100) {
+                    LOG.info("{}'s scheduler is sending out {} messages", myAddr, sendQueue.size());
+                    final ArrayList<LinkUpdateMessageWire> messages = new ArrayList<>(sendQueue.size());
+                    sendQueue.drainTo(messages);
+                    final BatchedLinkUpdateMessageWire batched = BatchedLinkUpdateMessageWire.newBuilder()
+                            .setSender(myAddr.toString())
+                            .addAllMessages(messages)
+                            .build();
+                    final List<HostAndPort> recipients = membershipView.viewRing(0);
+                    if (recipients.size() == 1 && recipients.get(0).equals(myAddr)) {
+                        // Avoid RPC overhead during bootstrap.
+                        executor.execute(() -> processLinkUpdateMessage(batched));
+                        return;
+                    }
+                    broadcaster.broadcast(membershipView.viewRing(0), batched);
+                }
+            }
+        }
     }
 }

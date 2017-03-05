@@ -14,11 +14,11 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
+import com.vrg.rapid.pb.BatchedLinkUpdateMessageWire;
 import com.vrg.rapid.pb.GossipMessage;
 import com.vrg.rapid.pb.GossipResponse;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
-import com.vrg.rapid.pb.LinkUpdateMessageWire;
 import com.vrg.rapid.pb.MembershipServiceGrpc;
 import com.vrg.rapid.pb.Response;
 import io.grpc.Server;
@@ -65,7 +65,7 @@ class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     }
 
     @Override
-    public void receiveLinkUpdateMessage(final LinkUpdateMessageWire request,
+    public void receiveLinkUpdateMessage(final BatchedLinkUpdateMessageWire request,
                                          final StreamObserver<Response> responseObserver) {
         final Runnable runnable = () -> {
             assert membershipService != null;
@@ -159,6 +159,9 @@ class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
 
     void stopServer() {
         assert server != null;
+        if (membershipService != null) {
+            membershipService.shutdown();
+        }
         server.shutdown();
     }
 
