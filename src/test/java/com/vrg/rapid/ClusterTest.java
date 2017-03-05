@@ -15,7 +15,6 @@ package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
 import org.junit.Test;
-import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.ArrayList;
