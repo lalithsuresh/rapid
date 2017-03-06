@@ -134,9 +134,12 @@ public class ClusterTest {
 
     /**
      * Identical to the previous test, but with more than K nodes joining in parallel.
+     *
+     * The test starts with a single seed and all N - 1 subsequent nodes initiate their join protocol at the same
+     * time. This tests a single seed's ability to bootstrap a large cluster in one step.
      */
     @Test
-    public void testJoinMoreThanTenParallel() throws IOException, InterruptedException {
+    public void testJoinMoreThanKParallelSingleStep() throws IOException, InterruptedException {
         RpcServer.USE_IN_PROCESS_SERVER = true;
         RpcClient.USE_IN_PROCESS_CHANNEL = true;
 
@@ -170,6 +173,89 @@ public class ClusterTest {
             latch.await();
             for (final Cluster cluster: serviceList) {
                 assertEquals(cluster.getMemberlist().size(), numNodes + 1); // +1 for the seed
+                assertEquals(cluster.getMemberlist(), seed.getMemberlist());
+            }
+        }
+        catch (final Exception e) {
+            e.printStackTrace();
+            fail();
+        }
+        finally {
+            for (final Cluster service: serviceList) {
+                service.shutdown();
+            }
+        }
+    }
+
+
+    /**
+     * This test starts with a single seed, and a wave where 50 subsequent nodes initiate their join protocol
+     * concurrently. Following this, a subsequent wave begins where 500 nodes then start together.
+     */
+    @Test
+    public void testJoinMoreThanKParallelTwoWaves() throws IOException, InterruptedException {
+        RpcServer.USE_IN_PROCESS_SERVER = true;
+        RpcClient.USE_IN_PROCESS_CHANNEL = true;
+
+        final int numNodesPhase1 = 50;
+        final int numNodesPhase2 = 500;
+        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
+        final LinkedBlockingQueue<Cluster> serviceList = new LinkedBlockingQueue<>();
+
+        final Cluster seed = Cluster.start(seedHost);
+        serviceList.add(seed);
+        final Executor executor = Executors.newWorkStealingPool(numNodesPhase2);
+        try {
+
+            // Phase 1 where numNodesPhase1 entities join the network
+            {
+                final AtomicInteger nodeCounter = new AtomicInteger(0);
+                final CountDownLatch latch = new CountDownLatch(numNodesPhase1);
+                for (int i = 0; i < numNodesPhase1; i++) {
+                    executor.execute(() -> {
+                        try {
+                            final HostAndPort joiningHost =
+                                    HostAndPort.fromParts("127.0.0.1", 1235 + nodeCounter.incrementAndGet());
+                            final Cluster nonSeed = Cluster.join(seedHost, joiningHost);
+                            serviceList.add(nonSeed);
+                        } catch (final IOException | InterruptedException e) {
+                            fail();
+                        } finally {
+                            latch.countDown();
+                        }
+                    });
+                }
+                latch.await();
+                for (final Cluster cluster : serviceList) {
+                    assertEquals(cluster.getMemberlist().size(), numNodesPhase1 + 1); // +1 for the seed
+                    assertEquals(cluster.getMemberlist(), seed.getMemberlist());
+                }
+            }
+            // Phase 2 where numNodesPhase2 entities join the network
+            {
+                final AtomicInteger nodeCounter = new AtomicInteger(0);
+                final CountDownLatch latch = new CountDownLatch(numNodesPhase2);
+                for (int i = 0; i < numNodesPhase2; i++) {
+                    executor.execute(() -> {
+                        try {
+                            final HostAndPort joiningHost =
+                                    HostAndPort.fromParts("127.0.0.1", 1235 + numNodesPhase1 +
+                                            nodeCounter.incrementAndGet());
+                            final Cluster nonSeed = Cluster.join(seedHost, joiningHost);
+                            serviceList.add(nonSeed);
+                        } catch (final IOException | InterruptedException e) {
+                            fail();
+                        } finally {
+                            latch.countDown();
+                        }
+                    });
+                }
+                latch.await();
+                for (final Cluster cluster : serviceList) {
+                    assertEquals(cluster.getMemberlist().size(), numNodesPhase1
+                                                                        + numNodesPhase2 + 1); // +1 for the seed
+                    assertEquals(cluster.getMemberlist(), seed.getMemberlist());
+                }
             }
         }
         catch (final Exception e) {
