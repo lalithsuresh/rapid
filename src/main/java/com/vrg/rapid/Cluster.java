@@ -33,7 +33,7 @@ import java.util.stream.Collectors;
 /**
  * The public API for Rapid.
  */
-public class Cluster {
+public final class Cluster {
     private static final Logger LOG = LoggerFactory.getLogger("Cluster");
     private static final int K = 10;
     private static final int H = 8;
@@ -152,8 +152,6 @@ public class Cluster {
             }
         }
         server.stopServer();
-
-        // TODO: need to handle retries before giving up
         throw new RuntimeException("Join attempt unsuccessful " + listenAddress);
     }
 

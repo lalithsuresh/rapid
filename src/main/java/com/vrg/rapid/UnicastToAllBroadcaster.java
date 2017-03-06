@@ -29,7 +29,7 @@ import java.util.concurrent.ExecutionException;
 /**
  * Simple best-effort broadcaster.
  */
-public class UnicastToAllBroadcaster implements IBroadcaster {
+final class UnicastToAllBroadcaster implements IBroadcaster {
     private static final Logger LOG = LoggerFactory.getLogger(UnicastToAllBroadcaster.class);
 
     private final RpcClient rpcClient;

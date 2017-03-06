@@ -26,7 +26,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * An interceptor that blocks server calls from being invoked until requested.
  * Used by the RpcServer to defer service method invocations until it is ready.
  */
-class DeferredReceiveInterceptor implements ServerInterceptor {
+final class DeferredReceiveInterceptor implements ServerInterceptor {
     private final Lock lock = new ReentrantLock();
     private final Condition serverReadyCondition = lock.newCondition();
     private boolean isReady = false;

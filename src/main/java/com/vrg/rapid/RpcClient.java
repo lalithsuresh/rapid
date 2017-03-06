@@ -40,7 +40,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * MessagingServiceGrpc client.
  */
-class RpcClient {
+final class RpcClient {
     static boolean USE_IN_PROCESS_CHANNEL = false;
     private final ConcurrentHashMap<HostAndPort, MembershipServiceFutureStub> stubs;
     private final HostAndPort address;

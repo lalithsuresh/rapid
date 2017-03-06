@@ -21,6 +21,6 @@ import java.util.List;
 /**
  * Supports different broadcast implementations (eager flooding, gossip, etc.).
  */
-public interface IBroadcaster {
+interface IBroadcaster {
     void broadcast(List<HostAndPort> recipients, BatchedLinkUpdateMessage msg);
 }

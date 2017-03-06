@@ -30,7 +30,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * - there are H reports about a node.
  * - there is no other node about which there are more than L but less than H reports.
  */
-class WatermarkBuffer {
+final class WatermarkBuffer {
     private static final int K_MIN = 3;
     private final int K;
     private final int H;

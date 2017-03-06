@@ -49,7 +49,7 @@ import java.util.stream.Collectors;
 /**
  * Membership server class that implements the Rapid protocol.
  */
-public class MembershipService {
+final class MembershipService {
     private static final Logger LOG = LoggerFactory.getLogger(MembershipService.class);
     private final MembershipView membershipView;
     private final WatermarkBuffer watermarkBuffer;

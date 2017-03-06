@@ -39,7 +39,7 @@ import java.util.Objects;
  * gRPC server object. It defers receiving messages until it is ready to
  * host a MembershipService object.
  */
-class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
+final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     static boolean USE_IN_PROCESS_SERVER = false;
     private final HostAndPort address;
     @Nullable private MembershipService membershipService;
