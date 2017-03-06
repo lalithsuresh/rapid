@@ -15,5 +15,5 @@ import javax.annotation.meta.TypeQualifierDefault;
 @Nonnull
 @TypeQualifierDefault(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)
-public @interface MethodsAreNonnullByDefault
-{}
+public @interface MethodsAreNonnullByDefault {
+}
