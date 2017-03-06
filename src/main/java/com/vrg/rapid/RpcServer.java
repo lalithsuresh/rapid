@@ -25,36 +25,36 @@ import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import io.grpc.ServerInterceptor;
 import io.grpc.ServerInterceptors;
-import io.grpc.StatusRuntimeException;
 import io.grpc.inprocess.InProcessServerBuilder;
 import io.grpc.netty.NettyServerBuilder;
 import io.grpc.stub.StreamObserver;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
-import java.util.Collections;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingDeque;
 
 /**
- * gRPC server object.
+ * gRPC server object. It defers receiving messages until it is ready to
+ * host a MembershipService object.
  */
 class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     static boolean USE_IN_PROCESS_SERVER = false;
     private final HostAndPort address;
-    private final BlockingQueue<Runnable> deferredMessages = new LinkedBlockingDeque<>();
     @Nullable private MembershipService membershipService;
     @Nullable private Server server;
-    private final Object lock = new Object();
+
+    // Used to queue messages in the RPC layer until we are ready with
+    // a MembershipService object
+    private final DeferredReceiveInterceptor deferringInterceptor = new DeferredReceiveInterceptor();
 
     public RpcServer(final HostAndPort address) {
         this.address = address;
     }
 
     /**
-     * rpc implementations for methods defined in rapid.proto.
+     * Defined in rapid.proto.
      */
     @Override
     public void gossip(final GossipMessage request,
@@ -64,81 +64,62 @@ class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
         responseObserver.onCompleted();
     }
 
+    /**
+     * Defined in rapid.proto.
+     */
     @Override
     public void receiveLinkUpdateMessage(final BatchedLinkUpdateMessageWire request,
                                          final StreamObserver<Response> responseObserver) {
-        final Runnable runnable = () -> {
-            assert membershipService != null;
-            membershipService.processLinkUpdateMessage(request);
-            responseObserver.onNext(Response.getDefaultInstance());
-            responseObserver.onCompleted();
-        };
-        if (membershipService == null) {
-            synchronized (lock) {
-                deferredMessages.add(runnable);
-            }
-        }
-        else {
-            runnable.run();
-        }
+        assert membershipService != null;
+        membershipService.processLinkUpdateMessage(request);
+        responseObserver.onNext(Response.getDefaultInstance());
+        responseObserver.onCompleted();
     }
 
+    /**
+     * Defined in rapid.proto.
+     */
     @Override
     public void receiveJoinMessage(final JoinMessage joinMessage,
                                    final StreamObserver<JoinResponse> responseObserver) {
-        final Runnable runnable = () -> {
-            assert membershipService != null;
-            membershipService.processJoinMessage(joinMessage, responseObserver);
-        };
-        if (membershipService == null) {
-            synchronized (lock) {
-                deferredMessages.add(runnable);
-            }
-        }
-        else {
-            runnable.run();
-        }
+        assert membershipService != null;
+        membershipService.processJoinMessage(joinMessage, responseObserver);
     }
 
+    /**
+     * Defined in rapid.proto.
+     */
     @Override
     public void receiveJoinPhase2Message(final JoinMessage joinMessage,
                                          final StreamObserver<JoinResponse> responseObserver) {
-        final Runnable runnable = () -> {
-            assert membershipService != null;
-            membershipService.processJoinPhaseTwoMessage(joinMessage, responseObserver);
-        };
-
-        if (membershipService == null) {
-            synchronized (lock) {
-                deferredMessages.add(runnable);
-            }
-        }
-        else {
-            runnable.run();
-        }
+        assert membershipService != null;
+        membershipService.processJoinPhaseTwoMessage(joinMessage, responseObserver);
     }
 
+    /**
+     * Invoked by the bootstrap protocol when it has a membership service object
+     * ready. Until this method is called, the RpcServer will not have its gRPC service
+     * methods invoked.
+     *
+     * @param service a fully initialized MembershipService object.
+     */
     void setMembershipService(final MembershipService service) {
         this.membershipService = service;
-        synchronized (lock) {
-            deferredMessages.forEach(runnable -> {
-                try {
-                    runnable.run();
-                } catch (final StatusRuntimeException e) {
-                    // we need to log this
-                    System.err.println("Dropping runnable with status " + e.getStatus());
-                }
-            });
-            deferredMessages.clear();
-        }
+        deferringInterceptor.unblock();
     }
 
+    /**
+     * Starts the RPC server.
+     *
+     * @throws IOException if a server cannot be successfully initialized
+     */
     void startServer() throws IOException {
-        startServer(Collections.emptyList());
+        startServer(new ArrayList<>());
     }
 
     void startServer(final List<ServerInterceptor> interceptors) throws IOException {
         Objects.requireNonNull(interceptors);
+        interceptors.add(deferringInterceptor);
 
         if (USE_IN_PROCESS_SERVER) {
             final ServerBuilder builder = InProcessServerBuilder.forName(address.toString());
@@ -158,16 +139,19 @@ class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
         Runtime.getRuntime().addShutdownHook(new Thread(this::stopServer));
     }
 
+    /**
+     * Shuts down MembershipService and RPC server.
+     */
     void stopServer() {
         assert server != null;
         if (membershipService != null) {
             membershipService.shutdown();
         }
         server.shutdown();
-    }
-
-    void blockUntilShutdown() throws InterruptedException {
-        assert server != null;
-        server.awaitTermination();
+        try {
+            server.awaitTermination();
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 }

@@ -60,7 +60,6 @@ public class MessagingTest {
     public void cleanup() throws InterruptedException {
         for (final RpcServer rpcServer: services) {
             rpcServer.stopServer();
-            rpcServer.blockUntilShutdown();
         }
         services.clear();
     }
@@ -200,14 +199,17 @@ public class MessagingTest {
 
     }
 
-
+    /**
+     * Test to ensure that injecting message drops works.
+     */
     @Test
     public void droppedMessage() throws InterruptedException,
             IOException, MembershipView.NodeAlreadyInRingException {
         final int serverPort = 1234;
         final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, serverPort);
-        final RpcServer rpcServer = createAndStartMembershipService(serverAddr,
-                Collections.singletonList(new MessageDropInterceptor()));
+        final List<ServerInterceptor> interceptors = new ArrayList<>();
+        interceptors.add(new MessageDropInterceptor());
+        final RpcServer rpcServer = createAndStartMembershipService(serverAddr, interceptors);
 
         final HostAndPort clientAddr = HostAndPort.fromParts(localhostIp, serverPort);
         final RpcClient client = new RpcClient(clientAddr);
@@ -268,27 +270,5 @@ public class MessagingTest {
         rpcServer.startServer(interceptors);
         services.add(rpcServer);
         return rpcServer;
-    }
-
-    private List<RpcServer> createAndStartMembershipServices(final int N) throws IOException {
-        for (int i = serverPortBase; i < serverPortBase + N; i++) {
-            final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, i);
-            services.add(createAndStartMembershipService(serverAddr, Collections.emptyList(), createMembershipView(N)));
-        }
-
-        return services;
-    }
-
-    private MembershipView createMembershipView(final int N) {
-        final MembershipView membershipView = new MembershipView(K);
-        for (int i = serverPortBase; i < serverPortBase + N; i++) {
-            try {
-                final HostAndPort hostAndPort = HostAndPort.fromParts(localhostIp, i);
-                membershipView.ringAdd(hostAndPort, UUID.nameUUIDFromBytes(hostAndPort.toString().getBytes()));
-            } catch (final Exception e){
-                fail();
-            }
-        }
-        return membershipView;
     }
 }

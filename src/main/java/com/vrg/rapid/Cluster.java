@@ -190,12 +190,9 @@ public class Cluster {
 
     /**
      * Shutdown the RpcServer
-     *
-     * @throws InterruptedException
      */
-    public void shutdown() throws InterruptedException {
+    public void shutdown() {
         // TODO: this should probably be a "leave" method
         rpcServer.stopServer();
-        rpcServer.blockUntilShutdown();
     }
 }

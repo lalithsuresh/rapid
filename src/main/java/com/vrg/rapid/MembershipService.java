@@ -352,13 +352,16 @@ public class MembershipService {
     }
 
     private class LinkUpdateBroadcastScheduler implements Runnable {
+        private static final int BATCH_WINDOW_IN_MS = 100;
+
 
         @Override
         public void run() {
             try {
                 broadcastSchedulerLock.lock();
                 // One second since last add
-                if (sendQueue.size() > 0 && lastEnqueueTimestamp > 0 && (System.currentTimeMillis() - lastEnqueueTimestamp) > 100) {
+                if (sendQueue.size() > 0 && lastEnqueueTimestamp > 0
+                        && (System.currentTimeMillis() - lastEnqueueTimestamp) > BATCH_WINDOW_IN_MS) {
                     LOG.trace("{}'s scheduler is sending out {} messages", myAddr, sendQueue.size());
                     final ArrayList<LinkUpdateMessageWire> messages = new ArrayList<>(sendQueue.size());
                     sendQueue.drainTo(messages);
