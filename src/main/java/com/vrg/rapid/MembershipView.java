@@ -258,7 +258,7 @@ final class MembershipView {
     }
 
     @VisibleForTesting
-    List<HostAndPort> viewRing(final int k) {
+    List<HostAndPort> getRing(final int k) {
         try {
             rwLock.readLock().lock();
             assert k >= 0;

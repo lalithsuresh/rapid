@@ -107,6 +107,7 @@ class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
             assert membershipService != null;
             membershipService.processJoinPhaseTwoMessage(joinMessage, responseObserver);
         };
+
         if (membershipService == null) {
             synchronized (lock) {
                 deferredMessages.add(runnable);

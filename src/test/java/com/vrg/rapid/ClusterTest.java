@@ -146,7 +146,7 @@ public class ClusterTest {
 
         final Cluster seed = Cluster.start(seedHost);
         serviceList.add(seed);
-        final Executor executor = Executors.newWorkStealingPool(1000);
+        final Executor executor = Executors.newWorkStealingPool(numNodes);
         try {
             final AtomicInteger nodeCounter = new AtomicInteger(0);
             final CountDownLatch latch = new CountDownLatch(numNodes);

@@ -49,7 +49,7 @@ public class MembershipViewTest {
         }
 
         for (int k = 0; k < K; k++) {
-            final List<HostAndPort> list = mview.viewRing(k);
+            final List<HostAndPort> list = mview.getRing(k);
             assertEquals(1, list.size());
             for (final HostAndPort address : list) {
                 assertEquals(address, addr);
@@ -73,7 +73,7 @@ public class MembershipViewTest {
             }
         }
         for (int k = 0; k < K; k++) {
-            final List<HostAndPort> list = mview.viewRing(k);
+            final List<HostAndPort> list = mview.getRing(k);
             assertEquals(numNodes, list.size());
         }
     }
@@ -97,7 +97,7 @@ public class MembershipViewTest {
         }
 
         for (int k = 0; k < K; k++) {
-            final List<HostAndPort> list = mview.viewRing(k);
+            final List<HostAndPort> list = mview.getRing(k);
             assertEquals(numNodes, list.size());
         }
 
@@ -162,7 +162,7 @@ public class MembershipViewTest {
         assertEquals(0, numThrows);
 
         for (int k = 0; k < K; k++) {
-            final List<HostAndPort> list = mview.viewRing(k);
+            final List<HostAndPort> list = mview.getRing(k);
             assertEquals(0, list.size());
         }
     }
@@ -411,7 +411,7 @@ public class MembershipViewTest {
         assertEquals(3, numExceptions);
 
         // Only n1 and n3 should have been added
-        assertEquals(2, mview.viewRing(0).size());
+        assertEquals(2, mview.getRing(0).size());
     }
 
 
@@ -449,7 +449,7 @@ public class MembershipViewTest {
         catch (final Exception e) {
             fail();
         }
-        assertEquals(1, mview.viewRing(0).size());
+        assertEquals(1, mview.getRing(0).size());
 
         int numExceptions = 0;
         // Node rejoins with id2
@@ -469,7 +469,7 @@ public class MembershipViewTest {
             fail();
         }
 
-        assertEquals(2, mview.viewRing(0).size());
+        assertEquals(2, mview.getRing(0).size());
     }
 
 

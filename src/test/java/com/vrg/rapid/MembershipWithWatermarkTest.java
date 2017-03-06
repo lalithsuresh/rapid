@@ -38,7 +38,7 @@ public class MembershipWithWatermarkTest {
         final MembershipView mview = new MembershipView(K);
         mview.ringAdd(addr, UUID.randomUUID());
         for (int k = 0; k < K; k++) {
-            final List<HostAndPort> list = mview.viewRing(k);
+            final List<HostAndPort> list = mview.getRing(k);
             assertEquals(1, list.size());
             for (final HostAndPort n : list) {
                 assertEquals(n, addr);

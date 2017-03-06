@@ -28,9 +28,11 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
@@ -39,6 +41,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 
@@ -52,14 +56,14 @@ public class MembershipService {
     private final HostAndPort myAddr;
     private final boolean logProposals;
     private final IBroadcaster broadcaster;
-    private final Map<HostAndPort, BlockingQueue<Runnable>> joinResponseCallbacks;
+    private final Map<HostAndPort, BlockingQueue<StreamObserver<JoinResponse>>> joinResponseCallbacks;
     private final Map<HostAndPort, UUID> joinerUuid = new ConcurrentHashMap<>();
-    private final List<List<HostAndPort>> logProposalList = new ArrayList<>();
+    private final List<Set<HostAndPort>> logProposalList = new ArrayList<>();
     private final Executor executor = Executors.newSingleThreadScheduledExecutor();
 
-
-    private long lastAdded = -1;
-    private final Object broadcastSchedulerLock = new Object();
+    // Fields used by batching logic.
+    private long lastEnqueueTimestamp = -1;    // Timestamp
+    private final Lock broadcastSchedulerLock = new ReentrantLock();
     private final ScheduledExecutorService scheduledExecutorService = Executors.newScheduledThreadPool(1);
     private final LinkedBlockingQueue<LinkUpdateMessageWire> sendQueue = new LinkedBlockingQueue<>();
 
@@ -119,7 +123,7 @@ public class MembershipService {
                     .setStatusCode(statusCode);
             LOG.trace("Join at seed for {seed:{}, sender:{}, config:{}, size:{}}",
                     myAddr, joinMessage.getSender(),
-                    membershipView.getCurrentConfigurationId(), membershipView.viewRing(0).size());
+                    membershipView.getCurrentConfigurationId(), membershipView.getRing(0).size());
             if (statusCode.equals(JoinStatusCode.SAFE_TO_JOIN)) {
                 // Return a list of monitors for the joiner to contact for phase 2 of the protocol
                 builder.addAllHosts(membershipView.expectedMonitorsOf(joiningHost)
@@ -146,7 +150,7 @@ public class MembershipService {
             if (currentConfiguration == joinMessage.getConfigurationId()) {
                 LOG.trace("Enqueuing SAFE_TO_JOIN for {sender:{}, monitor:{}, config:{}, size:{}}",
                         joinMessage.getSender(), myAddr,
-                        currentConfiguration, membershipView.viewRing(0).size());
+                        currentConfiguration, membershipView.getRing(0).size());
                 // TODO: insert some health checks between monitor and client
                 final LinkUpdateMessageWire msg = LinkUpdateMessageWire.newBuilder()
                         .setSender(this.myAddr.toString())
@@ -158,43 +162,20 @@ public class MembershipService {
                         .setRingNumber(joinMessage.getRingNumber())
                         .build();
 
-                final Runnable onComplete = () -> {
-                    // TODO: the below code should only be executed after a membership change (using a callback).
-                    final MembershipView.Configuration configuration = membershipView.getConfiguration();
-
-                    assert configuration.hostAndPorts.size() > 0;
-                    assert configuration.uuids.size() > 0;
-
-                    final JoinResponse response = JoinResponse.newBuilder()
-                            .setSender(this.myAddr.toString())
-                            .setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
-                            .setConfigurationId(configuration.getConfigurationId())
-                            .addAllHosts(configuration.hostAndPorts
-                                    .stream()
-                                    .map(e -> ByteString.copyFromUtf8(e.toString()))
-                                    .collect(Collectors.toList()))
-                            .addAllIdentifiers(configuration.uuids
-                                    .stream()
-                                    .map(e -> ByteString.copyFromUtf8(e.toString()))
-                                    .collect(Collectors.toList()))
-                            .build();
-                    try {
-                        responseObserver.onNext(response);
-                        responseObserver.onCompleted();
-                    } catch (final StatusRuntimeException e) {
-                        LOG.error("StatusRuntimeException of type {} for response join-phase2-response to {}",
-                                e.getStatus(), response.getSender());
-                    }
-                };
-
                 joinResponseCallbacks.computeIfAbsent(HostAndPort.fromString(joinMessage.getSender()),
                         (k) -> new LinkedBlockingQueue<>())
-                        .add(onComplete);
+                        .add(responseObserver);
+
                 // TODO: for the time being, perform an all-to-all broadcast. We will later replace this with gossip.
-                synchronized (broadcastSchedulerLock) {
-                    lastAdded = System.currentTimeMillis();
+                try {
+                    broadcastSchedulerLock.lock();
+                    lastEnqueueTimestamp = System.currentTimeMillis();
                     sendQueue.add(msg);
                 }
+                finally {
+                    broadcastSchedulerLock.unlock();
+                }
+
             } else {
                 // This handles the corner case where the configuration changed between phase 1 and phase 2
                 // of the joining node's bootstrap. It should attempt to rejoin the network.
@@ -244,11 +225,15 @@ public class MembershipService {
     void processLinkUpdateMessage(final BatchedLinkUpdateMessageWire messageBatch) {
         executor.execute(() -> {
             Objects.requireNonNull(messageBatch);
-            final List<LinkUpdateMessage> linkUpdateMessages = new ArrayList<>(messageBatch.getMessagesList().size());
+
+            // We proceed in three parts. First, we collect the messages from the batch that
+            // are valid and do not violate conditions of the ring. These are packed in to
+            // validMessages and processed later.
+            final List<LinkUpdateMessage> validMessages = new ArrayList<>(messageBatch.getMessagesList().size());
             for (final LinkUpdateMessageWire request: messageBatch.getMessagesList()) {
                 LOG.trace("LinkUpdateMessage received for {sender:{}, receiver:{}, config:{}, size:{}}",
                         request.getSender(), myAddr,
-                        request.getConfigurationId(), membershipView.viewRing(0).size());
+                        request.getConfigurationId(), membershipView.getRing(0).size());
 
                 // TODO: move away from using two classes for the same message type
                 final LinkUpdateMessage msg = new LinkUpdateMessage(request.getLinkSrc(), request.getLinkDst(),
@@ -259,7 +244,7 @@ public class MembershipService {
                 if (currentConfigurationId != msg.getConfigurationId()) {
                     LOG.trace("LinkUpdateMessage for configuration {} received during configuration {}",
                             msg.getConfigurationId(), currentConfigurationId);
-                    return;
+                    continue;
                 }
 
                 // The invariant we want to maintain is that a node can only go into the
@@ -267,38 +252,82 @@ public class MembershipService {
                 if (msg.getStatus().equals(LinkStatus.UP) && membershipView.isHostPresent(msg.getDst())) {
                     LOG.trace("LinkUpdateMessage with status UP received for node {} already in configuration {} ",
                             msg.getDst(), currentConfigurationId);
-                    return;
+                    continue;
                 }
                 if (msg.getStatus().equals(LinkStatus.DOWN) && !membershipView.isHostPresent(msg.getDst())) {
                     LOG.trace("LinkUpdateMessage with status DOWN received for node {} already in configuration {} ",
                             msg.getDst(), currentConfigurationId);
-                    return;
+                    continue;
                 }
 
                 joinerUuid.put(msg.getDst(), msg.getUuid());
-                linkUpdateMessages.add(msg);
+                validMessages.add(msg);
             }
 
-            final List<HostAndPort> proposal = new ArrayList<>();
-
-            for (final LinkUpdateMessage msg : linkUpdateMessages) {
+            // We now batch apply all the valid messages innto the watermark buffer, obtaining
+            // a single aggregate membership change proposal to apply against the view.
+            final Set<HostAndPort> proposal = new HashSet<>();
+            for (final LinkUpdateMessage msg : validMessages) {
                 proposal.addAll(proposedViewChange(msg));
             }
 
+            // If we have a proposal for this stage, start an instance of consensus on it.
             if (proposal.size() != 0) {
-                // Initiate proposal
                 if (logProposals) {
                     logProposalList.add(proposal);
                 }
-                // Initiate consensus from here.
+
+                // TODO: Initiate consensus here.
 
                 // TODO: for now, we just apply the proposal directly.
                 for (final HostAndPort node : proposal) {
-                    // ringAdd will throw a RuntimeException if the host is already in the ring.F
-                    membershipView.ringAdd(node, joinerUuid.get(node));
+                    final boolean isPresent = membershipView.isHostPresent(node);
+                    // If the node is already in the ring, remove it. Else, add it.
+                    // XXX: Maybe there's a cleaner way to do this in the future because
+                    // this ties us to just two states a node can be in.
+                    if (isPresent) {
+                        membershipView.ringDelete(node);
+                    }
+                    else {
+                        membershipView.ringAdd(node, joinerUuid.get(node));
+                    }
+                }
 
+                // This should yield the new configuration.
+                final MembershipView.Configuration configuration = membershipView.getConfiguration();
+
+                assert configuration.hostAndPorts.size() > 0;
+                assert configuration.uuids.size() > 0;
+
+                final JoinResponse response = JoinResponse.newBuilder()
+                        .setSender(this.myAddr.toString())
+                        .setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
+                        .setConfigurationId(configuration.getConfigurationId())
+                        .addAllHosts(configuration.hostAndPorts
+                                .stream()
+                                .map(e -> ByteString.copyFromUtf8(e.toString()))
+                                .collect(Collectors.toList()))
+                        .addAllIdentifiers(configuration.uuids
+                                .stream()
+                                .map(e -> ByteString.copyFromUtf8(e.toString()))
+                                .collect(Collectors.toList()))
+                        .build();
+
+                // Send out responses to all the nodes waiting to join.
+                for (final HostAndPort node: proposal) {
                     if (joinResponseCallbacks.containsKey(node)) {
-                        joinResponseCallbacks.get(node).forEach(executor::execute);
+                        joinResponseCallbacks.get(node).forEach(observer -> {
+                            executor.execute(() -> {
+                                try {
+                                    observer.onNext(response);
+                                    observer.onCompleted();
+                                } catch (final StatusRuntimeException e) {
+                                    LOG.error("StatusRuntimeException of type {} for response JoinPhase2Response to {}",
+                                              e.getStatus(), response.getSender());
+                                }
+                            }
+                            );
+                        });
                         joinResponseCallbacks.remove(node);
                     }
                 }
@@ -310,28 +339,26 @@ public class MembershipService {
         return watermarkBuffer.aggregateForProposal(msg);
     }
 
-    List<List<HostAndPort>> getProposalLog() {
+    List<Set<HostAndPort>> getProposalLog() {
         return Collections.unmodifiableList(logProposalList);
     }
 
     List<HostAndPort> getMembershipView() {
-        return membershipView.viewRing(0);
+        return membershipView.getRing(0);
     }
 
-    public void shutdown() {
+    void shutdown() {
         scheduledExecutorService.shutdown();
     }
 
     private class LinkUpdateBroadcastScheduler implements Runnable {
 
-        LinkUpdateBroadcastScheduler() {
-        }
-
         @Override
         public void run() {
-            synchronized (broadcastSchedulerLock) {
+            try {
+                broadcastSchedulerLock.lock();
                 // One second since last add
-                if (sendQueue.size() > 0 && lastAdded > 0 && (System.currentTimeMillis() - lastAdded) > 100) {
+                if (sendQueue.size() > 0 && lastEnqueueTimestamp > 0 && (System.currentTimeMillis() - lastEnqueueTimestamp) > 100) {
                     LOG.trace("{}'s scheduler is sending out {} messages", myAddr, sendQueue.size());
                     final ArrayList<LinkUpdateMessageWire> messages = new ArrayList<>(sendQueue.size());
                     sendQueue.drainTo(messages);
@@ -339,14 +366,17 @@ public class MembershipService {
                             .setSender(myAddr.toString())
                             .addAllMessages(messages)
                             .build();
-                    final List<HostAndPort> recipients = membershipView.viewRing(0);
+                    final List<HostAndPort> recipients = membershipView.getRing(0);
                     if (recipients.size() == 1 && recipients.get(0).equals(myAddr)) {
                         // Avoid RPC overhead during bootstrap.
                         executor.execute(() -> processLinkUpdateMessage(batched));
                         return;
                     }
-                    broadcaster.broadcast(membershipView.viewRing(0), batched);
+                    broadcaster.broadcast(membershipView.getRing(0), batched);
                 }
+            }
+            finally {
+                broadcastSchedulerLock.unlock();
             }
         }
     }
