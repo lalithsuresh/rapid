@@ -7,41 +7,16 @@ option java_outer_classname = "Remoting";
 package remoting;
 
 service MembershipService {
-  rpc receiveLinkUpdateMessage (BatchedLinkUpdateMessage) returns (Response) {}
   rpc receiveJoinMessage (JoinMessage) returns (JoinResponse) {}
   rpc receiveJoinPhase2Message (JoinMessage) returns (JoinResponse) {}
+  rpc receiveLinkUpdateMessage (BatchedLinkUpdateMessage) returns (Response) {}
   rpc gossip (GossipMessage) returns (GossipResponse) {}
 }
 
-message GossipMessage
-{
-    string messageId = 1;
-    int32 ttl = 2;
-    repeated LinkUpdateMessage linkUpdateMessage = 3;
-}
 
-message GossipResponse
-{
-}
+// ******* Join protocol messages *******
 
-message BatchedLinkUpdateMessage
-{
-    string sender = 1;
-    repeated LinkUpdateMessage messages = 2;
-}
-
-
-message LinkUpdateMessage
-{
-    string sender = 1;
-    string linkSrc = 2;
-    string linkDst = 3;
-    LinkStatus linkStatus = 4;
-    int64 configurationId = 5;
-    string uuid = 6;      // Required for join protocol
-    int32 ringNumber = 7;
-}
-
+// TODO: JoinMessage and JoinResponse are overloaded because they are being used for phase 1 and 2 of the bootstrap.
 message JoinMessage
 {
    string sender = 1;
@@ -66,11 +41,43 @@ enum JoinStatusCode {
     CONFIG_CHANGED = 3;
 };
 
+// ******* LinkUpdate messages *******
+
+message BatchedLinkUpdateMessage
+{
+    string sender = 1;
+    repeated LinkUpdateMessage messages = 2;
+}
+
+message LinkUpdateMessage
+{
+    string sender = 1;
+    string linkSrc = 2;
+    string linkDst = 3;
+    LinkStatus linkStatus = 4;
+    int64 configurationId = 5;
+    string uuid = 6;      // Required for join protocol
+    int32 ringNumber = 7;
+}
+
 enum LinkStatus {
     UP = 0;
     DOWN = 1;
 };
 
 message Response
+{
+}
+
+// ******* Gossip messages *******
+
+message GossipMessage
+{
+    string messageId = 1;
+    int32 ttl = 2;
+    repeated LinkUpdateMessage linkUpdateMessage = 3;
+}
+
+message GossipResponse
 {
 }
