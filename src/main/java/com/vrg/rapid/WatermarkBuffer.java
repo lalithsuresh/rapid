@@ -15,6 +15,7 @@ package com.vrg.rapid;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
+import com.vrg.rapid.pb.LinkUpdateMessage;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -62,15 +63,16 @@ class WatermarkBuffer {
         assert msg.getRingNumber() <= K;
 
         synchronized (lock) {
+            final HostAndPort linkDst = HostAndPort.fromString(msg.getLinkDst());
             final Map<Integer, HostAndPort> reportsForHost = reportsPerHost.computeIfAbsent(
-                                              msg.getDst(),
-                                             (k) -> new HashMap<>(K));
+                                                                 linkDst,
+                                                                 (k) -> new HashMap<>(K));
 
             if (reportsForHost.containsKey(msg.getRingNumber())) {
                 return EMPTY_LIST;  // duplicate announcement, ignore.
             }
 
-            reportsForHost.put(msg.getRingNumber(), msg.getSrc());
+            reportsForHost.put(msg.getRingNumber(), HostAndPort.fromString(msg.getLinkSrc()));
             final int numReportsForHost = reportsForHost.size();
 
             if (numReportsForHost == L) {
@@ -80,7 +82,7 @@ class WatermarkBuffer {
             if (numReportsForHost == H) {
                  // Enough reports about "msg.getDst()" have been received that it is safe to act upon,
                  // provided there are no other nodes with L < #reports < H.
-                proposal.add(msg.getDst());
+                proposal.add(linkDst);
                 final int updatesInProgressVal = updatesInProgress.decrementAndGet();
 
                 if (updatesInProgressVal == 0) {

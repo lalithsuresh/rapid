@@ -15,12 +15,12 @@ package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
 import com.google.protobuf.ByteString;
-import com.vrg.rapid.pb.BatchedLinkUpdateMessageWire;
+import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
 import com.vrg.rapid.pb.LinkStatus;
-import com.vrg.rapid.pb.LinkUpdateMessageWire;
+import com.vrg.rapid.pb.LinkUpdateMessage;
 import io.grpc.StatusRuntimeException;
 import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
@@ -65,7 +65,7 @@ public class MembershipService {
     private long lastEnqueueTimestamp = -1;    // Timestamp
     private final Lock broadcastSchedulerLock = new ReentrantLock();
     private final ScheduledExecutorService scheduledExecutorService = Executors.newScheduledThreadPool(1);
-    private final LinkedBlockingQueue<LinkUpdateMessageWire> sendQueue = new LinkedBlockingQueue<>();
+    private final LinkedBlockingQueue<LinkUpdateMessage> sendQueue = new LinkedBlockingQueue<>();
 
 
     public static class Builder {
@@ -152,7 +152,7 @@ public class MembershipService {
                         joinMessage.getSender(), myAddr,
                         currentConfiguration, membershipView.getRing(0).size());
                 // TODO: insert some health checks between monitor and client
-                final LinkUpdateMessageWire msg = LinkUpdateMessageWire.newBuilder()
+                final LinkUpdateMessage msg = LinkUpdateMessage.newBuilder()
                         .setSender(this.myAddr.toString())
                         .setLinkSrc(this.myAddr.toString())
                         .setLinkDst(joinMessage.getSender())
@@ -222,7 +222,7 @@ public class MembershipService {
      * Link update messages that do not affect an ongoing proposal
      * needs to be dropped.
      */
-    void processLinkUpdateMessage(final BatchedLinkUpdateMessageWire messageBatch) {
+    void processLinkUpdateMessage(final BatchedLinkUpdateMessage messageBatch) {
         executor.execute(() -> {
             Objects.requireNonNull(messageBatch);
 
@@ -230,38 +230,40 @@ public class MembershipService {
             // are valid and do not violate conditions of the ring. These are packed in to
             // validMessages and processed later.
             final List<LinkUpdateMessage> validMessages = new ArrayList<>(messageBatch.getMessagesList().size());
-            for (final LinkUpdateMessageWire request: messageBatch.getMessagesList()) {
+            for (final LinkUpdateMessage request: messageBatch.getMessagesList()) {
+                final HostAndPort destination = HostAndPort.fromString(request.getLinkDst());
                 LOG.trace("LinkUpdateMessage received for {sender:{}, receiver:{}, config:{}, size:{}}",
                         request.getSender(), myAddr,
                         request.getConfigurationId(), membershipView.getRing(0).size());
 
                 // TODO: move away from using two classes for the same message type
-                final LinkUpdateMessage msg = new LinkUpdateMessage(request.getLinkSrc(), request.getLinkDst(),
-                        request.getLinkStatus(), request.getConfigurationId(),
-                        UUID.fromString(request.getUuid()), request.getRingNumber());
+//                final LinkUpdateMessage msg = new LinkUpdateMessage(request.getLinkSrc(), request.getLinkDst(),
+//                        request.getLinkStatus(), request.getConfigurationId(),
+//                        UUID.fromString(request.getUuid()), request.getRingNumber());
 
                 final long currentConfigurationId = membershipView.getCurrentConfigurationId();
-                if (currentConfigurationId != msg.getConfigurationId()) {
+                if (currentConfigurationId != request.getConfigurationId()) {
                     LOG.trace("LinkUpdateMessage for configuration {} received during configuration {}",
-                            msg.getConfigurationId(), currentConfigurationId);
+                            request.getConfigurationId(), currentConfigurationId);
                     continue;
                 }
 
                 // The invariant we want to maintain is that a node can only go into the
                 // membership set once and leave it once.
-                if (msg.getStatus().equals(LinkStatus.UP) && membershipView.isHostPresent(msg.getDst())) {
+                if (request.getLinkStatus().equals(LinkStatus.UP)
+                        && membershipView.isHostPresent(destination)) {
                     LOG.trace("LinkUpdateMessage with status UP received for node {} already in configuration {} ",
-                            msg.getDst(), currentConfigurationId);
+                            request.getLinkDst(), currentConfigurationId);
                     continue;
                 }
-                if (msg.getStatus().equals(LinkStatus.DOWN) && !membershipView.isHostPresent(msg.getDst())) {
+                if (request.getLinkStatus().equals(LinkStatus.DOWN) && !membershipView.isHostPresent(destination)) {
                     LOG.trace("LinkUpdateMessage with status DOWN received for node {} already in configuration {} ",
-                            msg.getDst(), currentConfigurationId);
+                            request.getLinkDst(), currentConfigurationId);
                     continue;
                 }
 
-                joinerUuid.put(msg.getDst(), msg.getUuid());
-                validMessages.add(msg);
+                joinerUuid.put(destination, UUID.fromString(request.getUuid()));
+                validMessages.add(request);
             }
 
             // We now batch apply all the valid messages innto the watermark buffer, obtaining
@@ -362,9 +364,9 @@ public class MembershipService {
                 if (sendQueue.size() > 0 && lastEnqueueTimestamp > 0
                         && (System.currentTimeMillis() - lastEnqueueTimestamp) > BATCH_WINDOW_IN_MS) {
                     LOG.trace("{}'s scheduler is sending out {} messages", myAddr, sendQueue.size());
-                    final ArrayList<LinkUpdateMessageWire> messages = new ArrayList<>(sendQueue.size());
+                    final ArrayList<LinkUpdateMessage> messages = new ArrayList<>(sendQueue.size());
                     sendQueue.drainTo(messages);
-                    final BatchedLinkUpdateMessageWire batched = BatchedLinkUpdateMessageWire.newBuilder()
+                    final BatchedLinkUpdateMessage batched = BatchedLinkUpdateMessage.newBuilder()
                             .setSender(myAddr.toString())
                             .addAllMessages(messages)
                             .build();

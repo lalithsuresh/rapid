@@ -13,6 +13,8 @@
 
 package com.vrg.rapid;
 
+import com.vrg.rapid.pb.LinkUpdateMessage;
+
 import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
 

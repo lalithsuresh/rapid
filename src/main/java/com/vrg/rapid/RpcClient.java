@@ -15,13 +15,13 @@ package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.ListenableFuture;
-import com.vrg.rapid.pb.BatchedLinkUpdateMessageWire;
+import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.GossipMessage;
 import com.vrg.rapid.pb.GossipResponse;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.LinkStatus;
-import com.vrg.rapid.pb.LinkUpdateMessageWire;
+import com.vrg.rapid.pb.LinkUpdateMessage;
 import com.vrg.rapid.pb.MembershipServiceGrpc;
 import com.vrg.rapid.pb.MembershipServiceGrpc.MembershipServiceFutureStub;
 import com.vrg.rapid.pb.Response;
@@ -109,7 +109,7 @@ class RpcClient {
         return stub.withDeadlineAfter(RPC_TIMEOUT_SECONDS * 5, TimeUnit.SECONDS).receiveJoinMessage(msg);
     }
 
-    ListenableFuture<Response> sendLinkUpdateMessage(final HostAndPort remote, final BatchedLinkUpdateMessageWire msg) {
+    ListenableFuture<Response> sendLinkUpdateMessage(final HostAndPort remote, final BatchedLinkUpdateMessage msg) {
         Objects.requireNonNull(msg);
         final MembershipServiceFutureStub stub = stubs.computeIfAbsent(remote, this::createFutureStub);
         return stub.withDeadlineAfter(RPC_TIMEOUT_SECONDS, TimeUnit.SECONDS).receiveLinkUpdateMessage(msg);
@@ -126,13 +126,13 @@ class RpcClient {
 
         final MembershipServiceFutureStub stub = stubs.computeIfAbsent(remote, this::createFutureStub);
 
-        final LinkUpdateMessageWire msg = LinkUpdateMessageWire.newBuilder()
+        final LinkUpdateMessage msg = LinkUpdateMessage.newBuilder()
                                             .setSender(address.toString())
                                             .setLinkSrc(src.toString())
                                             .setLinkDst(dst.toString())
                                             .setLinkStatus(status)
                                             .setConfigurationId(configurationId).build();
-        final BatchedLinkUpdateMessageWire batchedMessage = BatchedLinkUpdateMessageWire.newBuilder()
+        final BatchedLinkUpdateMessage batchedMessage = BatchedLinkUpdateMessage.newBuilder()
                                             .setSender(address.toString())
                                             .addAllMessages(Collections.singletonList(msg))
                                             .build();

@@ -14,7 +14,7 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
-import com.vrg.rapid.pb.BatchedLinkUpdateMessageWire;
+import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.GossipMessage;
 import com.vrg.rapid.pb.GossipResponse;
 import com.vrg.rapid.pb.JoinMessage;
@@ -68,7 +68,7 @@ class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
      * Defined in rapid.proto.
      */
     @Override
-    public void receiveLinkUpdateMessage(final BatchedLinkUpdateMessageWire request,
+    public void receiveLinkUpdateMessage(final BatchedLinkUpdateMessage request,
                                          final StreamObserver<Response> responseObserver) {
         assert membershipService != null;
         membershipService.processLinkUpdateMessage(request);

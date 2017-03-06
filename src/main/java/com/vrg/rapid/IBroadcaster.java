@@ -14,13 +14,13 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
-import com.vrg.rapid.pb.BatchedLinkUpdateMessageWire;
+import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 
 import java.util.List;
 
 /**
  * Supports different broadcast implementations (eager flooding, gossip, etc.).
  */
-interface IBroadcaster {
-    void broadcast(List<HostAndPort> recipients, BatchedLinkUpdateMessageWire msg);
+public interface IBroadcaster {
+    void broadcast(List<HostAndPort> recipients, BatchedLinkUpdateMessage msg);
 }

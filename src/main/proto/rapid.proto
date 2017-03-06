@@ -7,7 +7,7 @@ option java_outer_classname = "Remoting";
 package remoting;
 
 service MembershipService {
-  rpc receiveLinkUpdateMessage (BatchedLinkUpdateMessageWire) returns (Response) {}
+  rpc receiveLinkUpdateMessage (BatchedLinkUpdateMessage) returns (Response) {}
   rpc receiveJoinMessage (JoinMessage) returns (JoinResponse) {}
   rpc receiveJoinPhase2Message (JoinMessage) returns (JoinResponse) {}
   rpc gossip (GossipMessage) returns (GossipResponse) {}
@@ -17,21 +17,21 @@ message GossipMessage
 {
     string messageId = 1;
     int32 ttl = 2;
-    repeated LinkUpdateMessageWire linkUpdateMessage = 3;
+    repeated LinkUpdateMessage linkUpdateMessage = 3;
 }
 
 message GossipResponse
 {
 }
 
-message BatchedLinkUpdateMessageWire
+message BatchedLinkUpdateMessage
 {
     string sender = 1;
-    repeated LinkUpdateMessageWire messages = 2;
+    repeated LinkUpdateMessage messages = 2;
 }
 
 
-message LinkUpdateMessageWire
+message LinkUpdateMessage
 {
     string sender = 1;
     string linkSrc = 2;
