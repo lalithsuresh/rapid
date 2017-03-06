@@ -354,7 +354,6 @@ public class MembershipService {
     private class LinkUpdateBroadcastScheduler implements Runnable {
         private static final int BATCH_WINDOW_IN_MS = 100;
 
-
         @Override
         public void run() {
             try {
