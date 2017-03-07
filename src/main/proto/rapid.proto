@@ -51,7 +51,6 @@ message BatchedLinkUpdateMessage
 
 message LinkUpdateMessage
 {
-    string sender = 1;
     string linkSrc = 2;
     string linkDst = 3;
     LinkStatus linkStatus = 4;

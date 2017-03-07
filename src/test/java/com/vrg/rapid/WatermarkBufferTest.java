@@ -230,7 +230,6 @@ public class WatermarkBufferTest {
                                                       final long configuration,
                                                       final int ringNumber) {
         final LinkUpdateMessage msg = LinkUpdateMessage.newBuilder()
-                .setSender(src.toString())
                 .setLinkSrc(src.toString())
                 .setLinkDst(dst.toString())
                 .setLinkStatus(status)

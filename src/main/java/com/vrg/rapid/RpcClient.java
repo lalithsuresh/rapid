@@ -127,7 +127,6 @@ final class RpcClient {
         final MembershipServiceFutureStub stub = stubs.computeIfAbsent(remote, this::createFutureStub);
 
         final LinkUpdateMessage msg = LinkUpdateMessage.newBuilder()
-                                            .setSender(address.toString())
                                             .setLinkSrc(src.toString())
                                             .setLinkDst(dst.toString())
                                             .setLinkStatus(status)

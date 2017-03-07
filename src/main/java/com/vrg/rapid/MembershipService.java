@@ -153,7 +153,6 @@ final class MembershipService {
                         currentConfiguration, membershipView.getRing(0).size());
                 // TODO: insert some health checks between monitor and client
                 final LinkUpdateMessage msg = LinkUpdateMessage.newBuilder()
-                        .setSender(this.myAddr.toString())
                         .setLinkSrc(this.myAddr.toString())
                         .setLinkDst(joinMessage.getSender())
                         .setLinkStatus(LinkStatus.UP)
@@ -233,7 +232,7 @@ final class MembershipService {
             for (final LinkUpdateMessage request: messageBatch.getMessagesList()) {
                 final HostAndPort destination = HostAndPort.fromString(request.getLinkDst());
                 LOG.trace("LinkUpdateMessage received for {sender:{}, receiver:{}, config:{}, size:{}}",
-                        request.getSender(), myAddr,
+                        messageBatch.getSender(), myAddr,
                         request.getConfigurationId(), membershipView.getRing(0).size());
 
                 // TODO: move away from using two classes for the same message type
