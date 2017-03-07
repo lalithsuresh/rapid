@@ -229,12 +229,11 @@ public class WatermarkBufferTest {
                                                       final LinkStatus status,
                                                       final long configuration,
                                                       final int ringNumber) {
-        final LinkUpdateMessage msg = LinkUpdateMessage.newBuilder()
+        return LinkUpdateMessage.newBuilder()
                 .setLinkSrc(src.toString())
                 .setLinkDst(dst.toString())
                 .setLinkStatus(status)
                 .setRingNumber(ringNumber)
                 .setConfigurationId(configuration).build();
-        return msg;
     }
 }

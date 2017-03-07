@@ -21,14 +21,14 @@ import org.junit.runner.notification.RunListener;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Created by lsuresh on 3/6/17.
+ * This pretty prints test results when using surefire.
  */
 public class CustomRunListener extends RunListener {
     private static final String RESET = "\u001B[0m";
     private static final String GREEN = "\u001B[32m";
     private static final String RED = "\u001B[31m";
     private static final Description FAILED = Description.createTestDescription("FAILED", "FAILED");
-    private Stopwatch stopwatch = Stopwatch.createUnstarted();
+    private final Stopwatch stopwatch = Stopwatch.createUnstarted();
 
     @Override
     public void testFinished(final Description description) throws Exception {

@@ -19,6 +19,7 @@ import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.JoinStatusCode;
 
 import javax.annotation.concurrent.GuardedBy;
+import javax.annotation.concurrent.ThreadSafe;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -30,6 +31,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -43,7 +45,7 @@ final class MembershipView {
     private final int K;
     private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
     @GuardedBy("rwLock") private final ConcurrentHashMap<Integer, NavigableSet<HostAndPort>> rings;
-    @GuardedBy("rwLock") private final Set<UUID> identifiersSeen = new TreeSet<>();
+    @GuardedBy("rwLock") private final Set<UUID> identifiersSeen = new ConcurrentSkipListSet<>();
     @GuardedBy("rwLock") private long currentConfigurationId = -1;
     @GuardedBy("rwLock") private boolean shouldUpdateConfigurationId = true;
 
@@ -72,15 +74,20 @@ final class MembershipView {
     }
 
     JoinStatusCode isSafeToJoin(final HostAndPort node, final UUID uuid) {
-        if (rings.get(0).contains(node)) {
-            return JoinStatusCode.HOSTNAME_ALREADY_IN_RING;
-        }
+        rwLock.readLock().lock();
+        try {
+            if (rings.get(0).contains(node)) {
+                return JoinStatusCode.HOSTNAME_ALREADY_IN_RING;
+            }
 
-        if (identifiersSeen.contains(uuid)) {
-            return JoinStatusCode.UUID_ALREADY_IN_RING;
-        }
+            if (identifiersSeen.contains(uuid)) {
+                return JoinStatusCode.UUID_ALREADY_IN_RING;
+            }
 
-        return JoinStatusCode.SAFE_TO_JOIN;
+            return JoinStatusCode.SAFE_TO_JOIN;
+        } finally {
+            rwLock.readLock().unlock();
+        }
     }
 
     @VisibleForTesting
@@ -88,7 +95,7 @@ final class MembershipView {
         Objects.requireNonNull(node);
         Objects.requireNonNull(uuid);
 
-        if (identifiersSeen.contains(uuid)) {
+        if (isIdentifierPresent(uuid)) {
             throw new RuntimeException("Host add attempt with identifier already seen:" +
                     " {host: " + node + ", identifier: " + uuid + "}:");
         }
@@ -234,11 +241,21 @@ final class MembershipView {
     }
 
     boolean isHostPresent(final HostAndPort address) {
-        return rings.get(0).contains(address);
+        rwLock.readLock().lock();
+        try {
+            return rings.get(0).contains(address);
+        } finally {
+            rwLock.readLock().unlock();
+        }
     }
 
     boolean isIdentifierPresent(final UUID identifier) {
-        return identifiersSeen.contains(identifier);
+        rwLock.readLock().lock();
+        try {
+            return identifiersSeen.contains(identifier);
+        } finally {
+            rwLock.readLock().unlock();
+        }
     }
 
     long getCurrentConfigurationId() {
@@ -278,6 +295,7 @@ final class MembershipView {
     /**
      * XXX: May not be stable across processes. Verify.
      */
+    @GuardedBy("rwLock")
     private void updateCurrentConfigurationId() {
         currentConfigurationId = Configuration.getConfigurationId(identifiersSeen, rings.get(0));
     }

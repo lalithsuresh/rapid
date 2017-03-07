@@ -315,18 +315,16 @@ final class MembershipService {
                 // Send out responses to all the nodes waiting to join.
                 for (final HostAndPort node: proposal) {
                     if (joinResponseCallbacks.containsKey(node)) {
-                        joinResponseCallbacks.get(node).forEach(observer -> {
-                            executor.execute(() -> {
-                                try {
-                                    observer.onNext(response);
-                                    observer.onCompleted();
-                                } catch (final StatusRuntimeException e) {
-                                    LOG.error("StatusRuntimeException of type {} for response JoinPhase2Response to {}",
-                                              e.getStatus(), response.getSender());
-                                }
+                        joinResponseCallbacks.get(node).forEach(observer -> executor.execute(() -> {
+                            try {
+                                observer.onNext(response);
+                                observer.onCompleted();
+                            } catch (final StatusRuntimeException e) {
+                                LOG.error("StatusRuntimeException of type {} for response JoinPhase2Response to {}",
+                                          e.getStatus(), response.getSender());
                             }
-                            );
-                        });
+                        }
+                        ));
                         joinResponseCallbacks.remove(node);
                     }
                 }

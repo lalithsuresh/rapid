@@ -56,7 +56,9 @@ final class WatermarkBuffer {
     }
 
     int getNumProposals() {
-        return proposalCount.get();
+        synchronized (lock) {
+            return proposalCount.get();
+        }
     }
 
     List<HostAndPort> aggregateForProposal(final LinkUpdateMessage msg) {

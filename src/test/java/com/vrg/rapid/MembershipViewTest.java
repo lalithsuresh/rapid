@@ -291,11 +291,9 @@ public class MembershipViewTest {
         for (int i = 0; i < numNodes; i++) {
             try {
                 final int numMonitorees = mview.monitoreesOf(list.get(i)).size();
-                final int numMonitors = mview.monitoreesOf(list.get(i)).size();
-                assertTrue("NumMonitorees: " + numMonitorees, K - 3 <= numMonitorees);
-                assertTrue("NumMonitorees: " + numMonitorees, K >= numMonitorees);
-                assertTrue("NumMonitors: " + numMonitors, K - 3 <= numMonitors);
-                assertTrue("NumMonitors: " + numMonitors, K >= numMonitors);
+                final int numMonitors = mview.monitorsOf(list.get(i)).size();
+                assertTrue("NumMonitorees: " + numMonitorees, K == numMonitorees);
+                assertTrue("NumMonitors: " + numMonitors, K == numMonitors);
             } catch (final MembershipView.NodeNotInRingException e) {
                 fail();
             }
