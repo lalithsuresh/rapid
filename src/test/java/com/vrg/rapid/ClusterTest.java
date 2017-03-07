@@ -139,7 +139,7 @@ public class ClusterTest {
      * time. This tests a single seed's ability to bootstrap a large cluster in one step.
      */
     @Test
-    public void testJoinMoreThanKParallelSingleStep() throws IOException, InterruptedException {
+    public void testJoinMoreThanKSingleStepParallel() throws IOException, InterruptedException {
         RpcServer.USE_IN_PROCESS_SERVER = true;
         RpcClient.USE_IN_PROCESS_CHANNEL = true;
 

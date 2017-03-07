@@ -51,12 +51,12 @@ message BatchedLinkUpdateMessage
 
 message LinkUpdateMessage
 {
-    string linkSrc = 2;
-    string linkDst = 3;
-    LinkStatus linkStatus = 4;
-    int64 configurationId = 5;
-    string uuid = 6;      // Required for join protocol
-    int32 ringNumber = 7;
+    string linkSrc = 1;
+    string linkDst = 2;
+    LinkStatus linkStatus = 3;
+    int64 configurationId = 4;
+    string uuid = 5;      // Required for join protocol
+    int32 ringNumber = 6;
 }
 
 enum LinkStatus {

@@ -170,7 +170,7 @@ public final class Cluster {
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
         final MembershipService membershipService = new MembershipService.Builder(listenAddress, watermarkBuffer,
                                                                                   membershipView)
-                                                .setLogProposals(true)
+                                                .setLogProposals(false)
                                                 .build();
         rpcServer.setMembershipService(membershipService);
         rpcServer.startServer();
