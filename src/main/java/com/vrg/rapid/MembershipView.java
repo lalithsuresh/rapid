@@ -18,6 +18,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.JoinStatusCode;
 
+import javax.annotation.concurrent.GuardedBy;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -39,12 +40,12 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * TODO: too many scans of the k rings during reads. Maintain a cache.
  */
 final class MembershipView {
-    private final ConcurrentHashMap<Integer, NavigableSet<HostAndPort>> rings;
     private final int K;
     private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
-    private final Set<UUID> identifiersSeen = new TreeSet<>();
-    private long currentConfigurationId = -1;
-    private boolean shouldUpdateConfigurationId = true;
+    @GuardedBy("rwLock") private final ConcurrentHashMap<Integer, NavigableSet<HostAndPort>> rings;
+    @GuardedBy("rwLock") private final Set<UUID> identifiersSeen = new TreeSet<>();
+    @GuardedBy("rwLock") private long currentConfigurationId = -1;
+    @GuardedBy("rwLock") private boolean shouldUpdateConfigurationId = true;
 
     MembershipView(final int K) {
         assert K > 0;
@@ -92,9 +93,8 @@ final class MembershipView {
                     " {host: " + node + ", identifier: " + uuid + "}:");
         }
 
+        rwLock.writeLock().lock();
         try {
-            rwLock.writeLock().lock();
-
             if (rings.get(0).contains(node)) {
                 throw new NodeAlreadyInRingException(node);
             }
@@ -113,8 +113,8 @@ final class MembershipView {
     @VisibleForTesting
     void ringDelete(final HostAndPort node) {
         Objects.requireNonNull(node);
+        rwLock.writeLock().lock();
         try {
-            rwLock.writeLock().lock();
 
             if (!rings.get(0).contains(node)) {
                 throw new NodeNotInRingException(node);
@@ -138,9 +138,8 @@ final class MembershipView {
      */
     List<HostAndPort> monitorsOf(final HostAndPort node) {
         Objects.requireNonNull(node);
+        rwLock.readLock().lock();
         try {
-            rwLock.readLock().lock();
-
             if (!rings.get(0).contains(node)) {
                 throw new NodeNotInRingException(node);
             }
@@ -174,8 +173,8 @@ final class MembershipView {
      */
     List<HostAndPort> monitoreesOf(final HostAndPort node) {
         Objects.requireNonNull(node);
+        rwLock.readLock().lock();
         try {
-            rwLock.readLock().lock();
             if (!rings.get(0).contains(node)) {
                 throw new NodeNotInRingException(node);
             }
@@ -211,9 +210,8 @@ final class MembershipView {
      */
     List<HostAndPort> expectedMonitorsOf(final HostAndPort node) {
         Objects.requireNonNull(node);
+        rwLock.readLock().lock();
         try {
-            rwLock.readLock().lock();
-
             final List<HostAndPort> monitorees = new ArrayList<>();
             if (rings.get(0).size() == 0) {
                 return monitorees;
@@ -244,8 +242,8 @@ final class MembershipView {
     }
 
     long getCurrentConfigurationId() {
+        rwLock.readLock().lock();
         try {
-            rwLock.readLock().lock();
             if (shouldUpdateConfigurationId) {
                 updateCurrentConfigurationId();
                 shouldUpdateConfigurationId = false;
@@ -259,8 +257,8 @@ final class MembershipView {
 
     @VisibleForTesting
     List<HostAndPort> getRing(final int k) {
+        rwLock.readLock().lock();
         try {
-            rwLock.readLock().lock();
             assert k >= 0;
             return ImmutableList.copyOf(rings.get(k));
         } finally {
@@ -268,9 +266,9 @@ final class MembershipView {
         }
     }
 
-    public int getMembershipSize() {
+    int getMembershipSize() {
+        rwLock.readLock().lock();
         try {
-            rwLock.readLock().lock();
             return rings.get(0).size();
         } finally {
             rwLock.readLock().unlock();
@@ -285,8 +283,8 @@ final class MembershipView {
     }
 
     Configuration getConfiguration() {
+        rwLock.readLock().lock();
         try {
-            rwLock.readLock().lock();
             return new Configuration(identifiersSeen, rings.get(0));
         }
         finally {

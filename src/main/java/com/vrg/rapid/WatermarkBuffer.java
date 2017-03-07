@@ -17,6 +17,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.LinkUpdateMessage;
 
+import javax.annotation.concurrent.GuardedBy;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -35,10 +36,10 @@ final class WatermarkBuffer {
     private final int K;
     private final int H;
     private final int L;
-    private final AtomicInteger proposalCount = new AtomicInteger(0);
-    private final AtomicInteger updatesInProgress = new AtomicInteger(0);
-    private final Map<HostAndPort, Map<Integer, HostAndPort>> reportsPerHost;
-    private final ArrayList<HostAndPort> proposal = new ArrayList<>();
+    @GuardedBy("lock") private final AtomicInteger proposalCount = new AtomicInteger(0);
+    @GuardedBy("lock") private final AtomicInteger updatesInProgress = new AtomicInteger(0);
+    @GuardedBy("lock") private final Map<HostAndPort, Map<Integer, HostAndPort>> reportsPerHost;
+    @GuardedBy("lock") private final ArrayList<HostAndPort> proposal = new ArrayList<>();
     private final Object lock = new Object();
     private static final List<HostAndPort> EMPTY_LIST =
             Collections.unmodifiableList(new ArrayList<HostAndPort>());

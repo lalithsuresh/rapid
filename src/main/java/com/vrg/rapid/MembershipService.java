@@ -26,6 +26,7 @@ import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.concurrent.GuardedBy;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -62,10 +63,12 @@ final class MembershipService {
     private final Executor executor = Executors.newSingleThreadScheduledExecutor();
 
     // Fields used by batching logic.
+    @GuardedBy("batchSchedulerLock")
     private long lastEnqueueTimestamp = -1;    // Timestamp
-    private final Lock broadcastSchedulerLock = new ReentrantLock();
-    private final ScheduledExecutorService scheduledExecutorService = Executors.newScheduledThreadPool(1);
+    @GuardedBy("batchSchedulerLock")
     private final LinkedBlockingQueue<LinkUpdateMessage> sendQueue = new LinkedBlockingQueue<>();
+    private final Lock batchSchedulerLock = new ReentrantLock();
+    private final ScheduledExecutorService scheduledExecutorService = Executors.newScheduledThreadPool(1);
 
 
     public static class Builder {
@@ -166,13 +169,13 @@ final class MembershipService {
                         .add(responseObserver);
 
                 // TODO: for the time being, perform an all-to-all broadcast. We will later replace this with gossip.
+                batchSchedulerLock.lock();
                 try {
-                    broadcastSchedulerLock.lock();
                     lastEnqueueTimestamp = System.currentTimeMillis();
                     sendQueue.add(msg);
                 }
                 finally {
-                    broadcastSchedulerLock.unlock();
+                    batchSchedulerLock.unlock();
                 }
 
             } else {
@@ -234,11 +237,6 @@ final class MembershipService {
                 LOG.trace("LinkUpdateMessage received for {sender:{}, receiver:{}, config:{}, size:{}}",
                         messageBatch.getSender(), myAddr,
                         request.getConfigurationId(), membershipView.getRing(0).size());
-
-                // TODO: move away from using two classes for the same message type
-//                final LinkUpdateMessage msg = new LinkUpdateMessage(request.getLinkSrc(), request.getLinkDst(),
-//                        request.getLinkStatus(), request.getConfigurationId(),
-//                        UUID.fromString(request.getUuid()), request.getRingNumber());
 
                 final long currentConfigurationId = membershipView.getCurrentConfigurationId();
                 if (currentConfigurationId != request.getConfigurationId()) {
@@ -357,8 +355,8 @@ final class MembershipService {
 
         @Override
         public void run() {
+            batchSchedulerLock.lock();
             try {
-                broadcastSchedulerLock.lock();
                 // One second since last add
                 if (sendQueue.size() > 0 && lastEnqueueTimestamp > 0
                         && (System.currentTimeMillis() - lastEnqueueTimestamp) > BATCH_WINDOW_IN_MS) {
@@ -379,7 +377,7 @@ final class MembershipService {
                 }
             }
             finally {
-                broadcastSchedulerLock.unlock();
+                batchSchedulerLock.unlock();
             }
         }
     }
