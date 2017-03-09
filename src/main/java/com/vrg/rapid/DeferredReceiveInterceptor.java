@@ -60,7 +60,7 @@ final class DeferredReceiveInterceptor implements ServerInterceptor {
     void unblock() {
         lock.lock();
         try {
-            serverReadyCondition.signal();
+            serverReadyCondition.signalAll();
             isReady = true;
         }
         finally {

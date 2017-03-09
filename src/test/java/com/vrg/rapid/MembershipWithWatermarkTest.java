@@ -26,8 +26,6 @@ import static org.junit.Assert.assertEquals;
  */
 public class MembershipWithWatermarkTest {
     private static final int K = 10;
-    private static final int H = 8;
-    private static final int L = 3;
 
     /**
      * A ring initialized with self

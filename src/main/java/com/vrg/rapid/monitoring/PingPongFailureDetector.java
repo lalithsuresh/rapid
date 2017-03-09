@@ -80,7 +80,8 @@ public class PingPongFailureDetector implements ILinkFailureDetector {
     @Override
     public boolean hasFailed(final HostAndPort monitoree) {
         if (!failureCount.containsKey(monitoree)) {
-            LOG.trace("handleProbeOnSuccess at {} heard from a node we are not assigned to ({})", address, monitoree);
+            LOG.trace("handleProbeOnSuccess at {} heard from a node we are not assigned to ({})",
+                       address, monitoree);
         }
         return failureCount.get(monitoree).get() >= FAILURE_THRESHOLD;
     }

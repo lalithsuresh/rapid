@@ -13,7 +13,6 @@
 
 package com.vrg.rapid;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.JoinStatusCode;
@@ -107,7 +106,6 @@ final class MembershipView {
      * @param node the node to be added
      * @param uuid the logical identifier of the node being added
      */
-    @VisibleForTesting
     void ringAdd(final HostAndPort node, final UUID uuid) {
         Objects.requireNonNull(node);
         Objects.requireNonNull(uuid);
@@ -139,7 +137,6 @@ final class MembershipView {
      *
      * @param node the host to be removed
      */
-    @VisibleForTesting
     void ringDelete(final HostAndPort node) {
         Objects.requireNonNull(node);
         rwLock.writeLock().lock();
@@ -322,7 +319,6 @@ final class MembershipView {
      * @param k the index of the ring to query
      * @return the list of hosts in the k'th ring.
      */
-    @VisibleForTesting
     List<HostAndPort> getRing(final int k) {
         rwLock.readLock().lock();
         try {
@@ -340,7 +336,6 @@ final class MembershipView {
      * @param monitoree The monitoree node
      * @return the indexes k such that {@code monitoree} is a successor of {@code monitoree} on ring[k].
      */
-    @VisibleForTesting
     List<Integer> getRingNumbers(final HostAndPort monitor, final HostAndPort monitoree) {
         rwLock.readLock().lock();
         try {

@@ -71,11 +71,11 @@ public final class Cluster {
         UUID currentIdentifier = UUID.randomUUID();
 
         final RpcServer server = new RpcServer(listenAddress);
+        final RpcClient joinerClient = new RpcClient(listenAddress);
         server.startServer();
         for (int attempt = 0; attempt < RETRIES; attempt++) {
 
             // First, get the configuration ID and the monitors to contact from the seed node.
-            final RpcClient joinerClient = new RpcClient(listenAddress);
             final JoinResponse joinPhaseOneResult;
             try {
                 joinPhaseOneResult = joinerClient.sendJoinMessage(seedAddress,
