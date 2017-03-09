@@ -61,6 +61,14 @@ final class WatermarkBuffer {
         }
     }
 
+    /**
+     * Apply a LinkUpdateMessage against the Watermark filter. When an update moves a host
+     * past the H threshold of reports, and no other host has between H and L reports, the
+     * method returns a view change proposal.
+     *
+     * @param msg A LinkUpdateMessage to apply against the filter
+     * @return a list of hosts about which a view change has been recorded. Empty list if there is no proposal.
+     */
     List<HostAndPort> aggregateForProposal(final LinkUpdateMessage msg) {
         Objects.requireNonNull(msg);
         assert msg.getRingNumber() <= K;
