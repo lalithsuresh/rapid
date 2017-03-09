@@ -13,9 +13,12 @@
 
 package com.vrg.rapid;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
+import com.vrg.rapid.monitoring.ILinkFailureDetector;
+import com.vrg.rapid.monitoring.PingPongFailureDetector;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
 import org.slf4j.Logger;
@@ -55,9 +58,16 @@ public final class Cluster {
      * @throws IOException Thrown if we cannot successfully start a server
      */
     public static Cluster join(final HostAndPort seedAddress,
-                     final HostAndPort listenAddress) throws IOException, InterruptedException {
+                               final HostAndPort listenAddress) throws IOException, InterruptedException {
         Objects.requireNonNull(seedAddress);
         Objects.requireNonNull(listenAddress);
+        return join(seedAddress, listenAddress, false, new PingPongFailureDetector(listenAddress));
+    }
+
+    static Cluster join(final HostAndPort seedAddress,
+                        final HostAndPort listenAddress,
+                        final boolean logProposals,
+                        final ILinkFailureDetector linkFailureDetector) throws IOException, InterruptedException {
         UUID currentIdentifier = UUID.randomUUID();
 
         final RpcServer server = new RpcServer(listenAddress);
@@ -76,7 +86,6 @@ public final class Cluster {
             }
             assert joinPhaseOneResult != null;
 
-            // TODO: need to handle other cases
             switch (joinPhaseOneResult.getStatusCode()) {
                 case CONFIG_CHANGED:
                 case UUID_ALREADY_IN_RING:
@@ -85,6 +94,9 @@ public final class Cluster {
                 case HOSTNAME_ALREADY_IN_RING:
                     LOG.error("Hostname already in configuration {}", joinPhaseOneResult.getConfigurationId());
                     continue;
+                case MEMBERSHIP_REJECTED:
+                    LOG.error("Membership rejected by {}. Quitting.", joinPhaseOneResult.getSender());
+                    throw new RuntimeException("Membership rejected");
                 case SAFE_TO_JOIN:
                     break;
                 default:
@@ -93,7 +105,7 @@ public final class Cluster {
 
             if (attempt > 0) {
                 LOG.info("{} is retrying a join under a new configuration {}",
-                         listenAddress, joinPhaseOneResult.getConfigurationId());
+                        listenAddress, joinPhaseOneResult.getConfigurationId());
             }
 
             // We have the list of monitors. Now contact them as part of phase 2.
@@ -116,14 +128,19 @@ public final class Cluster {
                 // TODO: This is only correct if we use consensus for node addition.
                 // Unsuccessful responses will be null.
                 final List<JoinResponse> responses = Futures.successfulAsList(responseFutures)
-                                                            .get()
-                                                            .stream()
-                                                            .filter(Objects::nonNull)
-                                                            .collect(Collectors.toList());
+                        .get()
+                        .stream()
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toList());
 
                 for (final JoinResponse response : responses) {
+                    if (response.getStatusCode() == JoinStatusCode.MEMBERSHIP_REJECTED) {
+                        LOG.error("Membership rejected by {}. Quitting.", response.getSender());
+                        throw new RuntimeException("Membership rejected");
+                    }
+
                     if (response.getStatusCode() == JoinStatusCode.SAFE_TO_JOIN
-                        && response.getConfigurationId() != joinPhaseOneResult.getConfigurationId()) {
+                            && response.getConfigurationId() != joinPhaseOneResult.getConfigurationId()) {
                         // Safe to proceed. Extract the list of hosts and identifiers from the message,
                         // assemble a MembershipService object and start an RpcServer.
                         final List<HostAndPort> allHosts = response.getHostsList().stream()
@@ -140,7 +157,8 @@ public final class Cluster {
                         final MembershipService membershipService = new MembershipService.Builder(listenAddress,
                                 watermarkBuffer,
                                 membershipViewFinal)
-                                .setLogProposals(true)
+                                .setLogProposals(logProposals)
+                                .setLinkFailureDetector(linkFailureDetector)
                                 .build();
                         server.setMembershipService(membershipService);
                         return new Cluster(server, membershipService);
@@ -163,15 +181,32 @@ public final class Cluster {
      */
     public static Cluster start(final HostAndPort listenAddress) throws IOException {
         Objects.requireNonNull(listenAddress);
+        return start(listenAddress, false, new PingPongFailureDetector(listenAddress));
+    }
+
+    /**
+     * Start a cluster without joining. Required to bootstrap a seed node.
+     *
+     * @param listenAddress Address to bind to after successful bootstrap
+     * @param logProposals maintain a log of announced view change proposals
+     * @param linkFailureDetector a list of checks to perform before a monitor processes a join phase two message
+     * @throws IOException Thrown if we cannot successfully start a server
+     */
+    @VisibleForTesting
+    static Cluster start(final HostAndPort listenAddress,
+                         final boolean logProposals,
+                         final ILinkFailureDetector linkFailureDetector) throws IOException {
+        Objects.requireNonNull(listenAddress);
         final RpcServer rpcServer = new RpcServer(listenAddress);
         final UUID currentIdentifier = UUID.randomUUID();
         final MembershipView membershipView = new MembershipView(K, Collections.singletonList(currentIdentifier),
-                                                                    Collections.singletonList(listenAddress));
+                Collections.singletonList(listenAddress));
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
         final MembershipService membershipService = new MembershipService.Builder(listenAddress, watermarkBuffer,
-                                                                                  membershipView)
-                                                .setLogProposals(false)
-                                                .build();
+                membershipView)
+                .setLogProposals(logProposals)
+                .setLinkFailureDetector(linkFailureDetector)
+                .build();
         rpcServer.setMembershipService(membershipService);
         rpcServer.startServer();
         return new Cluster(rpcServer, membershipService);
@@ -186,11 +221,14 @@ public final class Cluster {
         return membershipService.getMembershipView();
     }
 
+
     /**
      * Shutdown the RpcServer
      */
     public void shutdown() {
         // TODO: this should probably be a "leave" method
+        LOG.debug("Shutting down RpcServer and MembershipService");
         rpcServer.stopServer();
+        membershipService.shutdown();
     }
 }

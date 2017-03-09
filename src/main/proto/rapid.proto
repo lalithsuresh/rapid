@@ -11,6 +11,7 @@ service MembershipService {
   rpc receiveJoinPhase2Message (JoinMessage) returns (JoinResponse) {}
   rpc receiveLinkUpdateMessage (BatchedLinkUpdateMessage) returns (Response) {}
   rpc gossip (GossipMessage) returns (GossipResponse) {}
+  rpc receiveProbe (ProbeMessage) returns (ProbeResponse) {}
 }
 
 
@@ -39,6 +40,7 @@ enum JoinStatusCode {
     UUID_ALREADY_IN_RING = 1;
     SAFE_TO_JOIN = 2;
     CONFIG_CHANGED = 3;
+    MEMBERSHIP_REJECTED = 4;
 };
 
 // ******* LinkUpdate messages *******
@@ -80,3 +82,14 @@ message GossipMessage
 message GossipResponse
 {
 }
+
+// ******* Used by simple probing failure detector *******
+
+message ProbeMessage
+{
+    string sender = 1;
+    repeated bytes payload = 2;
+}
+
+message ProbeResponse
+{}

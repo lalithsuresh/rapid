@@ -17,6 +17,8 @@ import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
 import com.vrg.rapid.pb.LinkStatus;
+import com.vrg.rapid.pb.ProbeMessage;
+import com.vrg.rapid.pb.ProbeResponse;
 import io.grpc.ServerInterceptor;
 import org.junit.After;
 import org.junit.Test;
@@ -149,7 +151,7 @@ public class MessagingTest {
         final List<HostAndPort> hostsAtClient = phaseOneResult.getHostsList().stream()
                                             .map(e -> HostAndPort.fromString(e.toStringUtf8()))
                                             .collect(Collectors.toList());
-        final List<HostAndPort> monitorsOriginal = membershipView.expectedMonitorsOf(joinerAddr);
+        final List<HostAndPort> monitorsOriginal = membershipView.getExpectedMonitorsOf(joinerAddr);
 
         final Iterator iter1 = hostsAtClient.iterator();
         final Iterator iter2 = monitorsOriginal.iterator();
@@ -157,7 +159,6 @@ public class MessagingTest {
             assertEquals(iter1.next(), iter2.next());
         }
     }
-
 
     /**
      * Test bootstrap with a single node.
@@ -189,12 +190,52 @@ public class MessagingTest {
                 .collect(Collectors.toList());
 
         final Iterator<HostAndPort> iterJoiner = monitorList.iterator();
-        final Iterator<HostAndPort> iterSeed = membershipView.expectedMonitorsOf(joinerAddress).iterator();
+        final Iterator<HostAndPort> iterSeed = membershipView.getExpectedMonitorsOf(joinerAddress).iterator();
+        for (int i = 0; i < K; i++) {
+            assertEquals(iterJoiner.next(), iterSeed.next());
+        }
+    }
+
+    /**
+     * Test probing code path.
+     */
+    @Test
+    public void bootstrapAndThenProbeTest()
+            throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException, ExecutionException {
+        final UUID nodeIdentifier = UUID.randomUUID();
+        final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, serverPortBase);
+        final MembershipView membershipView = new MembershipView(K);
+        membershipView.ringAdd(serverAddr, nodeIdentifier);
+        createAndStartMembershipService(serverAddr,
+                new ArrayList<>(), membershipView);
+
+        final int clientPort = serverPortBase - 1;
+        final HostAndPort joinerAddress = HostAndPort.fromParts(localhostIp, clientPort);
+        final RpcClient joinerRpcClient = new RpcClient(joinerAddress);
+        final UUID joinerUuid = UUID.randomUUID();
+        final JoinResponse response = joinerRpcClient.sendJoinMessage(serverAddr, joinerAddress, joinerUuid).get();
+        assertNotNull(response);
+        assertEquals(JoinStatusCode.SAFE_TO_JOIN, response.getStatusCode());
+        assertEquals(K, response.getHostsCount());
+        assertEquals(response.getConfigurationId(), membershipView.getCurrentConfigurationId());
+
+        // Verify that the hostnames retrieved at the joining peer
+        // matches that of the seed node.
+        final List<HostAndPort> monitorList = response.getHostsList().stream()
+                .map(e -> HostAndPort.fromString(e.toStringUtf8()))
+                .collect(Collectors.toList());
+
+        final Iterator<HostAndPort> iterJoiner = monitorList.iterator();
+        final Iterator<HostAndPort> iterSeed = membershipView.getExpectedMonitorsOf(joinerAddress).iterator();
         for (int i = 0; i < K; i++) {
             assertEquals(iterJoiner.next(), iterSeed.next());
         }
 
+        final ProbeResponse probeResponse = joinerRpcClient.sendProbeMessage(serverAddr,
+                                                                             ProbeMessage.getDefaultInstance()).get();
+        assertNotNull(probeResponse);
     }
+
 
     /**
      * Test to ensure that injecting message drops works.
@@ -220,6 +261,9 @@ public class MessagingTest {
         assertTrue(exceptionCaught);
     }
 
+    /**
+     * Create a membership service listenting on serverAddr
+     */
     private RpcServer createAndStartMembershipService(final HostAndPort serverAddr)
             throws IOException, MembershipView.NodeAlreadyInRingException {
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
@@ -236,8 +280,11 @@ public class MessagingTest {
         return rpcServer;
     }
 
+    /**
+     * Create a membership service listenting on serverAddr that uses a list of server interceptors.
+     */
     private RpcServer createAndStartMembershipService(final HostAndPort serverAddr,
-                                                              final List<ServerInterceptor> interceptors)
+                                                      final List<ServerInterceptor> interceptors)
             throws IOException, MembershipView.NodeAlreadyInRingException {
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
         final MembershipView membershipView = new MembershipView(K);
@@ -253,9 +300,12 @@ public class MessagingTest {
         return rpcServer;
     }
 
+    /**
+     * Create a membership service listening on serverAddr, with a supplied membershipView and server interceptors.
+     */
     private RpcServer createAndStartMembershipService(final HostAndPort serverAddr,
-                                                              final List<ServerInterceptor> interceptors,
-                                                              final MembershipView membershipView)
+                                                      final List<ServerInterceptor> interceptors,
+                                                      final MembershipView membershipView)
             throws IOException {
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
         final MembershipService service =

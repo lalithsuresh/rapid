@@ -24,6 +24,8 @@ import com.vrg.rapid.pb.LinkStatus;
 import com.vrg.rapid.pb.LinkUpdateMessage;
 import com.vrg.rapid.pb.MembershipServiceGrpc;
 import com.vrg.rapid.pb.MembershipServiceGrpc.MembershipServiceFutureStub;
+import com.vrg.rapid.pb.ProbeMessage;
+import com.vrg.rapid.pb.ProbeResponse;
 import com.vrg.rapid.pb.Response;
 import io.grpc.Channel;
 import io.grpc.ManagedChannel;
@@ -33,7 +35,6 @@ import io.grpc.netty.NettyChannelBuilder;
 import java.util.Collections;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 
@@ -42,12 +43,10 @@ import java.util.concurrent.TimeUnit;
  */
 final class RpcClient {
     static boolean USE_IN_PROCESS_CHANNEL = false;
-    private final ConcurrentHashMap<HostAndPort, MembershipServiceFutureStub> stubs;
     private final HostAndPort address;
     private static final int RPC_TIMEOUT_SECONDS = 1;
 
     RpcClient(final HostAndPort address) {
-        stubs = new ConcurrentHashMap<>();
         this.address = address;
     }
 
@@ -56,10 +55,6 @@ final class RpcClient {
         Objects.requireNonNull(remote);
         Objects.requireNonNull(gossipMessage);
 
-        if (stubs.containsKey(remote)) {
-            return stubs.get(remote).gossip(gossipMessage);
-        }
-
         // Since gossip is periodic, we will not cache the channel right away.
         final ManagedChannel channel = NettyChannelBuilder
                 .forAddress(remote.getHost(), remote.getPort())
@@ -67,6 +62,15 @@ final class RpcClient {
                 .build();
 
         return MembershipServiceGrpc.newFutureStub(channel).gossip(gossipMessage);
+    }
+
+    ListenableFuture<ProbeResponse> sendProbeMessage(final HostAndPort remote,
+                                                     final ProbeMessage probeMessage) {
+        Objects.requireNonNull(remote);
+        Objects.requireNonNull(probeMessage);
+
+        final MembershipServiceFutureStub stub = getFutureStub(remote);
+        return stub.receiveProbe(probeMessage);
     }
 
     ListenableFuture<JoinResponse> sendJoinMessage(final HostAndPort remote,
@@ -97,7 +101,7 @@ final class RpcClient {
                 .setRingNumber(ringNumber)
                 .setConfigurationId(configurationId)
                 .build();
-        final MembershipServiceFutureStub stub = stubs.computeIfAbsent(remote, this::createFutureStub);
+        final MembershipServiceFutureStub stub = getFutureStub(remote);
         return stub.withDeadlineAfter(RPC_TIMEOUT_SECONDS * 20, TimeUnit.SECONDS).receiveJoinPhase2Message(msg);
     }
 
@@ -105,13 +109,13 @@ final class RpcClient {
         Objects.requireNonNull(msg);
         Objects.requireNonNull(remote);
 
-        final MembershipServiceFutureStub stub = stubs.computeIfAbsent(remote, this::createFutureStub);
+        final MembershipServiceFutureStub stub = getFutureStub(remote);
         return stub.withDeadlineAfter(RPC_TIMEOUT_SECONDS * 5, TimeUnit.SECONDS).receiveJoinMessage(msg);
     }
 
     ListenableFuture<Response> sendLinkUpdateMessage(final HostAndPort remote, final BatchedLinkUpdateMessage msg) {
         Objects.requireNonNull(msg);
-        final MembershipServiceFutureStub stub = stubs.computeIfAbsent(remote, this::createFutureStub);
+        final MembershipServiceFutureStub stub = getFutureStub(remote);
         return stub.withDeadlineAfter(RPC_TIMEOUT_SECONDS, TimeUnit.SECONDS).receiveLinkUpdateMessage(msg);
     }
 
@@ -124,7 +128,7 @@ final class RpcClient {
         Objects.requireNonNull(dst);
         Objects.requireNonNull(status);
 
-        final MembershipServiceFutureStub stub = stubs.computeIfAbsent(remote, this::createFutureStub);
+        final MembershipServiceFutureStub stub = getFutureStub(remote);
 
         final LinkUpdateMessage msg = LinkUpdateMessage.newBuilder()
                                             .setLinkSrc(src.toString())
@@ -138,7 +142,7 @@ final class RpcClient {
         return stub.withDeadlineAfter(RPC_TIMEOUT_SECONDS, TimeUnit.SECONDS).receiveLinkUpdateMessage(batchedMessage);
     }
 
-    private MembershipServiceFutureStub createFutureStub(final HostAndPort remote) {
+    private MembershipServiceFutureStub getFutureStub(final HostAndPort remote) {
         // TODO: allow configuring SSL/TLS
         final Channel channel;
 

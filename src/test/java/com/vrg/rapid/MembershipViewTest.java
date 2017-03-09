@@ -177,8 +177,8 @@ public class MembershipViewTest {
         try {
             final HostAndPort n1 = HostAndPort.fromParts("127.0.0.1", 1);
             mview.ringAdd(n1, UUID.randomUUID());
-            assertEquals(0, mview.monitoreesOf(n1).size());
-            assertEquals(0, mview.monitorsOf(n1).size());
+            assertEquals(0, mview.getMonitoreesOf(n1).size());
+            assertEquals(0, mview.getMonitorsOf(n1).size());
         } catch (final MembershipView.NodeAlreadyInRingException | MembershipView.NodeNotInRingException e) {
             fail();
         }
@@ -186,13 +186,13 @@ public class MembershipViewTest {
         final HostAndPort n2 = HostAndPort.fromParts("127.0.0.1", 2);
 
         try {
-            mview.monitoreesOf(n2).size();
+            mview.getMonitoreesOf(n2).size();
             fail();
         } catch (final MembershipView.NodeNotInRingException ignored) {
         }
 
         try {
-            mview.monitorsOf(n2).size();
+            mview.getMonitorsOf(n2).size();
             fail();
         } catch (final MembershipView.NodeNotInRingException ignored) {
         }
@@ -208,14 +208,14 @@ public class MembershipViewTest {
         final HostAndPort n = HostAndPort.fromParts("127.0.0.1", 1);
 
         try {
-            mview.monitoreesOf(n).size();
+            mview.getMonitoreesOf(n).size();
         } catch (final MembershipView.NodeNotInRingException e) {
             numExceptions++;
         }
         assertEquals(1, numExceptions);
 
         try {
-            mview.monitorsOf(n).size();
+            mview.getMonitorsOf(n).size();
         } catch (final MembershipView.NodeNotInRingException e) {
             numExceptions++;
         }
@@ -233,10 +233,10 @@ public class MembershipViewTest {
             final HostAndPort n2 = HostAndPort.fromParts("127.0.0.1", 2);
             mview.ringAdd(n1, UUID.randomUUID());
             mview.ringAdd(n2, UUID.randomUUID());
-            assertEquals(K, mview.monitoreesOf(n1).size());
-            assertEquals(K, mview.monitorsOf(n1).size());
-            assertEquals(1, ImmutableSet.copyOf(mview.monitoreesOf(n1)).size());
-            assertEquals(1, ImmutableSet.copyOf(mview.monitorsOf(n1)).size());
+            assertEquals(K, mview.getMonitoreesOf(n1).size());
+            assertEquals(K, mview.getMonitorsOf(n1).size());
+            assertEquals(1, ImmutableSet.copyOf(mview.getMonitoreesOf(n1)).size());
+            assertEquals(1, ImmutableSet.copyOf(mview.getMonitorsOf(n1)).size());
         } catch (final MembershipView.NodeAlreadyInRingException | MembershipView.NodeNotInRingException e) {
             fail();
         }
@@ -255,15 +255,15 @@ public class MembershipViewTest {
             mview.ringAdd(n1, UUID.randomUUID());
             mview.ringAdd(n2, UUID.randomUUID());
             mview.ringAdd(n3, UUID.randomUUID());
-            assertEquals(K, mview.monitoreesOf(n1).size());
-            assertEquals(K, mview.monitorsOf(n1).size());
-            assertEquals(2, ImmutableSet.copyOf(mview.monitoreesOf(n1)).size());
-            assertEquals(2, ImmutableSet.copyOf(mview.monitorsOf(n1)).size());
+            assertEquals(K, mview.getMonitoreesOf(n1).size());
+            assertEquals(K, mview.getMonitorsOf(n1).size());
+            assertEquals(2, ImmutableSet.copyOf(mview.getMonitoreesOf(n1)).size());
+            assertEquals(2, ImmutableSet.copyOf(mview.getMonitorsOf(n1)).size());
             mview.ringDelete(n2);
-            assertEquals(K, mview.monitoreesOf(n1).size());
-            assertEquals(K, mview.monitorsOf(n1).size());
-            assertEquals(1, ImmutableSet.copyOf(mview.monitoreesOf(n1)).size());
-            assertEquals(1, ImmutableSet.copyOf(mview.monitorsOf(n1)).size());
+            assertEquals(K, mview.getMonitoreesOf(n1).size());
+            assertEquals(K, mview.getMonitorsOf(n1).size());
+            assertEquals(1, ImmutableSet.copyOf(mview.getMonitoreesOf(n1)).size());
+            assertEquals(1, ImmutableSet.copyOf(mview.getMonitorsOf(n1)).size());
         } catch (final MembershipView.NodeAlreadyInRingException | MembershipView.NodeNotInRingException e) {
             fail();
         }
@@ -290,8 +290,8 @@ public class MembershipViewTest {
 
         for (int i = 0; i < numNodes; i++) {
             try {
-                final int numMonitorees = mview.monitoreesOf(list.get(i)).size();
-                final int numMonitors = mview.monitorsOf(list.get(i)).size();
+                final int numMonitorees = mview.getMonitoreesOf(list.get(i)).size();
+                final int numMonitors = mview.getMonitorsOf(list.get(i)).size();
                 assertTrue("NumMonitorees: " + numMonitorees, K == numMonitorees);
                 assertTrue("NumMonitors: " + numMonitors, K == numMonitors);
             } catch (final MembershipView.NodeNotInRingException e) {
@@ -315,9 +315,9 @@ public class MembershipViewTest {
         }
 
         final HostAndPort joiningNode = HostAndPort.fromParts("127.0.0.1", serverPort + 1);
-        assertEquals(K, mview.expectedMonitorsOf(joiningNode).size());
-        assertEquals(1, ImmutableSet.copyOf(mview.expectedMonitorsOf(joiningNode)).size());
-        assertEquals(n,  mview.expectedMonitorsOf(joiningNode).toArray()[0]);
+        assertEquals(K, mview.getExpectedMonitorsOf(joiningNode).size());
+        assertEquals(1, ImmutableSet.copyOf(mview.getExpectedMonitorsOf(joiningNode)).size());
+        assertEquals(n,  mview.getExpectedMonitorsOf(joiningNode).toArray()[0]);
     }
 
     /**
@@ -338,7 +338,7 @@ public class MembershipViewTest {
                 fail();
             }
 
-            final int numMonitorsActual = mview.expectedMonitorsOf(joiningNode).size();
+            final int numMonitorsActual = mview.getExpectedMonitorsOf(joiningNode).size();
 
             // we could compare against i + 1 but that condition is not guaranteed
             // to hold true since we are not constructing deterministic expanders

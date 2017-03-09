@@ -19,6 +19,7 @@ import org.junit.Test;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
@@ -143,6 +144,10 @@ public class ClusterTest {
         RpcServer.USE_IN_PROCESS_SERVER = true;
         RpcClient.USE_IN_PROCESS_CHANNEL = true;
 
+        // Use a high interval because we are running on a single machine
+        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 5000;
+        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 10000;
+
         final int numNodes = 500;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
         final LinkedBlockingQueue<Cluster> serviceList = new LinkedBlockingQueue<>();
@@ -197,6 +202,10 @@ public class ClusterTest {
         RpcServer.USE_IN_PROCESS_SERVER = true;
         RpcClient.USE_IN_PROCESS_CHANNEL = true;
 
+        // Use a high interval because we are running on a single machine
+        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 10000;
+        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 10000;
+
         final int numNodesPhase1 = 50;
         final int numNodesPhase2 = 500;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
@@ -206,7 +215,6 @@ public class ClusterTest {
         serviceList.add(seed);
         final Executor executor = Executors.newWorkStealingPool(numNodesPhase2);
         try {
-
             // Phase 1 where numNodesPhase1 entities join the network
             {
                 final AtomicInteger nodeCounter = new AtomicInteger(0);
@@ -264,6 +272,73 @@ public class ClusterTest {
         }
         finally {
             for (final Cluster service: serviceList) {
+                service.shutdown();
+            }
+        }
+    }
+
+    /**
+     * This test starts with a 3 node cluster. We then fail a single node to see if the monitoring mechanism
+     * identifies the offending node.
+     */
+    @Test
+    public void testNodeFailureAndMonitoring() throws IOException {
+        RpcServer.USE_IN_PROCESS_SERVER = true;
+        RpcClient.USE_IN_PROCESS_CHANNEL = true;
+
+        // Set a low probing interval.
+        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 1000;
+        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 100;
+
+        final int numNodes = 2;
+        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
+        final ConcurrentHashMap<HostAndPort, Cluster> clusterInstances = new ConcurrentHashMap<>();
+
+        final Cluster seed = Cluster.start(seedHost);
+        clusterInstances.put(seedHost, seed);
+        final Executor executor = Executors.newWorkStealingPool(numNodes);
+        try {
+            final AtomicInteger nodeCounter = new AtomicInteger(0);
+            final CountDownLatch latch = new CountDownLatch(numNodes);
+
+            for (int i = 0; i < numNodes; i++) {
+                executor.execute(() -> {
+                    try {
+                        final HostAndPort joiningHost =
+                                HostAndPort.fromParts("127.0.0.1", 1235 + nodeCounter.incrementAndGet());
+                        final Cluster nonSeed = Cluster.join(seedHost, joiningHost);
+                        clusterInstances.put(joiningHost, nonSeed);
+                    } catch (final IOException | InterruptedException e) {
+                        fail();
+                    } finally {
+                        latch.countDown();
+                    }
+                });
+            }
+
+            latch.await();
+            for (final Cluster cluster : clusterInstances.values()) {
+                assertEquals(cluster.getMemberlist().size(), numNodes + 1); // +1 for the seed
+                assertEquals(cluster.getMemberlist(), seed.getMemberlist());
+            }
+
+            // By this point, we have a twenty node cluster. Now let's shutdown a single host.
+            final HostAndPort crashingHost = HostAndPort.fromParts("127.0.0.1", 1236);
+            clusterInstances.get(crashingHost).shutdown();
+            clusterInstances.remove(crashingHost);
+
+            Thread.sleep(4000);
+            for (final Cluster cluster : clusterInstances.values()) {
+                assertEquals(cluster.getMemberlist().size(), numNodes); //
+                assertEquals(cluster.getMemberlist(), seed.getMemberlist());
+            }
+        }
+        catch (final Exception e) {
+            e.printStackTrace();
+            fail();
+        }
+        finally {
+            for (final Cluster service: clusterInstances.values()) {
                 service.shutdown();
             }
         }

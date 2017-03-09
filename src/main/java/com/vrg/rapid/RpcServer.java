@@ -20,6 +20,8 @@ import com.vrg.rapid.pb.GossipResponse;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.MembershipServiceGrpc;
+import com.vrg.rapid.pb.ProbeMessage;
+import com.vrg.rapid.pb.ProbeResponse;
 import com.vrg.rapid.pb.Response;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
@@ -94,6 +96,16 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
                                          final StreamObserver<JoinResponse> responseObserver) {
         assert membershipService != null;
         membershipService.processJoinPhaseTwoMessage(joinMessage, responseObserver);
+    }
+
+    /**
+     * Defined in rapid.proto.
+     */
+    @Override
+    public void receiveProbe(final ProbeMessage probeMessage,
+                             final StreamObserver<ProbeResponse> probeResponseObserver) {
+        assert membershipService != null;
+        membershipService.processProbeMessage(probeMessage, probeResponseObserver);
     }
 
     /**

@@ -23,6 +23,7 @@ import javax.annotation.concurrent.ThreadSafe;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.NavigableSet;
@@ -41,6 +42,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  *
  * TODO: too many scans of the k rings during reads. Maintain a cache.
  */
+@ThreadSafe
 final class MembershipView {
     private final int K;
     private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
@@ -59,7 +61,7 @@ final class MembershipView {
     }
 
     /**
-     * Used during bootstrapping process.
+     * Used to bootstrap a membership view from the fields of a MembershipView.Configuration object.
      */
     MembershipView(final int K, final Collection<UUID> uuids,
                    final Collection<HostAndPort> hostAndPorts) {
@@ -73,6 +75,15 @@ final class MembershipView {
         this.identifiersSeen.addAll(uuids);
     }
 
+    /**
+     * Queries if a host with a logical identifier {@code uuid} is safe to add to the network.
+     *
+     * @param node the joining node
+     * @param uuid the joining node's identifier.
+     * @return HOSTNAME_ALREADY_IN_RING if the {@code node} is already in the ring.
+     *         UUID_ALREADY_IN_RING if the {@code uuid} is already seen before.
+     *         SAFE_TO_JOIN otherwise.
+     */
     JoinStatusCode isSafeToJoin(final HostAndPort node, final UUID uuid) {
         rwLock.readLock().lock();
         try {
@@ -90,6 +101,12 @@ final class MembershipView {
         }
     }
 
+    /**
+     * Add a node to all K rings and records its unique identifier
+     *
+     * @param node the node to be added
+     * @param uuid the logical identifier of the node being added
+     */
     @VisibleForTesting
     void ringAdd(final HostAndPort node, final UUID uuid) {
         Objects.requireNonNull(node);
@@ -117,6 +134,11 @@ final class MembershipView {
         }
     }
 
+    /**
+     * Delete a host from all K rings.
+     *
+     * @param node the host to be removed
+     */
     @VisibleForTesting
     void ringDelete(final HostAndPort node) {
         Objects.requireNonNull(node);
@@ -139,11 +161,12 @@ final class MembershipView {
 
     /**
      * Returns the set of monitors for {@code node}
+
      * @param node input node
      * @return the set of monitors for {@code node}
      * @throws NodeNotInRingException thrown if {@code node} is not in the ring
      */
-    List<HostAndPort> monitorsOf(final HostAndPort node) {
+    List<HostAndPort> getMonitorsOf(final HostAndPort node) {
         Objects.requireNonNull(node);
         rwLock.readLock().lock();
         try {
@@ -151,10 +174,11 @@ final class MembershipView {
                 throw new NodeNotInRingException(node);
             }
 
-            final List<HostAndPort> monitors = new ArrayList<>();
             if (rings.get(0).size() <= 1) {
-                return monitors;
+                return Collections.emptyList();
             }
+
+            final List<HostAndPort> monitors = new ArrayList<>();
 
             for (int k = 0; k < K; k++) {
                 final NavigableSet<HostAndPort> list = rings.get(k);
@@ -174,11 +198,12 @@ final class MembershipView {
 
     /**
      * Returns the set of nodes monitored by {@code node}
+
      * @param node input node
      * @return the set of nodes monitored by {@code node}
      * @throws NodeNotInRingException thrown if {@code node} is not in the ring
      */
-    List<HostAndPort> monitoreesOf(final HostAndPort node) {
+    List<HostAndPort> getMonitoreesOf(final HostAndPort node) {
         Objects.requireNonNull(node);
         rwLock.readLock().lock();
         try {
@@ -213,16 +238,17 @@ final class MembershipView {
      * the nodes responsible for gatekeeping a joining peer.
      *
      * @param node input node
-     * @return the set of nodes monitored by {@code node}
+     * @return the list of nodes monitored by {@code node}. Empty list if the membership is empty.
      */
-    List<HostAndPort> expectedMonitorsOf(final HostAndPort node) {
+    List<HostAndPort> getExpectedMonitorsOf(final HostAndPort node) {
         Objects.requireNonNull(node);
         rwLock.readLock().lock();
         try {
-            final List<HostAndPort> monitorees = new ArrayList<>();
             if (rings.get(0).size() == 0) {
-                return monitorees;
+                return Collections.emptyList();
             }
+
+            final List<HostAndPort> monitorees = new ArrayList<>();
 
             for (int k = 0; k < K; k++) {
                 final NavigableSet<HostAndPort> list = rings.get(k);
@@ -240,6 +266,12 @@ final class MembershipView {
         }
     }
 
+    /**
+     * Query if a host is part of the current membership set.
+     *
+     * @param address the host
+     * @return True if the node is present in the membership view and false otherwise.
+     */
     boolean isHostPresent(final HostAndPort address) {
         rwLock.readLock().lock();
         try {
@@ -249,6 +281,12 @@ final class MembershipView {
         }
     }
 
+    /**
+     * Query if an identifier has been used by a node already.
+     *
+     * @param identifier the identifier to query for
+     * @return True if the identifier has been seen before and false otherwise.
+     */
     boolean isIdentifierPresent(final UUID identifier) {
         rwLock.readLock().lock();
         try {
@@ -258,6 +296,12 @@ final class MembershipView {
         }
     }
 
+    /**
+     * Get the current identifier of the configuration. Computed based on the
+     * set of nodes in the view as well as the identifiers seen so far.
+     *
+     * @return the current configuration identifier.
+     */
     long getCurrentConfigurationId() {
         rwLock.readLock().lock();
         try {
@@ -272,6 +316,12 @@ final class MembershipView {
         }
     }
 
+    /**
+     * Get the list of hosts in the k'th ring.
+     *
+     * @param k the index of the ring to query
+     * @return the list of hosts in the k'th ring.
+     */
     @VisibleForTesting
     List<HostAndPort> getRing(final int k) {
         rwLock.readLock().lock();
@@ -283,6 +333,42 @@ final class MembershipView {
         }
     }
 
+    /**
+     * Get the ring number of a monitor for a given monitoree
+     *
+     * @param monitor The monitor node
+     * @param monitoree The monitoree node
+     * @return the indexes k such that {@code monitoree} is a successor of {@code monitoree} on ring[k].
+     */
+    @VisibleForTesting
+    List<Integer> getRingNumbers(final HostAndPort monitor, final HostAndPort monitoree) {
+        rwLock.readLock().lock();
+        try {
+            // TODO: do this in one scan
+            final List<HostAndPort> monitorees = getMonitoreesOf(monitor);
+            if (monitorees.size() == 0) {
+                return Collections.emptyList();
+            }
+
+            final List<Integer> ringIndexes = new ArrayList<>();
+            int ringNumber = 0;
+            for (final HostAndPort node: monitorees) {
+                if (node.equals(monitoree)) {
+                    ringIndexes.add(ringNumber);
+                }
+                ringNumber++;
+            }
+            return ringIndexes;
+        } finally {
+            rwLock.readLock().unlock();
+        }
+    }
+
+    /**
+     * Get the number of nodes currently in the membership.
+     *
+     * @return the number of nodes in the membership.
+     */
     int getMembershipSize() {
         rwLock.readLock().lock();
         try {
@@ -300,6 +386,13 @@ final class MembershipView {
         currentConfigurationId = Configuration.getConfigurationId(identifiersSeen, rings.get(0));
     }
 
+    /**
+     * Get a Configuration object that contains the list of nodes in the membership view
+     * as well as the identifiers seen so far. These two lists suffice to bootstrap an
+     * identical copy of the MembershipView object.
+     *
+     * @return a {@code Configuration} object.
+     */
     Configuration getConfiguration() {
         rwLock.readLock().lock();
         try {
@@ -310,6 +403,9 @@ final class MembershipView {
         }
     }
 
+    /**
+     * Used to order hosts in the different rings.
+     */
     private static final class AddressComparator implements Comparator<HostAndPort>, Serializable {
         private static final long serialVersionUID = -4891729390L;
         private final long seed;
@@ -335,6 +431,11 @@ final class MembershipView {
         }
     }
 
+    /**
+     * The Configuration object contains a list of nodes in the membership view as well as a list of UUIDs.
+     * An instance of this object created from one MembershipView object contains the necessary information
+     * to bootstrap an identical MembershipView object.
+     */
     static class Configuration {
         final List<UUID> uuids;
         final List<HostAndPort> hostAndPorts;
@@ -344,6 +445,11 @@ final class MembershipView {
             this.hostAndPorts = ImmutableList.copyOf(hostAndPorts);
         }
 
+        /**
+         * Gets the configuration ID for the list of hosts and identifiers.
+         *
+         * @return a configuration identifier.
+         */
         public long getConfigurationId() {
             return getConfigurationId(this.uuids, this.hostAndPorts);
         }
