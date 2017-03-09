@@ -37,6 +37,7 @@ import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -73,7 +74,7 @@ final class MembershipService {
     private final Map<HostAndPort, UUID> joinerUuid = new ConcurrentHashMap<>();
     private final List<Set<HostAndPort>> logProposalList = new ArrayList<>();
     private final ExecutorService executor = Executors.newSingleThreadScheduledExecutor();
-    private final ILinkFailureDetector linkFailureDetector;
+    private final LinkFailureDetectorRunner linkFailureDetectorRunner;
     private final RpcClient rpcClient;
 
     // Fields used by batching logic.
@@ -128,15 +129,15 @@ final class MembershipService {
         this.broadcaster = builder.broadcaster;
         this.joinResponseCallbacks = new ConcurrentHashMap<>();
         this.rpcClient = builder.rpcClient;
-        this.linkFailureDetector = builder.linkFailureDetector;
 
         // Schedule background jobs
         this.scheduledExecutorService.scheduleAtFixedRate(new LinkUpdateBatcher(),
                 0, BATCHING_WINDOW_IN_MS, TimeUnit.MILLISECONDS);
 
         // This primes the link failure detector with the initial membership set
-        this.linkFailureDetector.onMembershipChange(membershipView.getMonitoreesOf(myAddr));
-        this.scheduledExecutorService.scheduleAtFixedRate(new LinkFailureDetectorRunner(),
+        this.linkFailureDetectorRunner = new LinkFailureDetectorRunner(builder.linkFailureDetector);
+        linkFailureDetectorRunner.updateMembership(membershipView.getMonitoreesOf(myAddr));
+        this.scheduledExecutorService.scheduleAtFixedRate(linkFailureDetectorRunner,
                 FAILURE_DETECTOR_INITIAL_DELAY_IN_MS, FAILURE_DETECTOR_INTERVAL_IN_MS, TimeUnit.MILLISECONDS);
     }
 
@@ -324,7 +325,7 @@ final class MembershipService {
                 }
 
                 // Inform LinkFailureDetector about membership change
-                linkFailureDetector.onMembershipChange(membershipView.getMonitoreesOf(myAddr));
+                linkFailureDetectorRunner.updateMembership(membershipView.getMonitoreesOf(myAddr));
 
                 // This should yield the new configuration.
                 final MembershipView.Configuration configuration = membershipView.getConfiguration();
@@ -373,7 +374,7 @@ final class MembershipService {
      */
     void processProbeMessage(final ProbeMessage probeMessage,
                              final StreamObserver<ProbeResponse> probeResponseObserver) {
-        linkFailureDetector.handleProbeMessage(probeMessage, probeResponseObserver);
+        linkFailureDetectorRunner.handleProbeMessage(probeMessage, probeResponseObserver);
     }
 
 
@@ -466,15 +467,43 @@ final class MembershipService {
      * function may be left to the LinkFailureDetector object itself.
      */
     private class LinkFailureDetectorRunner implements Runnable {
+        @GuardedBy("this") private Set<HostAndPort> monitorees = Collections.emptySet();
+        @GuardedBy("this") private final Map<HostAndPort, FutureCallback<ProbeResponse>> callbackMap = new HashMap<>();
+        private final ILinkFailureDetector linkFailureDetector;
+
+        LinkFailureDetectorRunner(final ILinkFailureDetector linkFailureDetector) {
+            this.linkFailureDetector = linkFailureDetector;
+        }
+
+        synchronized void updateMembership(final List<HostAndPort> monitorees) {
+            this.monitorees = new HashSet<>(monitorees);
+            this.callbackMap.clear();
+            this.monitorees.forEach(monitoree -> callbackMap.put(monitoree, new FutureCallback<ProbeResponse>() {
+                @Override
+                public void onSuccess(@Nullable final ProbeResponse probeResponse) {
+                    linkFailureDetector.handleProbeOnSuccess(probeResponse, monitoree);
+                }
+
+                @Override
+                public void onFailure(final Throwable throwable) {
+                    linkFailureDetector.handleProbeOnFailure(throwable, monitoree);
+                }
+            }));
+            this.linkFailureDetector.onMembershipChange(monitorees);
+        }
+
+        void handleProbeMessage(final ProbeMessage probeMessage,
+                                final StreamObserver<ProbeResponse> probeResponseObserver) {
+            linkFailureDetector.handleProbeMessage(probeMessage, probeResponseObserver);
+        }
 
         @Override
-        public void run() {
+        public synchronized void run() {
             /*
              * For every monitoree, first check if the link has failed. If not,
              * send out a probe request and handle the onSuccess and onFailure callbacks.
              */
             try {
-                final Set<HostAndPort> monitorees = new HashSet<>(membershipView.getMonitoreesOf(myAddr));
                 if (monitorees.size() == 0) {
                     return;
                 }
@@ -485,24 +514,7 @@ final class MembershipService {
                         final ProbeMessage message = linkFailureDetector.createProbe(monitoree);
                         final ListenableFuture<ProbeResponse> probeSend = rpcClient.sendProbeMessage(monitoree,
                                                                                                      message);
-                        /*
-                         * XXX: if we create a LinkFailureDetector per link, we can avoid the unnecessary object
-                         * creation here and prepare these callbacks once per monitoree on every membership change.
-                         * This requires some API changes to MembershipService in that users will supply a
-                         * LinkFailureDetector factory as opposed to an instance of the failure detector object itself.
-                         */
-                        Futures.addCallback(probeSend, new FutureCallback<ProbeResponse>() {
-                            @Override
-                            public void onSuccess(@Nullable final ProbeResponse probeResponse) {
-                                linkFailureDetector.handleProbeOnSuccess(probeResponse, monitoree);
-                            }
-
-                            @Override
-                            public void onFailure(final Throwable throwable) {
-                                linkFailureDetector.handleProbeOnFailure(throwable, monitoree);
-                            }
-                        });
-
+                        Futures.addCallback(probeSend, callbackMap.get(monitoree));
                         probes.add(probeSend);
                     } else {
                         // A link has failed. Announce a LinkStatus.DOWN event.

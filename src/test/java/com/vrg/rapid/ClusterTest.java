@@ -146,7 +146,7 @@ public class ClusterTest {
 
         // Use a high interval because we are running on a single machine
         MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 5000;
-        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 10000;
+        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
 
         final int numNodes = 500;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
