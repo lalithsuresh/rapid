@@ -40,7 +40,7 @@ public final class Cluster {
     private static final Logger LOG = LoggerFactory.getLogger("Cluster");
     private static final int K = 10;
     private static final int H = 8;
-    private static final int L = 3;
+    private static final int L = 1;
     private static final int RETRIES = 5;
     private final MembershipService membershipService;
     private final RpcServer rpcServer;

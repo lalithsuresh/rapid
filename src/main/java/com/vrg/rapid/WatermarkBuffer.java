@@ -41,11 +41,9 @@ final class WatermarkBuffer {
     @GuardedBy("lock") private final Map<HostAndPort, Map<Integer, HostAndPort>> reportsPerHost;
     @GuardedBy("lock") private final ArrayList<HostAndPort> proposal = new ArrayList<>();
     private final Object lock = new Object();
-    private static final List<HostAndPort> EMPTY_LIST =
-            Collections.unmodifiableList(new ArrayList<HostAndPort>());
 
     WatermarkBuffer(final int K, final int H, final int L) {
-        if (H > K || L > H || K < K_MIN) {
+        if (H > K || L > H || K < K_MIN || L <= 0 || H <= 0 || K <= 0) {
             throw new IllegalArgumentException("Arguments do not satisfy K > H >= L >= 0:" +
                                                " (K: " + K + ", H: " + H + ", L: " + L);
         }
@@ -80,7 +78,7 @@ final class WatermarkBuffer {
                                                                  (k) -> new HashMap<>(K));
 
             if (reportsForHost.containsKey(msg.getRingNumber())) {
-                return EMPTY_LIST;  // duplicate announcement, ignore.
+                return Collections.emptyList();  // duplicate announcement, ignore.
             }
 
             reportsForHost.put(msg.getRingNumber(), HostAndPort.fromString(msg.getLinkSrc()));
@@ -91,8 +89,8 @@ final class WatermarkBuffer {
             }
 
             if (numReportsForHost == H) {
-                 // Enough reports about "msg.getDst()" have been received that it is safe to act upon,
-                 // provided there are no other nodes with L < #reports < H.
+                // Enough reports about "msg.getDst()" have been received that it is safe to act upon,
+                // provided there are no other nodes with L < #reports < H.
                 proposal.add(linkDst);
                 final int updatesInProgressVal = updatesInProgress.decrementAndGet();
 
@@ -100,14 +98,12 @@ final class WatermarkBuffer {
                     // No outstanding updates, so all nodes that have crossed the H threshold of reports are
                     // now part of a single proposal.
                     this.proposalCount.incrementAndGet();
-                    for (final HostAndPort n: proposal) {
+                    for (final HostAndPort n : proposal) {
                         // The counter below should never be null.
                         final Map<Integer, HostAndPort> reportsSet = reportsPerHost.get(n);
                         if (reportsSet == null) {
                             throw new RuntimeException("Host for proposal not in UpdateCounters map: " + n);
                         }
-                        reportsSet.clear();
-                        // TODO: clear reportsPerHost[n]
                     }
                     final List<HostAndPort> ret = ImmutableList.copyOf(proposal);
                     proposal.clear();
@@ -115,7 +111,19 @@ final class WatermarkBuffer {
                 }
             }
 
-            return EMPTY_LIST;
+            return Collections.emptyList();
+        }
+    }
+
+    /**
+     * Clears all view change reports being tracked. To be used right after a view change.
+     */
+    void clear() {
+        synchronized (lock) {
+            reportsPerHost.clear();
+            proposal.clear();
+            updatesInProgress.set(0);
+            proposalCount.set(0);
         }
     }
 }

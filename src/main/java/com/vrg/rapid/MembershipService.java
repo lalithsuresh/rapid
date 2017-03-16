@@ -324,6 +324,8 @@ final class MembershipService {
                     }
                 }
 
+                watermarkBuffer.clear();
+
                 // Inform LinkFailureDetector about membership change
                 linkFailureDetectorRunner.updateMembership(membershipView.getMonitoreesOf(myAddr));
 

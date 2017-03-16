@@ -18,6 +18,7 @@ import com.vrg.rapid.pb.LinkStatus;
 import com.vrg.rapid.pb.LinkUpdateMessage;
 import org.junit.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
@@ -28,7 +29,7 @@ import static org.junit.Assert.assertEquals;
 public class WatermarkBufferTest {
     private static final int K = 10;
     private static final int H = 8;
-    private static final int L = 3;
+    private static final int L = 1;
     private static final long configurationId = -1;  // Should not affect the following tests
 
     /**
@@ -222,6 +223,28 @@ public class WatermarkBufferTest {
                 HostAndPort.fromParts("127.0.0.1", H), dst3, LinkStatus.UP, configurationId, H - 1));
         assertEquals(2, ret.size());
         assertEquals(1, wb.getNumProposals());
+    }
+
+
+    @Test
+    public void waterMarkTestBatch() {
+        final WatermarkBuffer wb = new WatermarkBuffer(K, H, L);
+        final int numNodes = 3;
+        final List<HostAndPort> hostAndPorts = new ArrayList<>();
+        for (int i = 0; i < numNodes; i++) {
+            hostAndPorts.add(HostAndPort.fromParts("127.0.0.2", 2 + i));
+        }
+
+        final List<HostAndPort> proposal = new ArrayList<>();
+        for (final HostAndPort host: hostAndPorts) {
+            for (int ringNumber = 0; ringNumber < K; ringNumber++) {
+                proposal.addAll(wb.aggregateForProposal(createLinkUpdateMessage(
+                        HostAndPort.fromParts("127.0.0.1", 1), host, LinkStatus.UP,
+                        configurationId, ringNumber)));
+            }
+        }
+
+        assertEquals(proposal.size(), numNodes);
     }
 
     private LinkUpdateMessage createLinkUpdateMessage(final HostAndPort src,
