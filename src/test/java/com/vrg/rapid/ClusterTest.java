@@ -48,6 +48,9 @@ public class ClusterTest {
      */
     @Test
     public void testSingleJoin() throws IOException, InterruptedException, ExecutionException {
+        RpcServer.USE_IN_PROCESS_SERVER = false;
+        RpcClient.USE_IN_PROCESS_CHANNEL = false;
+
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
         final HostAndPort joiningHost = HostAndPort.fromParts("127.0.0.1", 1235);
 
@@ -69,6 +72,9 @@ public class ClusterTest {
      */
     @Test
     public void testJoinTenSequential() throws IOException, InterruptedException {
+        RpcServer.USE_IN_PROCESS_SERVER = false;
+        RpcClient.USE_IN_PROCESS_CHANNEL = false;
+
         final int numNodes = 10;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
         final List<Cluster> serviceList = new ArrayList<>();
