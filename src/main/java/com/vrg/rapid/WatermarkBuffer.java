@@ -21,9 +21,11 @@ import javax.annotation.concurrent.GuardedBy;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -40,10 +42,11 @@ final class WatermarkBuffer {
     @GuardedBy("lock") private final AtomicInteger updatesInProgress = new AtomicInteger(0);
     @GuardedBy("lock") private final Map<HostAndPort, Map<Integer, HostAndPort>> reportsPerHost;
     @GuardedBy("lock") private final ArrayList<HostAndPort> proposal = new ArrayList<>();
+    @GuardedBy("lock") private final Set<HostAndPort> preProposal = new HashSet<>();
     private final Object lock = new Object();
 
     WatermarkBuffer(final int K, final int H, final int L) {
-        if (H > K || L > H || K < K_MIN || L <= 0 || H <= 0 || K <= 0) {
+        if (H > K || L > H || K < K_MIN || L <= 0 || H <= 0) {
             throw new IllegalArgumentException("Arguments do not satisfy K > H >= L >= 0:" +
                                                " (K: " + K + ", H: " + H + ", L: " + L);
         }
@@ -86,11 +89,13 @@ final class WatermarkBuffer {
 
             if (numReportsForHost == L) {
                 updatesInProgress.incrementAndGet();
+                preProposal.add(linkDst);
             }
 
             if (numReportsForHost == H) {
                 // Enough reports about "msg.getDst()" have been received that it is safe to act upon,
                 // provided there are no other nodes with L < #reports < H.
+                preProposal.remove(linkDst);
                 proposal.add(linkDst);
                 final int updatesInProgressVal = updatesInProgress.decrementAndGet();
 
@@ -115,6 +120,38 @@ final class WatermarkBuffer {
         }
     }
 
+    List<HostAndPort> invalidateFailingLinks(final MembershipView view) {
+        synchronized (lock) {
+            final List<HostAndPort> proposalsToReturn = new ArrayList<>();
+            for (final HostAndPort nodeInFlux: preProposal) {
+
+                if (!view.isHostPresent(nodeInFlux)) {
+                    // This is a joining node, not a leaving one
+                    continue;
+                }
+
+                final List<HostAndPort> monitors = view.getMonitorsOf(nodeInFlux);
+                // If monitors of the host are past H but host itself isn't, then speed up the process
+                int ringNumber = 0;
+                for (final HostAndPort monitor : monitors) {
+                    if (proposal.contains(monitor) || preProposal.contains(monitor)) {
+                        // speed up the process.
+                        final LinkUpdateMessage msg = LinkUpdateMessage.newBuilder()
+                                                        .setLinkSrc(monitor.toString())
+                                                        .setLinkDst(nodeInFlux.toString())
+                                                        .setRingNumber(ringNumber)
+                                                        .build();
+                        proposal.addAll(aggregateForProposal(msg));
+                    }
+                    ringNumber++;
+                }
+            }
+
+            return ImmutableList.copyOf(proposalsToReturn);
+        }
+    }
+
+
     /**
      * Clears all view change reports being tracked. To be used right after a view change.
      */
@@ -124,6 +161,7 @@ final class WatermarkBuffer {
             proposal.clear();
             updatesInProgress.set(0);
             proposalCount.set(0);
+            preProposal.clear();
         }
     }
 }

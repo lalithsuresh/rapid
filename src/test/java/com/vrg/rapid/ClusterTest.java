@@ -19,6 +19,7 @@ import org.junit.Test;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -207,7 +208,7 @@ public class ClusterTest {
         MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 10000;
 
         final int numNodesPhase1 = 50;
-        final int numNodesPhase2 = 500;
+        final int numNodesPhase2 = 100;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
         final LinkedBlockingQueue<Cluster> serviceList = new LinkedBlockingQueue<>();
 
@@ -340,6 +341,100 @@ public class ClusterTest {
         finally {
             for (final Cluster service: clusterInstances.values()) {
                 service.shutdown();
+            }
+        }
+    }
+
+    /**
+     * This test starts with a 51 node cluster. We then fail multiple nodes to see if the monitoring mechanism
+     * identifies the leaving nodes.
+     */
+    @Test
+    public void testNodeFailureAndMonitoringLarge() throws IOException {
+        RpcServer.USE_IN_PROCESS_SERVER = true;
+        RpcClient.USE_IN_PROCESS_CHANNEL = true;
+
+        // Set a low probing interval.
+        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 3000;
+        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
+
+        final int numNodes = 50;
+        final int failingNodes = 20;
+        for (int F = 15; F < failingNodes; F++) {
+            final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1534);
+            final ConcurrentHashMap<HostAndPort, Cluster> clusterInstances = new ConcurrentHashMap<>();
+
+            final Cluster seed = Cluster.start(seedHost);
+            clusterInstances.put(seedHost, seed);
+            final Executor executor = Executors.newWorkStealingPool(numNodes);
+            try {
+                final AtomicInteger nodeCounter = new AtomicInteger(0);
+                final CountDownLatch latch = new CountDownLatch(numNodes);
+
+                for (int i = 0; i < numNodes; i++) {
+                    executor.execute(() -> {
+                        try {
+                            final HostAndPort joiningHost =
+                                    HostAndPort.fromParts("127.0.0.1", 1535 + nodeCounter.incrementAndGet());
+                            final Cluster nonSeed = Cluster.join(seedHost, joiningHost);
+                            clusterInstances.put(joiningHost, nonSeed);
+                        } catch (final IOException | InterruptedException e) {
+                            fail();
+                        } finally {
+                            latch.countDown();
+                        }
+                    });
+                }
+
+                latch.await();
+                for (final Cluster cluster : clusterInstances.values()) {
+                    assertEquals(cluster.getMemberlist().size(), numNodes + 1); // +1 for the seed
+                    assertEquals(cluster.getMemberlist(), seed.getMemberlist());
+                }
+
+                // By this point, we have a fifty node cluster. Now let's shutdown ten hosts.
+                nodeCounter.set(0);
+                for (int i = 0; i < F; i++) {
+                    executor.execute(() -> {
+                        final HostAndPort crashingHost = HostAndPort.fromParts("127.0.0.1",
+                                1536 + nodeCounter.incrementAndGet());
+                        clusterInstances.get(crashingHost).shutdown();
+                        clusterInstances.remove(crashingHost);
+                    });
+                }
+
+                int tries = 20;
+                while (--tries > 0) {
+                    boolean ready = true;
+                    for (final Cluster cluster : clusterInstances.values()) {
+                        if (!(cluster.getMemberlist().size() == numNodes - F + 1
+                                && cluster.getMemberlist().equals(seed.getMemberlist()))) {
+                            ready = false;
+                        }
+                    }
+
+                    if (!ready) {
+                        Thread.sleep(1000);
+                    }
+                    else {
+                        break;
+                    }
+                }
+
+                for (final Map.Entry<HostAndPort, Cluster> entry: clusterInstances.entrySet()) {
+                    assertEquals("Cluster " + entry.getKey() + " is out of sync.",
+                            numNodes - F + 1, entry.getValue().getMemberlist().size());
+                    assertEquals("Cluster " + entry.getKey() + " is out of sync with seed " + seed,
+                            seed.getMemberlist(), entry.getValue().getMemberlist());
+                }
+                System.out.println("Success with F=" + F);
+            } catch (final Exception e) {
+                e.printStackTrace();
+                fail();
+            } finally {
+                for (final Cluster service : clusterInstances.values()) {
+                    service.shutdown();
+                }
             }
         }
     }

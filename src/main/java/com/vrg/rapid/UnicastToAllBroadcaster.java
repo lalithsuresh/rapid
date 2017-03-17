@@ -46,9 +46,10 @@ final class UnicastToAllBroadcaster implements IBroadcaster {
         }
 
         try {
-            Futures.allAsList(list).get();
+            Futures.successfulAsList(list).get();
         } catch (final InterruptedException | ExecutionException | StatusRuntimeException e) {
             LOG.error("Broadcast returned an error {}", recipients);
         }
     }
+
 }

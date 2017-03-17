@@ -247,6 +247,27 @@ public class WatermarkBufferTest {
         assertEquals(proposal.size(), numNodes);
     }
 
+    @Test
+    public void waterMarkTestLinkInvalidation() {
+        final WatermarkBuffer wb = new WatermarkBuffer(K, H, L);
+        final int numNodes = 3;
+        final List<HostAndPort> hostAndPorts = new ArrayList<>();
+        for (int i = 0; i < numNodes; i++) {
+            hostAndPorts.add(HostAndPort.fromParts("127.0.0.2", 2 + i));
+        }
+
+        final List<HostAndPort> proposal = new ArrayList<>();
+        for (final HostAndPort host: hostAndPorts) {
+            for (int ringNumber = 0; ringNumber < K; ringNumber++) {
+                proposal.addAll(wb.aggregateForProposal(createLinkUpdateMessage(
+                        HostAndPort.fromParts("127.0.0.1", 1), host, LinkStatus.UP,
+                        configurationId, ringNumber)));
+            }
+        }
+
+        assertEquals(proposal.size(), numNodes);
+    }
+
     private LinkUpdateMessage createLinkUpdateMessage(final HostAndPort src,
                                                       final HostAndPort dst,
                                                       final LinkStatus status,

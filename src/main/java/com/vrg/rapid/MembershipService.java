@@ -254,15 +254,17 @@ final class MembershipService {
             // are valid and do not violate conditions of the ring. These are packed in to
             // validMessages and processed later.
             final List<LinkUpdateMessage> validMessages = new ArrayList<>(messageBatch.getMessagesList().size());
+            final long currentConfigurationId = membershipView.getCurrentConfigurationId();
+            final int membershipSize = membershipView.getRing(0).size();
+
             for (final LinkUpdateMessage request: messageBatch.getMessagesList()) {
                 final HostAndPort destination = HostAndPort.fromString(request.getLinkDst());
                 LOG.trace("LinkUpdateMessage received {sender:{}, receiver:{}, config:{}, size:{}, status:{}}",
                         messageBatch.getSender(), myAddr,
                         request.getConfigurationId(),
-                        membershipView.getRing(0).size(),
+                        membershipSize,
                         request.getLinkStatus());
 
-                final long currentConfigurationId = membershipView.getCurrentConfigurationId();
                 if (currentConfigurationId != request.getConfigurationId()) {
                     LOG.trace("LinkUpdateMessage for configuration {} received during configuration {}",
                             request.getConfigurationId(), currentConfigurationId);
@@ -302,11 +304,15 @@ final class MembershipService {
                 proposal.addAll(proposedViewChange(msg));
             }
 
+            proposal.addAll(watermarkBuffer.invalidateFailingLinks(membershipView));
+
             // If we have a proposal for this stage, start an instance of consensus on it.
             if (proposal.size() != 0) {
                 if (logProposals) {
                     logProposalList.add(proposal);
                 }
+
+                LOG.debug("Node {} has a proposal of size {}: {}", myAddr, proposal.size(), proposal);
 
                 // TODO: Initiate consensus here.
 
@@ -519,13 +525,15 @@ final class MembershipService {
                         Futures.addCallback(probeSend, callbackMap.get(monitoree));
                         probes.add(probeSend);
                     } else {
+                        final long configurationId = membershipView.getCurrentConfigurationId();
+                        final int size = membershipView.getRing(0).size();
+
                         // A link has failed. Announce a LinkStatus.DOWN event.
                         executor.execute(() -> {
-                            final long configurationId = membershipView.getCurrentConfigurationId();
 
                             if (LOG.isDebugEnabled()) {
                                 LOG.debug("Announcing LinkFail event {monitoree:{}, monitor:{}, config:{}, size:{}}",
-                                        monitoree, myAddr, configurationId, membershipView.getRing(0).size());
+                                        monitoree, myAddr, configurationId, size);
                             }
 
                             // Note: setUuid is deliberately missing here because it does not affect leaves.
