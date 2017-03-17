@@ -289,7 +289,7 @@ public class ClusterTest {
 
         // Set a low probing interval.
         MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 1000;
-        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 100;
+        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
 
         final int numNodes = 2;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
@@ -319,8 +319,8 @@ public class ClusterTest {
 
             latch.await();
             for (final Cluster cluster : clusterInstances.values()) {
-                assertEquals(cluster.getMemberlist().size(), numNodes + 1); // +1 for the seed
-                assertEquals(cluster.getMemberlist(), seed.getMemberlist());
+                assertEquals(numNodes + 1, cluster.getMemberlist().size()); // +1 for the seed
+                assertEquals(seed.getMemberlist(), cluster.getMemberlist());
             }
 
             // By this point, we have a twenty node cluster. Now let's shutdown a single host.
@@ -328,10 +328,10 @@ public class ClusterTest {
             clusterInstances.get(crashingHost).shutdown();
             clusterInstances.remove(crashingHost);
 
-            Thread.sleep(4000);
+            Thread.sleep(6000);
             for (final Cluster cluster : clusterInstances.values()) {
-                assertEquals(cluster.getMemberlist().size(), numNodes); //
-                assertEquals(cluster.getMemberlist(), seed.getMemberlist());
+                assertEquals(numNodes, cluster.getMemberlist().size()); //
+                assertEquals(seed.getMemberlist(), cluster.getMemberlist());
             }
         }
         catch (final Exception e) {
