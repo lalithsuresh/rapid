@@ -348,6 +348,8 @@ public class ClusterTest {
     /**
      * This test starts with a 51 node cluster. We then fail multiple nodes to see if the monitoring mechanism
      * identifies the leaving nodes.
+     *
+     * XXX: Have build system sweep F from 1 to 19 using a flag.
      */
     @Test
     public void testNodeFailureAndMonitoringLarge() throws IOException {
@@ -360,7 +362,7 @@ public class ClusterTest {
 
         final int numNodes = 50;
         final int failingNodes = 20;
-        for (int F = 15; F < failingNodes; F++) {
+        for (int F = 19; F < failingNodes; F++) {
             final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1534);
             final ConcurrentHashMap<HostAndPort, Cluster> clusterInstances = new ConcurrentHashMap<>();
 
