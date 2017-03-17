@@ -14,189 +14,120 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
 import java.io.IOException;
-import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
  * Test public API
  */
 public class ClusterTest {
+    private final ConcurrentHashMap<HostAndPort, Cluster> instances = new ConcurrentHashMap<>();
+    private final int basePort = 1234;
 
     static {
         // gRPC INFO logs clutter the test output
         Logger.getLogger("io.grpc").setLevel(Level.WARNING);
     }
 
+    @Before
+    public void beforeTest() {
+        instances.clear();
+
+        // Tests need to opt out of the in-process channel
+        RpcServer.USE_IN_PROCESS_SERVER = true;
+        RpcClient.USE_IN_PROCESS_CHANNEL = true;
+
+        // Tests that depend on failure detection should set intervals by themselves
+        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 10000;
+        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 10000;
+    }
+
+    @After
+    public void afterTest() {
+        instances.values().forEach(Cluster::shutdown);
+    }
+
     /**
      * Test with a single node joining through a seed.
      */
     @Test
-    public void testSingleJoin() throws IOException, InterruptedException, ExecutionException {
+    public void singleNodeJoinsThroughSeed() throws IOException, InterruptedException, ExecutionException {
         RpcServer.USE_IN_PROCESS_SERVER = false;
         RpcClient.USE_IN_PROCESS_CHANNEL = false;
 
-        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
-        final HostAndPort joiningHost = HostAndPort.fromParts("127.0.0.1", 1235);
-
-        final Cluster seed = Cluster.start(seedHost);
-        final Cluster nonSeed = Cluster.join(seedHost, joiningHost);
-
-        Thread.sleep(1000);
-        try {
-            assertEquals(2, seed.getMemberlist().size());
-        }
-        finally {
-            seed.shutdown();
-            nonSeed.shutdown();
-        }
+        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
+        createCluster(1, seedHost);
+        verifyClusterSize(1, seedHost);
+        extendCluster(1, seedHost);
+        verifyClusterSize(2, seedHost);
     }
 
     /**
      * Test with K nodes joining the network through a single seed.
      */
     @Test
-    public void testJoinTenSequential() throws IOException, InterruptedException {
+    public void tenNodesJoinSequentially() throws IOException, InterruptedException {
         RpcServer.USE_IN_PROCESS_SERVER = false;
         RpcClient.USE_IN_PROCESS_CHANNEL = false;
 
         final int numNodes = 10;
-        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
-        final List<Cluster> serviceList = new ArrayList<>();
-        final Cluster seed = Cluster.start(seedHost);
-        serviceList.add(seed);
-        try {
-            for (int i = 0; i < numNodes; i++) {
-                final HostAndPort joiningHost = HostAndPort.fromParts("127.0.0.1", 1235 + i);
-                final Cluster nonSeed = Cluster.join(seedHost, joiningHost);
-                serviceList.add(nonSeed);
-                Thread.sleep(50);
-                assertEquals(i + 2, nonSeed.getMemberlist().size());
-            }
-        }
-        catch (final InterruptedException | RuntimeException e) {
-            e.printStackTrace();
-            fail();
-        }
-        finally {
-            for (final Cluster service: serviceList) {
-                service.shutdown();
-            }
+        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
+        createCluster(1, seedHost); // Only bootstrap a seed.
+        verifyClusterSize(1, seedHost);
+
+        for (int i = 0; i < numNodes; i++) {
+            extendCluster(1, seedHost);
+            waitAndVerify( i + 2, 5, 100, seedHost);
         }
     }
-
 
     /**
      * Identical to the previous test, but with more than K nodes joining in serial.
      */
     @Test
-    public void testJoinMoreThanKSequential() throws IOException, InterruptedException {
-        RpcServer.USE_IN_PROCESS_SERVER = true;
-        RpcClient.USE_IN_PROCESS_CHANNEL = true;
-
+    public void twentyNodesJoinSequentially() throws IOException, InterruptedException {
         final int numNodes = 20;
-        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
-        final List<Cluster> serviceList = new ArrayList<>();
+        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
+        createCluster(1, seedHost); // Only bootstrap a seed.
+        verifyClusterSize(1, seedHost);
 
-        final Cluster seed = Cluster.start(seedHost);
-        serviceList.add(seed);
-        try {
-            for (int i = 0; i < numNodes; i++) {
-                final HostAndPort joiningHost = HostAndPort.fromParts("127.0.0.1", 1235 + i);
-                final Cluster nonSeed = Cluster.join(seedHost, joiningHost);
-                serviceList.add(nonSeed);
-                assertEquals(i + 2, nonSeed.getMemberlist().size());
-            }
-
-            Thread.sleep(100);
-            for (final Cluster cluster: serviceList) {
-                assertEquals(cluster.getMemberlist().size(), numNodes + 1); // +1 for the seed
-            }
-        }
-        catch (final Exception e) {
-            e.printStackTrace();
-            fail();
-        }
-        finally {
-            for (final Cluster service: serviceList) {
-                service.shutdown();
-            }
+        for (int i = 0; i < numNodes; i++) {
+            extendCluster(1, seedHost);
+            waitAndVerify( i + 2, 5, 100, seedHost);
         }
     }
 
-
     /**
      * Identical to the previous test, but with more than K nodes joining in parallel.
-     *
+     * <p>
      * The test starts with a single seed and all N - 1 subsequent nodes initiate their join protocol at the same
      * time. This tests a single seed's ability to bootstrap a large cluster in one step.
      */
     @Test
-    public void testJoinMoreThanKSingleStepParallel() throws IOException, InterruptedException {
-        RpcServer.USE_IN_PROCESS_SERVER = true;
-        RpcClient.USE_IN_PROCESS_CHANNEL = true;
-
-        // Use a high interval because we are running on a single machine
-        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 5000;
-        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
-
-        final int numNodes = 500;
-        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
-        final LinkedBlockingQueue<Cluster> serviceList = new LinkedBlockingQueue<>();
-
-        final Cluster seed = Cluster.start(seedHost);
-        serviceList.add(seed);
-        final Executor executor = Executors.newWorkStealingPool(numNodes);
-        try {
-            final AtomicInteger nodeCounter = new AtomicInteger(0);
-            final CountDownLatch latch = new CountDownLatch(numNodes);
-
-            for (int i = 0; i < numNodes; i++) {
-                executor.execute(() -> {
-                    try {
-                        final HostAndPort joiningHost =
-                                HostAndPort.fromParts("127.0.0.1", 1235 + nodeCounter.incrementAndGet());
-                        final Cluster nonSeed = Cluster.join(seedHost, joiningHost);
-                        serviceList.add(nonSeed);
-                    } catch (final IOException | InterruptedException e) {
-                        fail();
-                    }
-                    finally {
-                        latch.countDown();
-                    }
-                });
-            }
-
-            latch.await();
-            for (final Cluster cluster: serviceList) {
-                assertEquals(cluster.getMemberlist().size(), numNodes + 1); // +1 for the seed
-                assertEquals(cluster.getMemberlist(), seed.getMemberlist());
-            }
-        }
-        catch (final Exception e) {
-            e.printStackTrace();
-            fail();
-        }
-        finally {
-            for (final Cluster service: serviceList) {
-                service.shutdown();
-            }
-        }
+    public void fiveHundredNodesJoinInParallel() throws IOException, InterruptedException {
+        final int numNodes = 500; // Includes the size of the cluster
+        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
+        createCluster(numNodes, seedHost);
+        verifyClusterSize(numNodes, seedHost);
     }
 
 
@@ -205,83 +136,14 @@ public class ClusterTest {
      * concurrently. Following this, a subsequent wave begins where 500 nodes then start together.
      */
     @Test
-    public void testJoinMoreThanKParallelTwoWaves() throws IOException, InterruptedException {
-        RpcServer.USE_IN_PROCESS_SERVER = true;
-        RpcClient.USE_IN_PROCESS_CHANNEL = true;
-
-        // Use a high interval because we are running on a single machine
-        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 10000;
-        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 10000;
-
+    public void hundredNodesJoinFiftyNodeCluster() throws IOException, InterruptedException {
         final int numNodesPhase1 = 50;
         final int numNodesPhase2 = 100;
-        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
-        final LinkedBlockingQueue<Cluster> serviceList = new LinkedBlockingQueue<>();
-
-        final Cluster seed = Cluster.start(seedHost);
-        serviceList.add(seed);
-        final Executor executor = Executors.newWorkStealingPool(numNodesPhase2);
-        try {
-            // Phase 1 where numNodesPhase1 entities join the network
-            {
-                final AtomicInteger nodeCounter = new AtomicInteger(0);
-                final CountDownLatch latch = new CountDownLatch(numNodesPhase1);
-                for (int i = 0; i < numNodesPhase1; i++) {
-                    executor.execute(() -> {
-                        try {
-                            final HostAndPort joiningHost =
-                                    HostAndPort.fromParts("127.0.0.1", 1235 + nodeCounter.incrementAndGet());
-                            final Cluster nonSeed = Cluster.join(seedHost, joiningHost);
-                            serviceList.add(nonSeed);
-                        } catch (final IOException | InterruptedException e) {
-                            fail();
-                        } finally {
-                            latch.countDown();
-                        }
-                    });
-                }
-                latch.await();
-                for (final Cluster cluster : serviceList) {
-                    assertEquals(cluster.getMemberlist().size(), numNodesPhase1 + 1); // +1 for the seed
-                    assertEquals(cluster.getMemberlist(), seed.getMemberlist());
-                }
-            }
-            // Phase 2 where numNodesPhase2 entities join the network
-            {
-                final AtomicInteger nodeCounter = new AtomicInteger(0);
-                final CountDownLatch latch = new CountDownLatch(numNodesPhase2);
-                for (int i = 0; i < numNodesPhase2; i++) {
-                    executor.execute(() -> {
-                        try {
-                            final HostAndPort joiningHost =
-                                    HostAndPort.fromParts("127.0.0.1", 1235 + numNodesPhase1 +
-                                            nodeCounter.incrementAndGet());
-                            final Cluster nonSeed = Cluster.join(seedHost, joiningHost);
-                            serviceList.add(nonSeed);
-                        } catch (final IOException | InterruptedException e) {
-                            fail();
-                        } finally {
-                            latch.countDown();
-                        }
-                    });
-                }
-                latch.await();
-                for (final Cluster cluster : serviceList) {
-                    assertEquals(cluster.getMemberlist().size(), numNodesPhase1
-                                                                        + numNodesPhase2 + 1); // +1 for the seed
-                    assertEquals(cluster.getMemberlist(), seed.getMemberlist());
-                }
-            }
-        }
-        catch (final Exception e) {
-            e.printStackTrace();
-            fail();
-        }
-        finally {
-            for (final Cluster service: serviceList) {
-                service.shutdown();
-            }
-        }
+        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
+        createCluster(numNodesPhase1, seedHost);
+        verifyClusterSize(numNodesPhase1, seedHost);
+        extendCluster(numNodesPhase2, seedHost);
+        verifyClusterSize(numNodesPhase1 + numNodesPhase2, seedHost);
     }
 
     /**
@@ -289,76 +151,24 @@ public class ClusterTest {
      * identifies the offending node.
      */
     @Test
-    public void testNodeFailureAndMonitoring() throws IOException {
-        RpcServer.USE_IN_PROCESS_SERVER = true;
-        RpcClient.USE_IN_PROCESS_CHANNEL = true;
-
-        // Set a low probing interval.
+    public void oneFailureOutOfThreeNodes() throws IOException, InterruptedException {
         MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 1000;
         MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
 
-        final int numNodes = 2;
-        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
-        final ConcurrentHashMap<HostAndPort, Cluster> clusterInstances = new ConcurrentHashMap<>();
-
-        final Cluster seed = Cluster.start(seedHost);
-        clusterInstances.put(seedHost, seed);
-        final Executor executor = Executors.newWorkStealingPool(numNodes);
-        try {
-            final AtomicInteger nodeCounter = new AtomicInteger(0);
-            final CountDownLatch latch = new CountDownLatch(numNodes);
-
-            for (int i = 0; i < numNodes; i++) {
-                executor.execute(() -> {
-                    try {
-                        final HostAndPort joiningHost =
-                                HostAndPort.fromParts("127.0.0.1", 1235 + nodeCounter.incrementAndGet());
-                        final Cluster nonSeed = Cluster.join(seedHost, joiningHost);
-                        clusterInstances.put(joiningHost, nonSeed);
-                    } catch (final IOException | InterruptedException e) {
-                        fail();
-                    } finally {
-                        latch.countDown();
-                    }
-                });
-            }
-
-            latch.await();
-            for (final Cluster cluster : clusterInstances.values()) {
-                assertEquals(numNodes + 1, cluster.getMemberlist().size()); // +1 for the seed
-                assertEquals(seed.getMemberlist(), cluster.getMemberlist());
-            }
-
-            // By this point, we have a twenty node cluster. Now let's shutdown a single host.
-            final HostAndPort crashingHost = HostAndPort.fromParts("127.0.0.1", 1236);
-            clusterInstances.get(crashingHost).shutdown();
-            clusterInstances.remove(crashingHost);
-
-            Thread.sleep(6000);
-            for (final Cluster cluster : clusterInstances.values()) {
-                assertEquals(numNodes, cluster.getMemberlist().size()); //
-                assertEquals(seed.getMemberlist(), cluster.getMemberlist());
-            }
-        }
-        catch (final Exception e) {
-            e.printStackTrace();
-            fail();
-        }
-        finally {
-            for (final Cluster service: clusterInstances.values()) {
-                service.shutdown();
-            }
-        }
+        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
+        createCluster(3, seedHost);
+        verifyClusterSize(3, seedHost);
+        final HostAndPort nodeToFail = HostAndPort.fromParts("127.0.0.1", basePort + 2);
+        failSomeNodes(Collections.singletonList(nodeToFail));
+        waitAndVerify(2, 10, 1000, seedHost);
     }
 
     /**
-     * This test starts with a 51 node cluster. We then fail multiple nodes to see if the monitoring mechanism
-     * identifies the leaving nodes.
-     *
-     * XXX: Have build system sweep F from 1 to 19 using a flag.
+     * This test starts with a 50 node cluster. We then fail 20 nodes to see if the monitoring mechanism
+     * identifies the crashed nodes.
      */
     @Test
-    public void testNodeFailureAndMonitoringLarge() throws IOException {
+    public void twentyFailuresOutOfFiftyNodes() throws IOException, InterruptedException {
         RpcServer.USE_IN_PROCESS_SERVER = true;
         RpcClient.USE_IN_PROCESS_CHANNEL = true;
 
@@ -368,82 +178,146 @@ public class ClusterTest {
 
         final int numNodes = 50;
         final int failingNodes = 20;
-        for (int F = 19; F < failingNodes; F++) {
-            final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1534);
-            final ConcurrentHashMap<HostAndPort, Cluster> clusterInstances = new ConcurrentHashMap<>();
+        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
+        createCluster(numNodes, seedHost);
+        verifyClusterSize(numNodes, seedHost);
+        failSomeNodes(IntStream.range(basePort + 2, basePort + 2 + failingNodes)
+                               .mapToObj(i -> HostAndPort.fromParts("127.0.0.1", i))
+                               .collect(Collectors.toList()));
+        waitAndVerify(numNodes - failingNodes, 20, 1000, seedHost);
+    }
 
-            final Cluster seed = Cluster.start(seedHost);
-            clusterInstances.put(seedHost, seed);
-            final Executor executor = Executors.newWorkStealingPool(numNodes);
-            try {
-                final AtomicInteger nodeCounter = new AtomicInteger(0);
-                final CountDownLatch latch = new CountDownLatch(numNodes);
+    /**
+     * Creates a cluster of size {@code numNodes} with a seed {@code seedHost}.
+     *
+     * @param numNodes cluster size
+     * @param seedHost HostAndPort that represents the seed node to initialize and be used as the contact point
+     *                 for subsequent joiners.
+     * @throws IOException Thrown if the Cluster.start() or join() methods throw an IOException when trying
+     *                     to register an RpcServer.
+     */
+    private void createCluster(final int numNodes, final HostAndPort seedHost) throws IOException {
+        final Cluster seed = Cluster.start(seedHost);
+        instances.put(seedHost, seed);
+        assertEquals(seed.getMemberlist().size(), 1);
+        if (numNodes >= 2) {
+            extendCluster(numNodes - 1, seedHost);
+        }
+    }
 
-                for (int i = 0; i < numNodes; i++) {
-                    executor.execute(() -> {
-                        try {
-                            final HostAndPort joiningHost =
-                                    HostAndPort.fromParts("127.0.0.1", 1535 + nodeCounter.incrementAndGet());
-                            final Cluster nonSeed = Cluster.join(seedHost, joiningHost);
-                            clusterInstances.put(joiningHost, nonSeed);
-                        } catch (final IOException | InterruptedException e) {
-                            fail();
-                        } finally {
-                            latch.countDown();
-                        }
-                    });
-                }
+    /**
+     * Add {@code numNodes} instances to a cluster.
+     *
+     * @param numNodes cluster size
+     * @param seedHost HostAndPort that represents the seed node to initialize and be used as the contact point
+     *                 for subsequent joiners.
+     * @throws IOException Thrown if the Cluster.start() or join() methods throw an IOException when trying
+     *                     to register an RpcServer.
+     */
+    private void extendCluster(final int numNodes, final HostAndPort seedHost) throws IOException {
+        final ExecutorService executor = Executors.newWorkStealingPool(numNodes);
+        final int clusterSizeBefore = instances.size();
+        try {
+            final AtomicInteger nodeCounter = new AtomicInteger(0);
+            final CountDownLatch latch = new CountDownLatch(numNodes);
 
-                latch.await();
-                for (final Cluster cluster : clusterInstances.values()) {
-                    assertEquals(cluster.getMemberlist().size(), numNodes + 1); // +1 for the seed
-                    assertEquals(cluster.getMemberlist(), seed.getMemberlist());
-                }
-
-                // By this point, we have a fifty node cluster. Now let's shutdown ten hosts.
-                nodeCounter.set(0);
-                for (int i = 0; i < F; i++) {
-                    executor.execute(() -> {
-                        final HostAndPort crashingHost = HostAndPort.fromParts("127.0.0.1",
-                                1536 + nodeCounter.incrementAndGet());
-                        clusterInstances.get(crashingHost).shutdown();
-                        clusterInstances.remove(crashingHost);
-                    });
-                }
-
-                int tries = 20;
-                while (--tries > 0) {
-                    boolean ready = true;
-                    for (final Cluster cluster : clusterInstances.values()) {
-                        if (!(cluster.getMemberlist().size() == numNodes - F + 1
-                                && cluster.getMemberlist().equals(seed.getMemberlist()))) {
-                            ready = false;
-                        }
+            for (int i = 0; i < numNodes; i++) {
+                executor.execute(() -> {
+                    try {
+                        final HostAndPort joiningHost =
+                                HostAndPort.fromParts("127.0.0.1",
+                                        basePort + clusterSizeBefore + nodeCounter.incrementAndGet());
+                        final Cluster nonSeed = Cluster.join(seedHost, joiningHost);
+                        instances.put(joiningHost, nonSeed);
+                    } catch (final Exception e) {
+                        fail();
+                    } finally {
+                        latch.countDown();
                     }
+                });
+            }
 
-                    if (!ready) {
-                        Thread.sleep(1000);
-                    }
-                    else {
-                        break;
-                    }
-                }
+            latch.await();
+        } catch (final Exception e) {
+            e.printStackTrace();
+            fail();
+        } finally {
+            executor.shutdown();
+        }
+    }
 
-                for (final Map.Entry<HostAndPort, Cluster> entry: clusterInstances.entrySet()) {
-                    assertEquals("Cluster " + entry.getKey() + " is out of sync.",
-                            numNodes - F + 1, entry.getValue().getMemberlist().size());
-                    assertEquals("Cluster " + entry.getKey() + " is out of sync with seed " + seed,
-                            seed.getMemberlist(), entry.getValue().getMemberlist());
-                }
-                System.out.println("Success with F=" + F);
-            } catch (final Exception e) {
-                e.printStackTrace();
-                fail();
-            } finally {
-                for (final Cluster service : clusterInstances.values()) {
-                    service.shutdown();
+    /**
+     * Fail a set of nodes in a cluster by calling shutdown().
+     *
+     * @param nodesToFail list of HostAndPort objects representing the nodes to fail
+     */
+    private void failSomeNodes(final List<HostAndPort> nodesToFail) {
+        final ExecutorService executor = Executors.newWorkStealingPool(nodesToFail.size());
+        try {
+            final CountDownLatch latch = new CountDownLatch(nodesToFail.size());
+            for (final HostAndPort nodeToFail : nodesToFail) {
+                executor.execute(() -> {
+                    try {
+                        assertTrue(nodeToFail + " not in instances", instances.containsKey(nodeToFail));
+                        instances.get(nodeToFail).shutdown();
+                        instances.remove(nodeToFail);
+                    } finally {
+                        latch.countDown();
+                    }
+                });
+            }
+            latch.await();
+        } catch (final Exception e) {
+            e.printStackTrace();
+            fail();
+        } finally {
+            executor.shutdown();
+        }
+    }
+
+    /**
+     * Verify that all nodes in the cluster are of size {@code expectedSize} and have an identical
+     * list of members as the seed node.
+     *
+     * @param expectedSize expected size of each cluster
+     * @param seedHost seed node to validate the cluster view against
+     */
+    private void verifyClusterSize(final int expectedSize, final HostAndPort seedHost) {
+        for (final Cluster cluster : instances.values()) {
+            assertEquals(cluster.getMemberlist().size(), expectedSize);
+            assertEquals(cluster.getMemberlist(), instances.get(seedHost).getMemberlist());
+        }
+    }
+
+    /**
+     * Verify whether the cluster has converged {@code maxTries} times with a delay of @{code intervalInMs}
+     * between attempts. This is used to give failure detector logic some time to kick in.
+     *
+     * @param expectedSize expected size of each cluster
+     * @param maxTries number of tries to check if the cluster has stabilized.
+     * @param intervalInMs the time duration between checks.
+     * @param seedNode the seed node to validate the cluster membership against
+     */
+    private void waitAndVerify(final int expectedSize, final int maxTries, final int intervalInMs,
+                               final HostAndPort seedNode)
+                                    throws InterruptedException {
+        int tries = maxTries;
+        while (--tries > 0) {
+            boolean ready = true;
+            for (final Cluster cluster : instances.values()) {
+                if (!(cluster.getMemberlist().size() == expectedSize
+                        && cluster.getMemberlist().equals(instances.get(seedNode).getMemberlist()))) {
+                    ready = false;
                 }
             }
+
+            if (!ready) {
+                Thread.sleep(intervalInMs);
+            } else {
+                break;
+            }
         }
+
+        verifyClusterSize(expectedSize, seedNode);
     }
 }
