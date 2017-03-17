@@ -120,6 +120,12 @@ final class WatermarkBuffer {
         }
     }
 
+    /**
+     * Invalidates links between nodes that are failing or have failed.
+     *
+     * @param view MembershipshipView object required to find monitor-monitoree relationships between failing nodes.
+     * @return A list of hosts representing a view change proposal.
+     */
     List<HostAndPort> invalidateFailingLinks(final MembershipView view) {
         synchronized (lock) {
             final List<HostAndPort> proposalsToReturn = new ArrayList<>();
@@ -150,7 +156,6 @@ final class WatermarkBuffer {
             return ImmutableList.copyOf(proposalsToReturn);
         }
     }
-
 
     /**
      * Clears all view change reports being tracked. To be used right after a view change.
