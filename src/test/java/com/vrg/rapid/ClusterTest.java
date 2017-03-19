@@ -86,6 +86,7 @@ public class ClusterTest {
      */
     @Test
     public void tenNodesJoinSequentially() throws IOException, InterruptedException {
+        // Explicitly test netty
         RpcServer.USE_IN_PROCESS_SERVER = false;
         RpcClient.USE_IN_PROCESS_CHANNEL = false;
 
@@ -133,7 +134,7 @@ public class ClusterTest {
 
     /**
      * This test starts with a single seed, and a wave where 50 subsequent nodes initiate their join protocol
-     * concurrently. Following this, a subsequent wave begins where 500 nodes then start together.
+     * concurrently. Following this, a subsequent wave begins where 100 nodes then start together.
      */
     @Test
     public void hundredNodesJoinFiftyNodeCluster() throws IOException, InterruptedException {
@@ -169,10 +170,6 @@ public class ClusterTest {
      */
     @Test
     public void twentyFailuresOutOfFiftyNodes() throws IOException, InterruptedException {
-        RpcServer.USE_IN_PROCESS_SERVER = true;
-        RpcClient.USE_IN_PROCESS_CHANNEL = true;
-
-        // Set a low probing interval.
         MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 3000;
         MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
 
