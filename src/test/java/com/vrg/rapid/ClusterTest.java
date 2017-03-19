@@ -57,8 +57,8 @@ public class ClusterTest {
         RpcClient.USE_IN_PROCESS_CHANNEL = true;
 
         // Tests that depend on failure detection should set intervals by themselves
-        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 10000;
-        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 10000;
+        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 100000;
+        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 100000;
     }
 
     @After
