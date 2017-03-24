@@ -463,9 +463,11 @@ final class MembershipService {
     /**
      * Shuts down all the executors.
      */
-    void shutdown() {
+    void shutdown() throws InterruptedException {
         executor.shutdown();
+        executor.awaitTermination(1, TimeUnit.SECONDS);
         scheduledExecutorService.shutdown();
+        scheduledExecutorService.awaitTermination(1, TimeUnit.SECONDS);
     }
 
     /**

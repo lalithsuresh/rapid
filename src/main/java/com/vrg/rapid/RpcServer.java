@@ -170,11 +170,11 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
      */
     void stopServer() {
         assert server != null;
-        if (membershipService != null) {
-            membershipService.shutdown();
-        }
-        server.shutdown();
         try {
+            if (membershipService != null) {
+                membershipService.shutdown();
+            }
+            server.shutdown();
             server.awaitTermination();
         } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();

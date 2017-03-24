@@ -26,6 +26,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -63,8 +64,10 @@ public class ClusterTest {
     }
 
     @After
-    public void afterTest() {
-        instances.values().forEach(Cluster::shutdown);
+    public void afterTest() throws InterruptedException {
+        for (final Cluster cluster: instances.values()) {
+            cluster.shutdown();
+        }
     }
 
     /**
@@ -239,7 +242,6 @@ public class ClusterTest {
         final ExecutorService executor = Executors.newWorkStealingPool(numNodes);
         try {
             final CountDownLatch latch = new CountDownLatch(numNodes);
-
             for (int i = 0; i < numNodes; i++) {
                 executor.execute(() -> {
                     try {
@@ -254,7 +256,6 @@ public class ClusterTest {
                     }
                 });
             }
-
             latch.await();
         } catch (final Exception e) {
             e.printStackTrace();
@@ -279,6 +280,8 @@ public class ClusterTest {
                         assertTrue(nodeToFail + " not in instances", instances.containsKey(nodeToFail));
                         instances.get(nodeToFail).shutdown();
                         instances.remove(nodeToFail);
+                    } catch (final InterruptedException e) {
+                        fail();
                     } finally {
                         latch.countDown();
                     }

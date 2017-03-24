@@ -225,7 +225,7 @@ public final class Cluster {
     /**
      * Shutdown the RpcServer
      */
-    public void shutdown() {
+    public void shutdown() throws InterruptedException {
         // TODO: this should probably be a "leave" method
         LOG.debug("Shutting down RpcServer and MembershipService");
         rpcServer.stopServer();
