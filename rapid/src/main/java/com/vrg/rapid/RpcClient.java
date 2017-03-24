@@ -35,8 +35,11 @@ import io.grpc.inprocess.InProcessChannelBuilder;
 import io.grpc.netty.NettyChannelBuilder;
 
 import java.util.Collections;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 
@@ -47,6 +50,7 @@ final class RpcClient {
     static boolean USE_IN_PROCESS_CHANNEL = false;
     private final HostAndPort address;
     private static final int RPC_TIMEOUT_SECONDS = 1;
+    private final Map<HostAndPort, MembershipServiceFutureStub> channelMap = new ConcurrentHashMap<>();
 
     RpcClient(final HostAndPort address) {
         this.address = address;
@@ -155,6 +159,10 @@ final class RpcClient {
         // TODO: allow configuring SSL/TLS
         final Channel channel;
 
+        if (channelMap.containsKey(remote)) {
+            return channelMap.get(remote);
+        }
+
         if (USE_IN_PROCESS_CHANNEL) {
            channel = InProcessChannelBuilder
                     .forName(remote.toString())
@@ -168,5 +176,10 @@ final class RpcClient {
         }
 
         return MembershipServiceGrpc.newFutureStub(channel);
+    }
+
+    void updateLongLivedConnections(final Set<HostAndPort> nodeSet) {
+        channelMap.clear();
+        nodeSet.forEach(e -> channelMap.computeIfAbsent(e, this::getFutureStub));
     }
 }

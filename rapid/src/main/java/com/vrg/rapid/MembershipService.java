@@ -539,8 +539,9 @@ final class MembershipService {
             this.linkFailureDetector = linkFailureDetector;
         }
 
-        synchronized void updateMembership(final List<HostAndPort> monitorees) {
-            this.monitorees = new HashSet<>(monitorees);
+        synchronized void updateMembership(final List<HostAndPort> newMonitorees) {
+            this.monitorees = new HashSet<>(newMonitorees);
+            rpcClient.updateLongLivedConnections(this.monitorees);
             this.callbackMap.clear();
             this.monitorees.forEach(monitoree -> callbackMap.put(monitoree, new FutureCallback<ProbeResponse>() {
                 @Override
@@ -553,7 +554,7 @@ final class MembershipService {
                     linkFailureDetector.handleProbeOnFailure(throwable, monitoree);
                 }
             }));
-            this.linkFailureDetector.onMembershipChange(monitorees);
+            this.linkFailureDetector.onMembershipChange(newMonitorees);
         }
 
         void handleProbeMessage(final ProbeMessage probeMessage,

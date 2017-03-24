@@ -20,6 +20,8 @@ import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.concurrent.NotThreadSafe;
+import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -27,22 +29,27 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * Represents a simple ping-pong failure detector.
  */
+@NotThreadSafe
 public class PingPongFailureDetector implements ILinkFailureDetector {
     private static final Logger LOG = LoggerFactory.getLogger(PingPongFailureDetector.class);
     private static final int FAILURE_THRESHOLD = 3;
     private final HostAndPort address;
     private final ConcurrentHashMap<HostAndPort, AtomicInteger> failureCount;
 
+    // A cache for probe messages. Avoids creating an unnecessary copy of a probe message each time.
+    private final HashMap<HostAndPort, ProbeMessage> messageHashMap;
+
     public PingPongFailureDetector(final HostAndPort address) {
         this.address = address;
         this.failureCount = new ConcurrentHashMap<>();
+        this.messageHashMap = new HashMap<>();
     }
 
     // Executed at monitor
     @Override
     public ProbeMessage createProbe(final HostAndPort monitoree) {
         LOG.trace("{} sending probe to {}", address, monitoree);
-        return ProbeMessage.newBuilder().setSender(address.toString()).build();
+        return messageHashMap.get(monitoree);
     }
 
     // Executed at monitor
@@ -70,9 +77,12 @@ public class PingPongFailureDetector implements ILinkFailureDetector {
     @Override
     public void onMembershipChange(final List<HostAndPort> monitorees) {
         failureCount.clear();
+        messageHashMap.clear();
         // TODO: If a monitoree is part of both the old and new configuration, we shouldn't forget its failure count.
+        final ProbeMessage.Builder builder = ProbeMessage.newBuilder();
         for (final HostAndPort node: monitorees) {
             failureCount.put(node, new AtomicInteger(0));
+            messageHashMap.putIfAbsent(node, builder.setSender(address.toString()).build());
         }
     }
 

@@ -13,5 +13,6 @@
     <name>rapid-project</name>
     <modules>
        <module>rapid</module>
+       <module>rapid-examples</module>
     </modules>
 </project>

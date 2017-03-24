@@ -35,9 +35,11 @@ import io.grpc.stub.StreamObserver;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+
 
 /**
  * gRPC server object. It defers receiving messages until it is ready to
@@ -154,7 +156,8 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
                     .build()
                     .start();
         } else {
-            final ServerBuilder builder = NettyServerBuilder.forPort(address.getPort());
+            final ServerBuilder builder = NettyServerBuilder.forAddress(new InetSocketAddress(address.getHost(),
+                                                                                              address.getPort()));
             server = builder.addService(ServerInterceptors
                     .intercept(this, interceptors))
                     .build()
