@@ -13,14 +13,15 @@
 
 package com.vrg.rapid;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
-import com.google.protobuf.ByteString;
 import com.vrg.rapid.monitoring.ILinkFailureDetector;
 import com.vrg.rapid.monitoring.PingPongFailureDetector;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
+import com.vrg.rapid.pb.ConsensusProposal;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
@@ -52,6 +53,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
@@ -71,7 +73,7 @@ final class MembershipService {
     private final boolean logProposals;
     private final IBroadcaster broadcaster;
     private final Map<HostAndPort, BlockingQueue<StreamObserver<JoinResponse>>> joinResponseCallbacks;
-    private final Map<HostAndPort, UUID> joinerUuid = new ConcurrentHashMap<>();
+    private final Map<HostAndPort, UUID> joinerUuid = new HashMap<>(); // XXX: Not being cleared.
     private final List<Set<HostAndPort>> logProposalList = new ArrayList<>();
     private final ExecutorService executor = Executors.newSingleThreadScheduledExecutor();
     private final LinkFailureDetectorRunner linkFailureDetectorRunner;
@@ -83,8 +85,11 @@ final class MembershipService {
     @GuardedBy("batchSchedulerLock")
     private final LinkedBlockingQueue<LinkUpdateMessage> sendQueue = new LinkedBlockingQueue<>();
     private final Lock batchSchedulerLock = new ReentrantLock();
-    private final ScheduledExecutorService scheduledExecutorService = Executors.newScheduledThreadPool(1);
+    private final ScheduledExecutorService scheduledExecutorService = Executors.newSingleThreadScheduledExecutor();
 
+    // Fields used by consensus protocol
+    private List<HostAndPort> proposalForCurrentConfiguration = Collections.emptyList();
+    private final Map<List<String>, AtomicInteger> votesPerProposal = new HashMap<>();
 
     static class Builder {
         private final MembershipView membershipView;
@@ -163,7 +168,7 @@ final class MembershipService {
                 // Return a list of monitors for the joiner to contact for phase 2 of the protocol
                 builder.addAllHosts(membershipView.getExpectedMonitorsOf(joiningHost)
                         .stream()
-                        .map(e -> ByteString.copyFromUtf8(e.toString()))
+                        .map(HostAndPort::toString)
                         .collect(Collectors.toList()));
             }
             responseObserver.onNext(builder.build());
@@ -218,11 +223,11 @@ final class MembershipService {
                     responseBuilder = responseBuilder.setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
                             .addAllHosts(configuration.hostAndPorts
                                     .stream()
-                                    .map(e -> ByteString.copyFromUtf8(e.toString()))
+                                    .map(HostAndPort::toString)
                                     .collect(Collectors.toList()))
                             .addAllIdentifiers(configuration.uuids
                                     .stream()
-                                    .map(e -> ByteString.copyFromUtf8(e.toString()))
+                                    .map(UUID::toString)
                                     .collect(Collectors.toList()));
                 } else {
                     responseBuilder = responseBuilder.setStatusCode(JoinStatusCode.CONFIG_CHANGED);
@@ -249,6 +254,12 @@ final class MembershipService {
     void processLinkUpdateMessage(final BatchedLinkUpdateMessage messageBatch) {
         executor.execute(() -> {
             Objects.requireNonNull(messageBatch);
+
+            // Unfortunate, but we already have a proposal for this round => we have initiated
+            // consensus and cannot go back on our proposal.
+            if (proposalForCurrentConfiguration.size() > 0) {
+                return;
+            }
 
             // We proceed in three parts. First, we collect the messages from the batch that
             // are valid and do not violate conditions of the ring. These are packed in to
@@ -315,8 +326,49 @@ final class MembershipService {
                 LOG.debug("Node {} has a proposal of size {}: {}", myAddr, proposal.size(), proposal);
 
                 // TODO: Initiate consensus here.
+                proposalForCurrentConfiguration = ImmutableList.copyOf(proposal);
+                final ConsensusProposal proposalMessage = ConsensusProposal.newBuilder()
+                                                                .setConfigurationId(currentConfigurationId)
+                                                                .addAllHosts(proposalForCurrentConfiguration
+                                                                        .stream()
+                                                                        .map(HostAndPort::toString)
+                                                                        .sorted()
+                                                                        .collect(Collectors.toList()))
+                                                                .setSender(myAddr.toString())
+                                                                .build();
+                executor.execute(() -> broadcaster.broadcast(membershipView.getRing(0), proposalMessage));
+            }
+        });
+    }
 
-                // TODO: for now, we just apply the proposal directly.
+
+    /**
+     * Receives proposal for the one-step consensus (essentially phase 2 of Fast Paxos).
+     *
+     * XXX: Implement recovery for the extremely rare possibility of conflicting proposals.
+     *
+     */
+    void processConsensusProposal(final ConsensusProposal proposalMessage) {
+        executor.execute(() -> {
+            final long currentConfigurationId = membershipView.getCurrentConfigurationId();
+            final long membershipSize = membershipView.getRing(0).size();
+
+            if (proposalMessage.getConfigurationId() != currentConfigurationId) {
+                LOG.trace("Configuration ID mismatch for proposal: current_config:{} proposal:{}", proposalMessage);
+                return;
+            }
+
+            final AtomicInteger proposalsReceived = votesPerProposal.computeIfAbsent(proposalMessage.getHostsList(),
+                                                                                (k) -> new AtomicInteger(0));
+            final int count = proposalsReceived.incrementAndGet();
+            final double F = ((double) membershipSize) / 3.0; // Fast Paxos resiliency.
+
+            if (count >= (membershipSize - F)) {
+                // We have a successful proposal. Consume it.
+                final List<HostAndPort> proposal = proposalMessage.getHostsList()
+                                                                  .stream()
+                                                                  .map(HostAndPort::fromString)
+                                                                  .collect(Collectors.toList());
                 for (final HostAndPort node : proposal) {
                     final boolean isPresent = membershipView.isHostPresent(node);
                     // If the node is already in the ring, remove it. Else, add it.
@@ -330,7 +382,10 @@ final class MembershipService {
                     }
                 }
 
+                // Clear data structures for the next round.
                 watermarkBuffer.clear();
+                proposalForCurrentConfiguration = Collections.emptyList();
+                votesPerProposal.clear();
 
                 // Inform LinkFailureDetector about membership change
                 linkFailureDetectorRunner.updateMembership(membershipView.getMonitoreesOf(myAddr));
@@ -347,11 +402,11 @@ final class MembershipService {
                         .setConfigurationId(configuration.getConfigurationId())
                         .addAllHosts(configuration.hostAndPorts
                                 .stream()
-                                .map(e -> ByteString.copyFromUtf8(e.toString()))
+                                .map(HostAndPort::toString)
                                 .collect(Collectors.toList()))
                         .addAllIdentifiers(configuration.uuids
                                 .stream()
-                                .map(e -> ByteString.copyFromUtf8(e.toString()))
+                                .map(UUID::toString)
                                 .collect(Collectors.toList()))
                         .build();
 
@@ -359,14 +414,14 @@ final class MembershipService {
                 for (final HostAndPort node: proposal) {
                     if (joinResponseCallbacks.containsKey(node)) {
                         joinResponseCallbacks.get(node).forEach(observer -> executor.execute(() -> {
-                            try {
-                                observer.onNext(response);
-                                observer.onCompleted();
-                            } catch (final StatusRuntimeException e) {
-                                LOG.error("StatusRuntimeException of type {} for response JoinPhase2Response to {}",
-                                          e.getStatus(), response.getSender());
+                                try {
+                                    observer.onNext(response);
+                                    observer.onCompleted();
+                                } catch (final StatusRuntimeException e) {
+                                    LOG.error("StatusRuntimeException of type {} for JoinPhase2Response to {}",
+                                            e.getStatus(), response.getSender());
+                                }
                             }
-                        }
                         ));
                         joinResponseCallbacks.remove(node);
                     }
@@ -375,9 +430,8 @@ final class MembershipService {
         });
     }
 
-
     /**
-     * Invoked by monitors of a node.
+     * Invoked by monitors of a node for failure detection.
      *
      */
     void processProbeMessage(final ProbeMessage probeMessage,

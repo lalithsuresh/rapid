@@ -24,14 +24,14 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.NavigableSet;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -45,15 +45,15 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 final class MembershipView {
     private final int K;
     private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
-    @GuardedBy("rwLock") private final ConcurrentHashMap<Integer, NavigableSet<HostAndPort>> rings;
-    @GuardedBy("rwLock") private final Set<UUID> identifiersSeen = new ConcurrentSkipListSet<>();
+    @GuardedBy("rwLock") private final Map<Integer, NavigableSet<HostAndPort>> rings;
+    @GuardedBy("rwLock") private final Set<UUID> identifiersSeen = new TreeSet<>();
     @GuardedBy("rwLock") private long currentConfigurationId = -1;
     @GuardedBy("rwLock") private boolean shouldUpdateConfigurationId = true;
 
     MembershipView(final int K) {
         assert K > 0;
         this.K = K;
-        this.rings = new ConcurrentHashMap<>(K);
+        this.rings = new HashMap<>(K);
         for (int k = 0; k < K; k++) {
             this.rings.put(k, new TreeSet<>(new AddressComparator(k)));
         }
@@ -66,7 +66,7 @@ final class MembershipView {
                    final Collection<HostAndPort> hostAndPorts) {
         assert K > 0;
         this.K = K;
-        this.rings = new ConcurrentHashMap<>(K);
+        this.rings = new HashMap<>(K);
         for (int k = 0; k < K; k++) {
             this.rings.put(k, new TreeSet<>(new AddressComparator(k)));
             this.rings.get(k).addAll(hostAndPorts);

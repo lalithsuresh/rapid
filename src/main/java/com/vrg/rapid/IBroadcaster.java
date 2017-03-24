@@ -15,6 +15,7 @@ package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
+import com.vrg.rapid.pb.ConsensusProposal;
 
 import java.util.List;
 
@@ -23,4 +24,6 @@ import java.util.List;
  */
 interface IBroadcaster {
     void broadcast(List<HostAndPort> recipients, BatchedLinkUpdateMessage msg);
+
+    void broadcast(List<HostAndPort> recipients, ConsensusProposal msg);
 }

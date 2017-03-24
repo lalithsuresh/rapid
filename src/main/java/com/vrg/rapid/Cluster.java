@@ -110,7 +110,7 @@ public final class Cluster {
 
             // We have the list of monitors. Now contact them as part of phase 2.
             final List<HostAndPort> monitorList = joinPhaseOneResult.getHostsList().stream()
-                    .map(e -> HostAndPort.fromString(e.toStringUtf8()))
+                    .map(HostAndPort::fromString)
                     .collect(Collectors.toList());
 
             int ringNumber = 0;
@@ -144,10 +144,10 @@ public final class Cluster {
                         // Safe to proceed. Extract the list of hosts and identifiers from the message,
                         // assemble a MembershipService object and start an RpcServer.
                         final List<HostAndPort> allHosts = response.getHostsList().stream()
-                                .map(e -> HostAndPort.fromString(e.toStringUtf8()))
+                                .map(HostAndPort::fromString)
                                 .collect(Collectors.toList());
                         final List<UUID> identifiersSeen = response.getIdentifiersList().stream()
-                                .map(e -> UUID.fromString(e.toStringUtf8()))
+                                .map(UUID::fromString)
                                 .collect(Collectors.toList());
 
                         assert identifiersSeen.size() > 0;

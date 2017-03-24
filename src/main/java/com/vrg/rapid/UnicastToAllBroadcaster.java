@@ -17,6 +17,8 @@ import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
+import com.vrg.rapid.pb.ConsensusProposal;
+import com.vrg.rapid.pb.ConsensusProposalResponse;
 import com.vrg.rapid.pb.Response;
 import io.grpc.StatusRuntimeException;
 import org.slf4j.Logger;
@@ -39,10 +41,25 @@ final class UnicastToAllBroadcaster implements IBroadcaster {
     }
 
     @Override
-    public void broadcast(final List<HostAndPort> recipients, final BatchedLinkUpdateMessage msg) {
+    public void broadcast(final List<HostAndPort> recipients,
+                          final BatchedLinkUpdateMessage msg) {
         final List<ListenableFuture<Response>> list = new ArrayList<>();
         for (final HostAndPort recipient: recipients) {
             list.add(rpcClient.sendLinkUpdateMessage(recipient, msg));
+        }
+
+        try {
+            Futures.successfulAsList(list).get();
+        } catch (final InterruptedException | ExecutionException | StatusRuntimeException e) {
+            LOG.error("Broadcast returned an error {}", recipients);
+        }
+    }
+
+    @Override
+    public void broadcast(final List<HostAndPort> recipients, final ConsensusProposal msg) {
+        final List<ListenableFuture<ConsensusProposalResponse>> list = new ArrayList<>();
+        for (final HostAndPort recipient: recipients) {
+            list.add(rpcClient.sendConsensusProposal(recipient, msg));
         }
 
         try {

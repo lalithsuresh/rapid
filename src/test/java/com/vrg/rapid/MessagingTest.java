@@ -149,7 +149,7 @@ public class MessagingTest {
 
         // Verify that the monitors retrieved from the seed are the same
         final List<HostAndPort> hostsAtClient = phaseOneResult.getHostsList().stream()
-                                            .map(e -> HostAndPort.fromString(e.toStringUtf8()))
+                                            .map(HostAndPort::fromString)
                                             .collect(Collectors.toList());
         final List<HostAndPort> monitorsOriginal = membershipView.getExpectedMonitorsOf(joinerAddr);
 
@@ -186,7 +186,7 @@ public class MessagingTest {
         // Verify that the hostnames retrieved at the joining peer
         // matches that of the seed node.
         final List<HostAndPort> monitorList = response.getHostsList().stream()
-                .map(e -> HostAndPort.fromString(e.toStringUtf8()))
+                .map(HostAndPort::fromString)
                 .collect(Collectors.toList());
 
         final Iterator<HostAndPort> iterJoiner = monitorList.iterator();
@@ -222,7 +222,7 @@ public class MessagingTest {
         // Verify that the hostnames retrieved at the joining peer
         // matches that of the seed node.
         final List<HostAndPort> monitorList = response.getHostsList().stream()
-                .map(e -> HostAndPort.fromString(e.toStringUtf8()))
+                .map(HostAndPort::fromString)
                 .collect(Collectors.toList());
 
         final Iterator<HostAndPort> iterJoiner = monitorList.iterator();

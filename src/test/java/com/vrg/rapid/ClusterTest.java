@@ -148,33 +148,35 @@ public class ClusterTest {
     }
 
     /**
-     * This test starts with a 3 node cluster. We then fail a single node to see if the monitoring mechanism
-     * identifies the offending node.
+     * This test starts with a 4 node cluster. We then fail a single node to see if the monitoring mechanism
+     * identifies the failing node and arrives at a decision to remove it.
      */
     @Test
-    public void oneFailureOutOfThreeNodes() throws IOException, InterruptedException {
+    public void oneFailureOutOfFourNodes() throws IOException, InterruptedException {
         MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 1000;
         MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
 
+        final int numNodes = 4;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
-        createCluster(3, seedHost);
-        verifyClusterSize(3, seedHost);
+        createCluster(numNodes, seedHost);
+        verifyClusterSize(numNodes, seedHost);
         final HostAndPort nodeToFail = HostAndPort.fromParts("127.0.0.1", basePort + 2);
         failSomeNodes(Collections.singletonList(nodeToFail));
-        waitAndVerify(2, 10, 1000, seedHost);
+        waitAndVerify(numNodes - 1, 10, 1000, seedHost);
     }
 
     /**
-     * This test starts with a 50 node cluster. We then fail 20 nodes to see if the monitoring mechanism
-     * identifies the crashed nodes.
+     * This test starts with a 50 node cluster. We then fail 16 nodes to see if the monitoring mechanism
+     * identifies the crashed nodes, and arrives at a decision.
+     *
      */
     @Test
-    public void twentyFailuresOutOfFiftyNodes() throws IOException, InterruptedException {
+    public void sixteenFailuresOutOfFiftyNodes() throws IOException, InterruptedException {
         MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 3000;
         MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
 
         final int numNodes = 50;
-        final int failingNodes = 20;
+        final int failingNodes = 16;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         createCluster(numNodes, seedHost);
         verifyClusterSize(numNodes, seedHost);

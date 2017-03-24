@@ -16,6 +16,8 @@ package com.vrg.rapid;
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
+import com.vrg.rapid.pb.ConsensusProposal;
+import com.vrg.rapid.pb.ConsensusProposalResponse;
 import com.vrg.rapid.pb.GossipMessage;
 import com.vrg.rapid.pb.GossipResponse;
 import com.vrg.rapid.pb.JoinMessage;
@@ -111,6 +113,13 @@ final class RpcClient {
 
         final MembershipServiceFutureStub stub = getFutureStub(remote);
         return stub.withDeadlineAfter(RPC_TIMEOUT_SECONDS * 5, TimeUnit.SECONDS).receiveJoinMessage(msg);
+    }
+
+    ListenableFuture<ConsensusProposalResponse> sendConsensusProposal(final HostAndPort remote,
+                                                                      final ConsensusProposal msg) {
+        Objects.requireNonNull(msg);
+        final MembershipServiceFutureStub stub = getFutureStub(remote);
+        return stub.withDeadlineAfter(RPC_TIMEOUT_SECONDS, TimeUnit.SECONDS).receiveConsensusProposal(msg);
     }
 
     ListenableFuture<Response> sendLinkUpdateMessage(final HostAndPort remote, final BatchedLinkUpdateMessage msg) {

@@ -10,6 +10,7 @@ service MembershipService {
   rpc receiveJoinMessage (JoinMessage) returns (JoinResponse) {}
   rpc receiveJoinPhase2Message (JoinMessage) returns (JoinResponse) {}
   rpc receiveLinkUpdateMessage (BatchedLinkUpdateMessage) returns (Response) {}
+  rpc receiveConsensusProposal (ConsensusProposal) returns (ConsensusProposalResponse) {}
   rpc gossip (GossipMessage) returns (GossipResponse) {}
   rpc receiveProbe (ProbeMessage) returns (ProbeResponse) {}
 }
@@ -31,8 +32,8 @@ message JoinResponse
    string sender = 1;
    JoinStatusCode statusCode = 2;
    int64 configurationId = 3;
-   repeated bytes hosts = 4;
-   repeated bytes identifiers = 5;
+   repeated string hosts = 4;
+   repeated string identifiers = 5;
 }
 
 enum JoinStatusCode {
@@ -70,13 +71,27 @@ message Response
 {
 }
 
+
+// ******* Fast Paxos Phase 2 messages *******
+
+message ConsensusProposal
+{
+    string sender = 1;
+    int64 configurationId = 2;
+    repeated string hosts = 3;
+}
+
+message ConsensusProposalResponse
+{
+}
+
 // ******* Gossip messages *******
 
 message GossipMessage
 {
     string messageId = 1;
     int32 ttl = 2;
-    repeated LinkUpdateMessage linkUpdateMessage = 3;
+    BatchedLinkUpdateMessage batchedMessages = 3;
 }
 
 message GossipResponse

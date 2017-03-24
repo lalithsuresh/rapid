@@ -15,6 +15,8 @@ package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
+import com.vrg.rapid.pb.ConsensusProposal;
+import com.vrg.rapid.pb.ConsensusProposalResponse;
 import com.vrg.rapid.pb.GossipMessage;
 import com.vrg.rapid.pb.GossipResponse;
 import com.vrg.rapid.pb.JoinMessage;
@@ -75,6 +77,18 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
         assert membershipService != null;
         membershipService.processLinkUpdateMessage(request);
         responseObserver.onNext(Response.getDefaultInstance());
+        responseObserver.onCompleted();
+    }
+
+    /**
+     * Defined in rapid.proto.
+     */
+    @Override
+    public void receiveConsensusProposal(final ConsensusProposal request,
+                                         final StreamObserver<ConsensusProposalResponse> responseObserver) {
+        assert membershipService != null;
+        membershipService.processConsensusProposal(request);
+        responseObserver.onNext(ConsensusProposalResponse.getDefaultInstance());
         responseObserver.onCompleted();
     }
 

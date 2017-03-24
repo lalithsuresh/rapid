@@ -317,7 +317,7 @@ public class MembershipViewTest {
         final HostAndPort joiningNode = HostAndPort.fromParts("127.0.0.1", serverPort + 1);
         assertEquals(K, mview.getExpectedMonitorsOf(joiningNode).size());
         assertEquals(1, ImmutableSet.copyOf(mview.getExpectedMonitorsOf(joiningNode)).size());
-        assertEquals(n,  mview.getExpectedMonitorsOf(joiningNode).toArray()[0]);
+        assertEquals(n, mview.getExpectedMonitorsOf(joiningNode).toArray()[0]);
     }
 
     /**
@@ -373,8 +373,7 @@ public class MembershipViewTest {
         // Same host, same ID
         try {
             mview.ringAdd(n2, id2);
-        }
-        catch (final Exception e) {
+        } catch (final Exception e) {
             numExceptions++;
         }
         assertEquals(1, numExceptions);
@@ -382,8 +381,7 @@ public class MembershipViewTest {
         // Same host, different ID
         try {
             mview.ringAdd(n2, UUID.randomUUID());
-        }
-        catch (final Exception e) {
+        } catch (final Exception e) {
             numExceptions++;
         }
         assertEquals(2, numExceptions);
@@ -392,8 +390,7 @@ public class MembershipViewTest {
         final HostAndPort n3 = HostAndPort.fromParts("127.0.0.1", 2);
         try {
             mview.ringAdd(n3, id2);
-        }
-        catch (final Exception e) {
+        } catch (final Exception e) {
             numExceptions++;
         }
         assertEquals(3, numExceptions);
@@ -401,8 +398,7 @@ public class MembershipViewTest {
         // different host, different ID
         try {
             mview.ringAdd(n3, UUID.randomUUID());
-        }
-        catch (final Exception e) {
+        } catch (final Exception e) {
             numExceptions++;
         }
         // Should not have triggered an exception
@@ -435,16 +431,14 @@ public class MembershipViewTest {
         // Same host, same ID
         try {
             mview.ringAdd(n2, id2);
-        }
-        catch (final Exception e) {
+        } catch (final Exception e) {
             fail();
         }
 
         // Node is removed from the ring
         try {
             mview.ringDelete(n2);
-        }
-        catch (final Exception e) {
+        } catch (final Exception e) {
             fail();
         }
         assertEquals(1, mview.getRing(0).size());
@@ -453,8 +447,7 @@ public class MembershipViewTest {
         // Node rejoins with id2
         try {
             mview.ringAdd(n2, id2);
-        }
-        catch (final Exception e) {
+        } catch (final Exception e) {
             numExceptions++;
         }
         assertEquals(1, numExceptions);
@@ -462,8 +455,7 @@ public class MembershipViewTest {
         // Re-attempt with new ID
         try {
             mview.ringAdd(n2, UUID.randomUUID());
-        }
-        catch (final Exception e) {
+        } catch (final Exception e) {
             fail();
         }
 
