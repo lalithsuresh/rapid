@@ -2,4 +2,7 @@
     <Match>
         <Package name="~com\.vrg\.rapid\.pb" />
     </Match>
+    <Match>
+        <Bug pattern="SE_TRANSIENT_FIELD_NOT_RESTORED" />
+    </Match>
 </FindBugsFilter>

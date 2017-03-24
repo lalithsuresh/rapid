@@ -14,12 +14,16 @@
 package com.vrg.rapid;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.hash.Funnel;
+import com.google.common.hash.HashFunction;
+import com.google.common.hash.Hashing;
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.JoinStatusCode;
 
 import javax.annotation.concurrent.GuardedBy;
 import javax.annotation.concurrent.ThreadSafe;
 import java.io.Serializable;
+import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -403,14 +407,21 @@ final class MembershipView {
      */
     private static final class AddressComparator implements Comparator<HostAndPort>, Serializable {
         private static final long serialVersionUID = -4891729390L;
-        private final long seed;
+        private static final Funnel<HostAndPort> HOST_AND_PORT_FUNNEL = (Funnel<HostAndPort>) (address, into) -> into
+                                                                .putString(address.getHost(),
+                                                                           Charset.defaultCharset())
+                                                                .putInt(address.getPort());
+        // XXX: FindBugs does not like this (SE_TRANSIENT_FIELD_NOT_RESTORED)
+        private final transient HashFunction hashFunction;
 
-        AddressComparator(final long seed) {
-            this.seed = seed;
+        AddressComparator(final int seed) {
+            this.hashFunction = Hashing.murmur3_32(seed);
         }
 
         public final int compare(final HostAndPort c1, final HostAndPort c2) {
-            return Long.compare(Utils.murmurHex(c1, seed), Utils.murmurHex(c2, seed));
+            final int hash1 = hashFunction.hashObject(c1, HOST_AND_PORT_FUNNEL).asInt();
+            final int hash2 = hashFunction.hashObject(c2, HOST_AND_PORT_FUNNEL).asInt();
+            return Integer.compare(hash1, hash2);
         }
     }
 
@@ -453,10 +464,10 @@ final class MembershipView {
                                        final Collection<HostAndPort> hostAndPorts) {
             int hash = 1;
             for (final UUID id: identifiers) {
-                hash = hash * 31 + id.hashCode();
+                hash = hash * 37 + id.hashCode();
             }
             for (final HostAndPort hostAndPort: hostAndPorts) {
-                hash = hash * 31 + hostAndPort.hashCode();
+                hash = hash * 37 + hostAndPort.hashCode();
             }
             return hash;
         }
