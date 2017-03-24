@@ -15,6 +15,7 @@ package com.vrg.rapid;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
+import com.vrg.rapid.pb.LinkStatus;
 import com.vrg.rapid.pb.LinkUpdateMessage;
 
 import javax.annotation.concurrent.GuardedBy;
@@ -43,6 +44,7 @@ final class WatermarkBuffer {
     @GuardedBy("lock") private final Map<HostAndPort, Map<Integer, HostAndPort>> reportsPerHost;
     @GuardedBy("lock") private final ArrayList<HostAndPort> proposal = new ArrayList<>();
     @GuardedBy("lock") private final Set<HostAndPort> preProposal = new HashSet<>();
+    @GuardedBy("lock") private boolean seenLinkDownEvents = false;
     private final Object lock = new Object();
 
     WatermarkBuffer(final int K, final int H, final int L) {
@@ -75,6 +77,10 @@ final class WatermarkBuffer {
         assert msg.getRingNumber() <= K;
 
         synchronized (lock) {
+            if (msg.getLinkStatus() == LinkStatus.DOWN) {
+                seenLinkDownEvents = true;
+            }
+
             final HostAndPort linkDst = HostAndPort.fromString(msg.getLinkDst());
             final Map<Integer, HostAndPort> reportsForHost = reportsPerHost.computeIfAbsent(
                                                                  linkDst,
@@ -121,23 +127,25 @@ final class WatermarkBuffer {
     }
 
     /**
-     * Invalidates links between nodes that are failing or have failed.
+     * Invalidates links between nodes that are failing or have failed. This step may be skipped safely
+     * when there are no failing nodes.
      *
      * @param view MembershipshipView object required to find monitor-monitoree relationships between failing nodes.
      * @return A list of hosts representing a view change proposal.
      */
     List<HostAndPort> invalidateFailingLinks(final MembershipView view) {
         synchronized (lock) {
+            // Link invalidation is only required when we have failing nodes
+            if (!seenLinkDownEvents) {
+                return Collections.emptyList();
+            }
+
             final List<HostAndPort> proposalsToReturn = new ArrayList<>();
             for (final HostAndPort nodeInFlux: preProposal) {
-
-                if (!view.isHostPresent(nodeInFlux)) {
-                    // This is a joining node, not a leaving one
-                    continue;
-                }
-
-                final List<HostAndPort> monitors = view.getMonitorsOf(nodeInFlux);
-                // If monitors of the host are past H but host itself isn't, then speed up the process
+                final List<HostAndPort> monitors = view.isHostPresent(nodeInFlux)
+                                                    ? view.getMonitorsOf(nodeInFlux)          // For failing nodes
+                                                    : view.getExpectedMonitorsOf(nodeInFlux); // For joining nodes
+                // Account for all links between nodes that are past the L threshold.
                 int ringNumber = 0;
                 for (final HostAndPort monitor : monitors) {
                     if (proposal.contains(monitor) || preProposal.contains(monitor)) {
@@ -167,6 +175,7 @@ final class WatermarkBuffer {
             updatesInProgress.set(0);
             proposalCount.set(0);
             preProposal.clear();
+            seenLinkDownEvents = false;
         }
     }
 }

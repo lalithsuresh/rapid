@@ -584,12 +584,8 @@ final class MembershipService {
 
                         // A link has failed. Announce a LinkStatus.DOWN event.
                         executor.execute(() -> {
-
-                            if (LOG.isDebugEnabled()) {
-                                LOG.debug("Announcing LinkFail event {monitoree:{}, monitor:{}, config:{}, size:{}}",
+                            LOG.debug("Announcing LinkFail event {monitoree:{}, monitor:{}, config:{}, size:{}}",
                                         monitoree, myAddr, configurationId, size);
-                            }
-
                             // Note: setUuid is deliberately missing here because it does not affect leaves.
                             final LinkUpdateMessage.Builder msgTemplate = LinkUpdateMessage.newBuilder()
                                     .setLinkSrc(myAddr.toString())

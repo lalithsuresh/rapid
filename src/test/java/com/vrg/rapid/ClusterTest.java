@@ -42,6 +42,7 @@ import static org.junit.Assert.fail;
 public class ClusterTest {
     private final ConcurrentHashMap<HostAndPort, Cluster> instances = new ConcurrentHashMap<>();
     private final int basePort = 1234;
+    private final AtomicInteger portCounter = new AtomicInteger(basePort);
 
     static {
         // gRPC INFO logs clutter the test output
@@ -166,6 +167,27 @@ public class ClusterTest {
     }
 
     /**
+     * This test starts with a 30 node cluster, then fails 5 nodes while an additional 10 join.
+     */
+    @Test
+    public void concurrentNodeJoinsAndFails() throws IOException, InterruptedException {
+        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 3000;
+        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
+
+        final int numNodes = 30;
+        final int failingNodes = 5;
+        final int phaseTwojoiners = 10;
+        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
+        createCluster(numNodes, seedHost);
+        verifyClusterSize(numNodes, seedHost);
+        failSomeNodes(IntStream.range(basePort + 2, basePort + 2 + failingNodes)
+                               .mapToObj(i -> HostAndPort.fromParts("127.0.0.1", i))
+                               .collect(Collectors.toList()));
+        extendCluster(phaseTwojoiners, seedHost);
+        waitAndVerify(numNodes - failingNodes + phaseTwojoiners, 20, 1000, seedHost);
+    }
+
+    /**
      * This test starts with a 50 node cluster. We then fail 16 nodes to see if the monitoring mechanism
      * identifies the crashed nodes, and arrives at a decision.
      *
@@ -181,8 +203,8 @@ public class ClusterTest {
         createCluster(numNodes, seedHost);
         verifyClusterSize(numNodes, seedHost);
         failSomeNodes(IntStream.range(basePort + 2, basePort + 2 + failingNodes)
-                               .mapToObj(i -> HostAndPort.fromParts("127.0.0.1", i))
-                               .collect(Collectors.toList()));
+                .mapToObj(i -> HostAndPort.fromParts("127.0.0.1", i))
+                .collect(Collectors.toList()));
         waitAndVerify(numNodes - failingNodes, 20, 1000, seedHost);
     }
 
@@ -215,17 +237,14 @@ public class ClusterTest {
      */
     private void extendCluster(final int numNodes, final HostAndPort seedHost) throws IOException {
         final ExecutorService executor = Executors.newWorkStealingPool(numNodes);
-        final int clusterSizeBefore = instances.size();
         try {
-            final AtomicInteger nodeCounter = new AtomicInteger(0);
             final CountDownLatch latch = new CountDownLatch(numNodes);
 
             for (int i = 0; i < numNodes; i++) {
                 executor.execute(() -> {
                     try {
                         final HostAndPort joiningHost =
-                                HostAndPort.fromParts("127.0.0.1",
-                                        basePort + clusterSizeBefore + nodeCounter.incrementAndGet());
+                                HostAndPort.fromParts("127.0.0.1", portCounter.incrementAndGet());
                         final Cluster nonSeed = Cluster.join(seedHost, joiningHost);
                         instances.put(joiningHost, nonSeed);
                     } catch (final Exception e) {
