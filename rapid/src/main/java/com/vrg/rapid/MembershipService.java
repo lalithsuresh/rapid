@@ -464,6 +464,7 @@ final class MembershipService {
     void shutdown() throws InterruptedException {
         scheduledExecutorService.shutdown();
         scheduledExecutorService.awaitTermination(1, TimeUnit.SECONDS);
+        rpcClient.shutdown();
     }
 
     /**

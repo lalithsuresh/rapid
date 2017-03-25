@@ -75,7 +75,7 @@ final class RpcClient {
         Objects.requireNonNull(remote);
         Objects.requireNonNull(probeMessage);
 
-        final MembershipServiceFutureStub stub = getFutureStub(remote);
+        final MembershipServiceFutureStub stub = channelMap.computeIfAbsent(remote, this::getFutureStub);
         return stub.receiveProbe(probeMessage);
     }
 
@@ -107,7 +107,7 @@ final class RpcClient {
                 .setRingNumber(ringNumber)
                 .setConfigurationId(configurationId)
                 .build();
-        final MembershipServiceFutureStub stub = getFutureStub(remote);
+        final MembershipServiceFutureStub stub = channelMap.computeIfAbsent(remote, this::getFutureStub);
         return stub.withDeadlineAfter(RPC_TIMEOUT_SECONDS * 20, TimeUnit.SECONDS).receiveJoinPhase2Message(msg);
     }
 
@@ -115,20 +115,20 @@ final class RpcClient {
         Objects.requireNonNull(msg);
         Objects.requireNonNull(remote);
 
-        final MembershipServiceFutureStub stub = getFutureStub(remote);
+        final MembershipServiceFutureStub stub = channelMap.computeIfAbsent(remote, this::getFutureStub);
         return stub.withDeadlineAfter(RPC_TIMEOUT_SECONDS * 5, TimeUnit.SECONDS).receiveJoinMessage(msg);
     }
 
     ListenableFuture<ConsensusProposalResponse> sendConsensusProposal(final HostAndPort remote,
                                                                       final ConsensusProposal msg) {
         Objects.requireNonNull(msg);
-        final MembershipServiceFutureStub stub = getFutureStub(remote);
+        final MembershipServiceFutureStub stub = channelMap.computeIfAbsent(remote, this::getFutureStub);
         return stub.withDeadlineAfter(RPC_TIMEOUT_SECONDS, TimeUnit.SECONDS).receiveConsensusProposal(msg);
     }
 
     ListenableFuture<Response> sendLinkUpdateMessage(final HostAndPort remote, final BatchedLinkUpdateMessage msg) {
         Objects.requireNonNull(msg);
-        final MembershipServiceFutureStub stub = getFutureStub(remote);
+        final MembershipServiceFutureStub stub = channelMap.computeIfAbsent(remote, this::getFutureStub);
         return stub.withDeadlineAfter(RPC_TIMEOUT_SECONDS, TimeUnit.SECONDS).receiveLinkUpdateMessage(msg);
     }
 
@@ -141,7 +141,7 @@ final class RpcClient {
         Objects.requireNonNull(dst);
         Objects.requireNonNull(status);
 
-        final MembershipServiceFutureStub stub = getFutureStub(remote);
+        final MembershipServiceFutureStub stub = channelMap.computeIfAbsent(remote, this::getFutureStub);
 
         final LinkUpdateMessage msg = LinkUpdateMessage.newBuilder()
                                             .setLinkSrc(src.toString())
@@ -164,15 +164,15 @@ final class RpcClient {
         }
 
         if (USE_IN_PROCESS_CHANNEL) {
-           channel = InProcessChannelBuilder
-                    .forName(remote.toString())
+            channel = InProcessChannelBuilder
+                     .forName(remote.toString())
+                     .usePlaintext(true)
+                     .build();
+        } else {
+            channel = NettyChannelBuilder
+                     .forAddress(remote.getHost(), remote.getPort())
                     .usePlaintext(true)
                     .build();
-        } else {
-           channel = NettyChannelBuilder
-                   .forAddress(remote.getHost(), remote.getPort())
-                   .usePlaintext(true)
-                   .build();
         }
 
         return MembershipServiceGrpc.newFutureStub(channel);
@@ -180,6 +180,13 @@ final class RpcClient {
 
     void updateLongLivedConnections(final Set<HostAndPort> nodeSet) {
         channelMap.clear();
+        createLongLivedConnections(nodeSet);
+    }
+
+    void createLongLivedConnections(final Set<HostAndPort> nodeSet) {
         nodeSet.forEach(e -> channelMap.computeIfAbsent(e, this::getFutureStub));
+    }
+
+    void shutdown() {
     }
 }

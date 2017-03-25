@@ -14,6 +14,7 @@
 package com.vrg.rapid;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
@@ -74,7 +75,7 @@ public final class Cluster {
         final RpcClient joinerClient = new RpcClient(listenAddress);
         server.startServer();
         for (int attempt = 0; attempt < RETRIES; attempt++) {
-
+            joinerClient.createLongLivedConnections(ImmutableSet.of(seedAddress));
             // First, get the configuration ID and the monitors to contact from the seed node.
             final JoinResponse joinPhaseOneResult;
             try {

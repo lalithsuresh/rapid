@@ -9,6 +9,8 @@ import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 
 import java.io.IOException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Standalone Rapid Cluster Daemon
@@ -24,18 +26,23 @@ public class RapidStandalone
 
         final CommandLineParser parser = new DefaultParser();
         final CommandLine cmd = parser.parse(options, args);
+        Logger.getLogger("io.grpc").setLevel(Level.WARNING);
 
         final HostAndPort listenAddress = HostAndPort.fromString(cmd.getOptionValue("listenAddress"));
         final HostAndPort seedAddress = HostAndPort.fromString(cmd.getOptionValue("seedAddress"));
+        final Cluster cluster;
 
         if (listenAddress.equals(seedAddress)) {
             // Start as a seed node
-            Cluster.start(listenAddress);
+            cluster = Cluster.start(listenAddress);
         }
         else {
-            Cluster.join(seedAddress, listenAddress);
+            cluster = Cluster.join(seedAddress, listenAddress);
         }
 
-        Thread.currentThread().join();
+        while (true) {
+            System.out.println(cluster.getMemberlist().size());
+            Thread.sleep(5000);
+        }
     }
 }
