@@ -36,6 +36,7 @@ import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
+import javax.annotation.concurrent.NotThreadSafe;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -61,7 +62,12 @@ import java.util.stream.Collectors;
 
 /**
  * Membership server class that implements the Rapid protocol.
+ *
+ * Note: This class is not thread-safe yet. RpcServer.start() uses a single threaded executor during the server
+ * initialization to make sure that only a single thread runs the process* methods.
+ *
  */
+@NotThreadSafe
 final class MembershipService {
     private static final Logger LOG = LoggerFactory.getLogger(MembershipService.class);
     private static final int BATCHING_WINDOW_IN_MS = 100;
@@ -75,7 +81,7 @@ final class MembershipService {
     private final Map<HostAndPort, BlockingQueue<StreamObserver<JoinResponse>>> joinResponseCallbacks;
     private final Map<HostAndPort, UUID> joinerUuid = new HashMap<>(); // XXX: Not being cleared.
     private final List<Set<HostAndPort>> logProposalList = new ArrayList<>();
-    private final ExecutorService executor = Executors.newSingleThreadScheduledExecutor();
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final LinkFailureDetectorRunner linkFailureDetectorRunner;
     private final RpcClient rpcClient;
 
@@ -153,27 +159,25 @@ final class MembershipService {
      */
     void processJoinMessage(final JoinMessage joinMessage,
                             final StreamObserver<JoinResponse> responseObserver) {
-        executor.execute(() -> {
-            final HostAndPort joiningHost = HostAndPort.fromString(joinMessage.getSender());
-            final UUID uuid = UUID.fromString(joinMessage.getUuid());
-            final JoinStatusCode statusCode = membershipView.isSafeToJoin(joiningHost, uuid);
-            final JoinResponse.Builder builder = JoinResponse.newBuilder()
-                    .setSender(this.myAddr.toString())
-                    .setConfigurationId(membershipView.getCurrentConfigurationId())
-                    .setStatusCode(statusCode);
-            LOG.trace("Join at seed for {seed:{}, sender:{}, config:{}, size:{}}",
-                    myAddr, joinMessage.getSender(),
-                    membershipView.getCurrentConfigurationId(), membershipView.getRing(0).size());
-            if (statusCode.equals(JoinStatusCode.SAFE_TO_JOIN)) {
-                // Return a list of monitors for the joiner to contact for phase 2 of the protocol
-                builder.addAllHosts(membershipView.getExpectedMonitorsOf(joiningHost)
-                        .stream()
-                        .map(HostAndPort::toString)
-                        .collect(Collectors.toList()));
-            }
-            responseObserver.onNext(builder.build());
-            responseObserver.onCompleted();
-        });
+        final HostAndPort joiningHost = HostAndPort.fromString(joinMessage.getSender());
+        final UUID uuid = UUID.fromString(joinMessage.getUuid());
+        final JoinStatusCode statusCode = membershipView.isSafeToJoin(joiningHost, uuid);
+        final JoinResponse.Builder builder = JoinResponse.newBuilder()
+                .setSender(this.myAddr.toString())
+                .setConfigurationId(membershipView.getCurrentConfigurationId())
+                .setStatusCode(statusCode);
+        LOG.trace("Join at seed for {seed:{}, sender:{}, config:{}, size:{}}",
+                myAddr, joinMessage.getSender(),
+                membershipView.getCurrentConfigurationId(), membershipView.getRing(0).size());
+        if (statusCode.equals(JoinStatusCode.SAFE_TO_JOIN)) {
+            // Return a list of monitors for the joiner to contact for phase 2 of the protocol
+            builder.addAllHosts(membershipView.getExpectedMonitorsOf(joiningHost)
+                    .stream()
+                    .map(HostAndPort::toString)
+                    .collect(Collectors.toList()));
+        }
+        responseObserver.onNext(builder.build());
+        responseObserver.onCompleted();
     }
 
     /**
@@ -184,62 +188,60 @@ final class MembershipService {
      */
     void processJoinPhaseTwoMessage(final JoinMessage joinMessage,
                                     final StreamObserver<JoinResponse> responseObserver) {
-        executor.execute(() -> {
-            final long currentConfiguration = membershipView.getCurrentConfigurationId();
-            if (currentConfiguration == joinMessage.getConfigurationId()) {
-                LOG.trace("Enqueuing SAFE_TO_JOIN for {sender:{}, monitor:{}, config:{}, size:{}}",
-                        joinMessage.getSender(), myAddr,
-                        currentConfiguration, membershipView.getRing(0).size());
+        final long currentConfiguration = membershipView.getCurrentConfigurationId();
+        if (currentConfiguration == joinMessage.getConfigurationId()) {
+            LOG.trace("Enqueuing SAFE_TO_JOIN for {sender:{}, monitor:{}, config:{}, size:{}}",
+                    joinMessage.getSender(), myAddr,
+                    currentConfiguration, membershipView.getRing(0).size());
 
-                final LinkUpdateMessage msg = LinkUpdateMessage.newBuilder()
-                        .setLinkSrc(this.myAddr.toString())
-                        .setLinkDst(joinMessage.getSender())
-                        .setLinkStatus(LinkStatus.UP)
-                        .setConfigurationId(joinMessage.getConfigurationId())
-                        .setUuid(joinMessage.getUuid())
-                        .setRingNumber(joinMessage.getRingNumber())
-                        .build();
+            final LinkUpdateMessage msg = LinkUpdateMessage.newBuilder()
+                    .setLinkSrc(this.myAddr.toString())
+                    .setLinkDst(joinMessage.getSender())
+                    .setLinkStatus(LinkStatus.UP)
+                    .setConfigurationId(joinMessage.getConfigurationId())
+                    .setUuid(joinMessage.getUuid())
+                    .setRingNumber(joinMessage.getRingNumber())
+                    .build();
 
-                joinResponseCallbacks.computeIfAbsent(HostAndPort.fromString(joinMessage.getSender()),
-                        (k) -> new LinkedBlockingQueue<>())
-                        .add(responseObserver);
-                enqueueLinkUpdateMessage(msg);
+            joinResponseCallbacks.computeIfAbsent(HostAndPort.fromString(joinMessage.getSender()),
+                    (k) -> new LinkedBlockingQueue<>())
+                    .add(responseObserver);
+            enqueueLinkUpdateMessage(msg);
+        } else {
+            // This handles the corner case where the configuration changed between phase 1 and phase 2
+            // of the joining node's bootstrap. It should attempt to rejoin the network.
+            final MembershipView.Configuration configuration = membershipView.getConfiguration();
+
+            JoinResponse.Builder responseBuilder = JoinResponse.newBuilder()
+                    .setSender(this.myAddr.toString())
+                    .setConfigurationId(configuration.getConfigurationId());
+
+            if (membershipView.isHostPresent(HostAndPort.fromString(joinMessage.getSender()))
+                    && membershipView.isIdentifierPresent(UUID.fromString(joinMessage.getUuid()))) {
+
+                // Race condition where a monitor already crossed H messages for the joiner and changed
+                // the configuration, but the JoinPhase2 messages show up at the monitor
+                // after it has already added the joiner. In this case, we simply
+                // tell the sender that they're safe to join.
+                responseBuilder = responseBuilder.setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
+                        .addAllHosts(configuration.hostAndPorts
+                                .stream()
+                                .map(HostAndPort::toString)
+                                .collect(Collectors.toList()))
+                        .addAllIdentifiers(configuration.uuids
+                                .stream()
+                                .map(UUID::toString)
+                                .collect(Collectors.toList()));
             } else {
-                // This handles the corner case where the configuration changed between phase 1 and phase 2
-                // of the joining node's bootstrap. It should attempt to rejoin the network.
-                final MembershipView.Configuration configuration = membershipView.getConfiguration();
-
-                JoinResponse.Builder responseBuilder = JoinResponse.newBuilder()
-                        .setSender(this.myAddr.toString())
-                        .setConfigurationId(configuration.getConfigurationId());
-
-                if (membershipView.isHostPresent(HostAndPort.fromString(joinMessage.getSender()))
-                        && membershipView.isIdentifierPresent(UUID.fromString(joinMessage.getUuid()))) {
-
-                    // Race condition where a monitor already crossed H messages for the joiner and changed
-                    // the configuration, but the JoinPhase2 messages show up at the monitor
-                    // after it has already added the joiner. In this case, we simply
-                    // tell the sender that they're safe to join.
-                    responseBuilder = responseBuilder.setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
-                            .addAllHosts(configuration.hostAndPorts
-                                    .stream()
-                                    .map(HostAndPort::toString)
-                                    .collect(Collectors.toList()))
-                            .addAllIdentifiers(configuration.uuids
-                                    .stream()
-                                    .map(UUID::toString)
-                                    .collect(Collectors.toList()));
-                } else {
-                    responseBuilder = responseBuilder.setStatusCode(JoinStatusCode.CONFIG_CHANGED);
-                    LOG.trace("Returning CONFIG_CHANGED for {sender:{}, monitor:{}, config:{}, size:{}}",
-                            joinMessage.getSender(), myAddr,
-                            configuration.getConfigurationId(), configuration.hostAndPorts.size());
-                }
-
-                responseObserver.onNext(responseBuilder.build()); // new config
-                responseObserver.onCompleted();
+                responseBuilder = responseBuilder.setStatusCode(JoinStatusCode.CONFIG_CHANGED);
+                LOG.trace("Returning CONFIG_CHANGED for {sender:{}, monitor:{}, config:{}, size:{}}",
+                        joinMessage.getSender(), myAddr,
+                        configuration.getConfigurationId(), configuration.hostAndPorts.size());
             }
-        });
+
+            responseObserver.onNext(responseBuilder.build()); // new config
+            responseObserver.onCompleted();
+        }
     }
 
 
@@ -251,94 +253,92 @@ final class MembershipService {
      * Link update messages that do not affect an ongoing proposal
      * needs to be dropped.
      */
-    void processLinkUpdateMessage(final BatchedLinkUpdateMessage messageBatch) {
-        executor.execute(() -> {
-            Objects.requireNonNull(messageBatch);
+    synchronized void processLinkUpdateMessage(final BatchedLinkUpdateMessage messageBatch) {
+        Objects.requireNonNull(messageBatch);
 
-            // Unfortunate, but we already have a proposal for this round => we have initiated
-            // consensus and cannot go back on our proposal.
-            if (proposalForCurrentConfiguration.size() > 0) {
-                return;
+        // Unfortunate, but we already have a proposal for this round => we have initiated
+        // consensus and cannot go back on our proposal.
+        if (proposalForCurrentConfiguration.size() > 0) {
+            return;
+        }
+
+        // We proceed in three parts. First, we collect the messages from the batch that
+        // are valid and do not violate conditions of the ring. These are packed in to
+        // validMessages and processed later.
+        final List<LinkUpdateMessage> validMessages = new ArrayList<>(messageBatch.getMessagesList().size());
+        final long currentConfigurationId = membershipView.getCurrentConfigurationId();
+        final int membershipSize = membershipView.getRing(0).size();
+
+        for (final LinkUpdateMessage request: messageBatch.getMessagesList()) {
+            final HostAndPort destination = HostAndPort.fromString(request.getLinkDst());
+            LOG.trace("LinkUpdateMessage received {sender:{}, receiver:{}, config:{}, size:{}, status:{}}",
+                    messageBatch.getSender(), myAddr,
+                    request.getConfigurationId(),
+                    membershipSize,
+                    request.getLinkStatus());
+
+            if (currentConfigurationId != request.getConfigurationId()) {
+                LOG.trace("LinkUpdateMessage for configuration {} received during configuration {}",
+                        request.getConfigurationId(), currentConfigurationId);
+                continue;
             }
 
-            // We proceed in three parts. First, we collect the messages from the batch that
-            // are valid and do not violate conditions of the ring. These are packed in to
-            // validMessages and processed later.
-            final List<LinkUpdateMessage> validMessages = new ArrayList<>(messageBatch.getMessagesList().size());
-            final long currentConfigurationId = membershipView.getCurrentConfigurationId();
-            final int membershipSize = membershipView.getRing(0).size();
-
-            for (final LinkUpdateMessage request: messageBatch.getMessagesList()) {
-                final HostAndPort destination = HostAndPort.fromString(request.getLinkDst());
-                LOG.trace("LinkUpdateMessage received {sender:{}, receiver:{}, config:{}, size:{}, status:{}}",
-                        messageBatch.getSender(), myAddr,
-                        request.getConfigurationId(),
-                        membershipSize,
-                        request.getLinkStatus());
-
-                if (currentConfigurationId != request.getConfigurationId()) {
-                    LOG.trace("LinkUpdateMessage for configuration {} received during configuration {}",
-                            request.getConfigurationId(), currentConfigurationId);
-                    continue;
-                }
-
-                // The invariant we want to maintain is that a node can only go into the
-                // membership set once and leave it once.
-                if (request.getLinkStatus().equals(LinkStatus.UP)
-                        && membershipView.isHostPresent(destination)) {
-                    LOG.trace("LinkUpdateMessage with status UP received for node {} already in configuration {} ",
-                            request.getLinkDst(), currentConfigurationId);
-                    continue;
-                }
-                if (request.getLinkStatus().equals(LinkStatus.DOWN)
-                        && !membershipView.isHostPresent(destination)) {
-                    LOG.trace("LinkUpdateMessage with status DOWN received for node {} already in configuration {} ",
-                            request.getLinkDst(), currentConfigurationId);
-                    continue;
-                }
-
-                if (request.getLinkStatus() == LinkStatus.UP) {
-                    joinerUuid.put(destination, UUID.fromString(request.getUuid()));
-                }
-                validMessages.add(request);
+            // The invariant we want to maintain is that a node can only go into the
+            // membership set once and leave it once.
+            if (request.getLinkStatus().equals(LinkStatus.UP)
+                    && membershipView.isHostPresent(destination)) {
+                LOG.trace("LinkUpdateMessage with status UP received for node {} already in configuration {} ",
+                        request.getLinkDst(), currentConfigurationId);
+                continue;
+            }
+            if (request.getLinkStatus().equals(LinkStatus.DOWN)
+                    && !membershipView.isHostPresent(destination)) {
+                LOG.trace("LinkUpdateMessage with status DOWN received for node {} already in configuration {} ",
+                        request.getLinkDst(), currentConfigurationId);
+                continue;
             }
 
-            if (validMessages.size() == 0) {
-                LOG.trace("All BatchLinkUpdateMessages received at node {} where invalid!", myAddr);
-                return;
+            if (request.getLinkStatus() == LinkStatus.UP) {
+                joinerUuid.put(destination, UUID.fromString(request.getUuid()));
+            }
+            validMessages.add(request);
+        }
+
+        if (validMessages.size() == 0) {
+            LOG.trace("All BatchLinkUpdateMessages received at node {} where invalid!", myAddr);
+            return;
+        }
+
+        // We now batch apply all the valid messages into the watermark buffer, obtaining
+        // a single aggregate membership change proposal to apply against the view.
+        final Set<HostAndPort> proposal = new HashSet<>();
+        for (final LinkUpdateMessage msg : validMessages) {
+            proposal.addAll(proposedViewChange(msg));
+        }
+
+        proposal.addAll(watermarkBuffer.invalidateFailingLinks(membershipView));
+
+        // If we have a proposal for this stage, start an instance of consensus on it.
+        if (proposal.size() != 0) {
+            if (logProposals) {
+                logProposalList.add(proposal);
             }
 
-            // We now batch apply all the valid messages into the watermark buffer, obtaining
-            // a single aggregate membership change proposal to apply against the view.
-            final Set<HostAndPort> proposal = new HashSet<>();
-            for (final LinkUpdateMessage msg : validMessages) {
-                proposal.addAll(proposedViewChange(msg));
-            }
+            LOG.debug("Node {} has a proposal of size {}: {}", myAddr, proposal.size(), proposal);
 
-            proposal.addAll(watermarkBuffer.invalidateFailingLinks(membershipView));
-
-            // If we have a proposal for this stage, start an instance of consensus on it.
-            if (proposal.size() != 0) {
-                if (logProposals) {
-                    logProposalList.add(proposal);
-                }
-
-                LOG.debug("Node {} has a proposal of size {}: {}", myAddr, proposal.size(), proposal);
-
-                // TODO: Initiate consensus here.
-                proposalForCurrentConfiguration = ImmutableList.copyOf(proposal);
-                final ConsensusProposal proposalMessage = ConsensusProposal.newBuilder()
-                                                                .setConfigurationId(currentConfigurationId)
-                                                                .addAllHosts(proposalForCurrentConfiguration
-                                                                        .stream()
-                                                                        .map(HostAndPort::toString)
-                                                                        .sorted()
-                                                                        .collect(Collectors.toList()))
-                                                                .setSender(myAddr.toString())
-                                                                .build();
-                executor.execute(() -> broadcaster.broadcast(membershipView.getRing(0), proposalMessage));
-            }
-        });
+            // TODO: Initiate consensus here.
+            proposalForCurrentConfiguration = ImmutableList.copyOf(proposal);
+            final ConsensusProposal proposalMessage = ConsensusProposal.newBuilder()
+                                                            .setConfigurationId(currentConfigurationId)
+                                                            .addAllHosts(proposalForCurrentConfiguration
+                                                                    .stream()
+                                                                    .map(HostAndPort::toString)
+                                                                    .sorted()
+                                                                    .collect(Collectors.toList()))
+                                                            .setSender(myAddr.toString())
+                                                            .build();
+            executor.execute(() -> broadcaster.broadcast(membershipView.getRing(0), proposalMessage));
+        }
     }
 
 
@@ -349,85 +349,83 @@ final class MembershipService {
      *
      */
     void processConsensusProposal(final ConsensusProposal proposalMessage) {
-        executor.execute(() -> {
-            final long currentConfigurationId = membershipView.getCurrentConfigurationId();
-            final long membershipSize = membershipView.getRing(0).size();
+        final long currentConfigurationId = membershipView.getCurrentConfigurationId();
+        final long membershipSize = membershipView.getRing(0).size();
 
-            if (proposalMessage.getConfigurationId() != currentConfigurationId) {
-                LOG.trace("Configuration ID mismatch for proposal: current_config:{} proposal:{}", proposalMessage);
-                return;
+        if (proposalMessage.getConfigurationId() != currentConfigurationId) {
+            LOG.trace("Configuration ID mismatch for proposal: current_config:{} proposal:{}", proposalMessage);
+            return;
+        }
+
+        final AtomicInteger proposalsReceived = votesPerProposal.computeIfAbsent(proposalMessage.getHostsList(),
+                                                                            (k) -> new AtomicInteger(0));
+        final int count = proposalsReceived.incrementAndGet();
+        final double F = ((double) membershipSize) / 3.0; // Fast Paxos resiliency.
+
+        if (count >= (membershipSize - F)) {
+            // We have a successful proposal. Consume it.
+            final List<HostAndPort> proposal = proposalMessage.getHostsList()
+                                                              .stream()
+                                                              .map(HostAndPort::fromString)
+                                                              .collect(Collectors.toList());
+            for (final HostAndPort node : proposal) {
+                final boolean isPresent = membershipView.isHostPresent(node);
+                // If the node is already in the ring, remove it. Else, add it.
+                // XXX: Maybe there's a cleaner way to do this in the future because
+                // this ties us to just two states a node can be in.
+                if (isPresent) {
+                    membershipView.ringDelete(node);
+                }
+                else {
+                    membershipView.ringAdd(node, joinerUuid.get(node));
+                }
             }
 
-            final AtomicInteger proposalsReceived = votesPerProposal.computeIfAbsent(proposalMessage.getHostsList(),
-                                                                                (k) -> new AtomicInteger(0));
-            final int count = proposalsReceived.incrementAndGet();
-            final double F = ((double) membershipSize) / 3.0; // Fast Paxos resiliency.
+            // Clear data structures for the next round.
+            watermarkBuffer.clear();
+            proposalForCurrentConfiguration = Collections.emptyList();
+            votesPerProposal.clear();
 
-            if (count >= (membershipSize - F)) {
-                // We have a successful proposal. Consume it.
-                final List<HostAndPort> proposal = proposalMessage.getHostsList()
-                                                                  .stream()
-                                                                  .map(HostAndPort::fromString)
-                                                                  .collect(Collectors.toList());
-                for (final HostAndPort node : proposal) {
-                    final boolean isPresent = membershipView.isHostPresent(node);
-                    // If the node is already in the ring, remove it. Else, add it.
-                    // XXX: Maybe there's a cleaner way to do this in the future because
-                    // this ties us to just two states a node can be in.
-                    if (isPresent) {
-                        membershipView.ringDelete(node);
-                    }
-                    else {
-                        membershipView.ringAdd(node, joinerUuid.get(node));
-                    }
-                }
+            // Inform LinkFailureDetector about membership change
+            linkFailureDetectorRunner.updateMembership(membershipView.getMonitoreesOf(myAddr));
 
-                // Clear data structures for the next round.
-                watermarkBuffer.clear();
-                proposalForCurrentConfiguration = Collections.emptyList();
-                votesPerProposal.clear();
+            // This should yield the new configuration.
+            final MembershipView.Configuration configuration = membershipView.getConfiguration();
 
-                // Inform LinkFailureDetector about membership change
-                linkFailureDetectorRunner.updateMembership(membershipView.getMonitoreesOf(myAddr));
+            assert configuration.hostAndPorts.size() > 0;
+            assert configuration.uuids.size() > 0;
 
-                // This should yield the new configuration.
-                final MembershipView.Configuration configuration = membershipView.getConfiguration();
+            final JoinResponse response = JoinResponse.newBuilder()
+                    .setSender(this.myAddr.toString())
+                    .setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
+                    .setConfigurationId(configuration.getConfigurationId())
+                    .addAllHosts(configuration.hostAndPorts
+                            .stream()
+                            .map(HostAndPort::toString)
+                            .collect(Collectors.toList()))
+                    .addAllIdentifiers(configuration.uuids
+                            .stream()
+                            .map(UUID::toString)
+                            .collect(Collectors.toList()))
+                    .build();
 
-                assert configuration.hostAndPorts.size() > 0;
-                assert configuration.uuids.size() > 0;
-
-                final JoinResponse response = JoinResponse.newBuilder()
-                        .setSender(this.myAddr.toString())
-                        .setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
-                        .setConfigurationId(configuration.getConfigurationId())
-                        .addAllHosts(configuration.hostAndPorts
-                                .stream()
-                                .map(HostAndPort::toString)
-                                .collect(Collectors.toList()))
-                        .addAllIdentifiers(configuration.uuids
-                                .stream()
-                                .map(UUID::toString)
-                                .collect(Collectors.toList()))
-                        .build();
-
-                // Send out responses to all the nodes waiting to join.
-                for (final HostAndPort node: proposal) {
-                    if (joinResponseCallbacks.containsKey(node)) {
-                        joinResponseCallbacks.get(node).forEach(observer -> executor.execute(() -> {
-                                try {
-                                    observer.onNext(response);
-                                    observer.onCompleted();
-                                } catch (final StatusRuntimeException e) {
-                                    LOG.error("StatusRuntimeException of type {} for JoinPhase2Response to {}",
-                                            e.getStatus(), response.getSender());
-                                }
+            // Send out responses to all the nodes waiting to join.
+            for (final HostAndPort node: proposal) {
+                if (joinResponseCallbacks.containsKey(node)) {
+                    joinResponseCallbacks.get(node).forEach(observer -> executor.execute(() -> {
+                            try {
+                                observer.onNext(response);
+                                observer.onCompleted();
+                            } catch (final StatusRuntimeException e) {
+                                LOG.error("StatusRuntimeException of type {} for JoinPhase2Response to {}",
+                                        e.getStatus(), response.getSender());
                             }
-                        ));
-                        joinResponseCallbacks.remove(node);
-                    }
+                        }
+                    ));
+                    joinResponseCallbacks.remove(node);
                 }
             }
-        });
+        }
     }
 
     /**
@@ -464,8 +462,6 @@ final class MembershipService {
      * Shuts down all the executors.
      */
     void shutdown() throws InterruptedException {
-        executor.shutdown();
-        executor.awaitTermination(1, TimeUnit.SECONDS);
         scheduledExecutorService.shutdown();
         scheduledExecutorService.awaitTermination(1, TimeUnit.SECONDS);
     }
@@ -510,12 +506,6 @@ final class MembershipService {
                             .setSender(myAddr.toString())
                             .addAllMessages(messages)
                             .build();
-                    final List<HostAndPort> recipients = membershipView.getRing(0);
-                    if (recipients.size() == 1 && recipients.get(0).equals(myAddr)) {
-                        // Avoid RPC overhead during bootstrap.
-                        executor.execute(() -> processLinkUpdateMessage(batched));
-                        return;
-                    }
                     // TODO: for the time being, we perform an all-to-all broadcast. Will be replaced with gossip.
                     broadcaster.broadcast(membershipView.getRing(0), batched);
                 }

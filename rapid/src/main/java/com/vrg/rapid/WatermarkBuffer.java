@@ -141,7 +141,8 @@ final class WatermarkBuffer {
             }
 
             final List<HostAndPort> proposalsToReturn = new ArrayList<>();
-            for (final HostAndPort nodeInFlux: preProposal) {
+            final List<HostAndPort> preProposalCopy = ImmutableList.copyOf(preProposal);
+            for (final HostAndPort nodeInFlux: preProposalCopy) {
                 final List<HostAndPort> monitors = view.isHostPresent(nodeInFlux)
                                                     ? view.getMonitorsOf(nodeInFlux)          // For failing nodes
                                                     : view.getExpectedMonitorsOf(nodeInFlux); // For joining nodes
@@ -155,7 +156,7 @@ final class WatermarkBuffer {
                                                         .setLinkDst(nodeInFlux.toString())
                                                         .setRingNumber(ringNumber)
                                                         .build();
-                        proposal.addAll(aggregateForProposal(msg));
+                        proposalsToReturn.addAll(aggregateForProposal(msg));
                     }
                     ringNumber++;
                 }

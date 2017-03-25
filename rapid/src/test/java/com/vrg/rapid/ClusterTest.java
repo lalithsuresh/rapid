@@ -250,6 +250,7 @@ public class ClusterTest {
                         final Cluster nonSeed = Cluster.join(seedHost, joiningHost);
                         instances.put(joiningHost, nonSeed);
                     } catch (final Exception e) {
+                        e.printStackTrace();
                         fail();
                     } finally {
                         latch.countDown();

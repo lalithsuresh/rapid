@@ -39,6 +39,8 @@ import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 
 /**
@@ -50,6 +52,7 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     private final HostAndPort address;
     @Nullable private MembershipService membershipService;
     @Nullable private Server server;
+    private final ExecutorService executor = Executors.newSingleThreadScheduledExecutor();
 
     // Used to queue messages in the RPC layer until we are ready with
     // a MembershipService object
@@ -153,6 +156,7 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
             final ServerBuilder builder = InProcessServerBuilder.forName(address.toString());
             server = builder.addService(ServerInterceptors
                     .intercept(this, interceptors))
+                    .executor(executor)
                     .build()
                     .start();
         } else {
@@ -160,6 +164,7 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
                                                                                               address.getPort()));
             server = builder.addService(ServerInterceptors
                     .intercept(this, interceptors))
+                    .executor(executor)
                     .build()
                     .start();
         }
