@@ -15,9 +15,6 @@ package com.vrg.rapid;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
-import com.google.common.util.concurrent.FutureCallback;
-import com.google.common.util.concurrent.Futures;
-import com.google.common.util.concurrent.ListenableFuture;
 import com.vrg.rapid.monitoring.ILinkFailureDetector;
 import com.vrg.rapid.monitoring.PingPongFailureDetector;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
@@ -34,7 +31,6 @@ import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
 import javax.annotation.concurrent.NotThreadSafe;
 import java.util.ArrayList;
@@ -48,7 +44,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -57,6 +52,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 
@@ -84,6 +80,9 @@ final class MembershipService {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final LinkFailureDetectorRunner linkFailureDetectorRunner;
     private final RpcClient rpcClient;
+
+    // Event subscriptions
+    private final Map<ClusterEvents, List<Consumer<List<HostAndPort>>>> subscriptions;
 
     // Fields used by batching logic.
     @GuardedBy("batchSchedulerLock")
@@ -140,13 +139,22 @@ final class MembershipService {
         this.broadcaster = builder.broadcaster;
         this.joinResponseCallbacks = new ConcurrentHashMap<>();
         this.rpcClient = builder.rpcClient;
+        this.subscriptions = new HashMap<>(4); // One for each event.
+        this.subscriptions.put(ClusterEvents.VIEW_CHANGE_PROPOSAL, new ArrayList<>(1));
+        this.subscriptions.put(ClusterEvents.VIEW_CHANGE, new ArrayList<>(1));
+        this.subscriptions.put(ClusterEvents.EDGE_DOWN_HINT, new ArrayList<>(1));
+        this.subscriptions.put(ClusterEvents.EDGE_UP_HINT, new ArrayList<>(1));
 
         // Schedule background jobs
         this.scheduledExecutorService.scheduleAtFixedRate(new LinkUpdateBatcher(),
                 0, BATCHING_WINDOW_IN_MS, TimeUnit.MILLISECONDS);
 
-        // This primes the link failure detector with the initial membership set
-        this.linkFailureDetectorRunner = new LinkFailureDetectorRunner(builder.linkFailureDetector);
+        // this::linkFailureNotification is invoked by the failure detector whenever an edge
+        // to a monitor is marked faulty.
+        this.linkFailureDetectorRunner = new LinkFailureDetectorRunner(builder.linkFailureDetector, rpcClient);
+        this.linkFailureDetectorRunner.registerSubscription(this::linkFailureNotification);
+
+        // This primes the link failure detector with the initial set of monitorees.
         linkFailureDetectorRunner.updateMembership(membershipView.getMonitoreesOf(myAddr));
         this.scheduledExecutorService.scheduleAtFixedRate(linkFailureDetectorRunner,
                 FAILURE_DETECTOR_INITIAL_DELAY_IN_MS, FAILURE_DETECTOR_INTERVAL_IN_MS, TimeUnit.MILLISECONDS);
@@ -316,7 +324,7 @@ final class MembershipService {
         // a single aggregate membership change proposal to apply against the view.
         final Set<HostAndPort> proposal = new HashSet<>();
         for (final LinkUpdateMessage msg : validMessages) {
-            proposal.addAll(proposedViewChange(msg));
+            proposal.addAll(watermarkBuffer.aggregateForProposal(msg));
         }
 
         proposal.addAll(watermarkBuffer.invalidateFailingLinks(membershipView));
@@ -340,6 +348,8 @@ final class MembershipService {
                                                                     .collect(Collectors.toList()))
                                                             .setSender(myAddr.toString())
                                                             .build();
+            subscriptions.get(ClusterEvents.VIEW_CHANGE_PROPOSAL)
+                         .forEach(cb -> cb.accept(proposalForCurrentConfiguration));
             executor.execute(() -> broadcaster.broadcast(membershipView.getRing(0), proposalMessage));
         }
     }
@@ -384,6 +394,8 @@ final class MembershipService {
                     membershipView.ringAdd(node, joinerUuid.get(node));
                 }
             }
+            subscriptions.get(ClusterEvents.VIEW_CHANGE)
+                    .forEach(cb -> cb.accept(proposalForCurrentConfiguration));
 
             // Clear data structures for the next round.
             watermarkBuffer.clear();
@@ -434,11 +446,45 @@ final class MembershipService {
 
     /**
      * Invoked by monitors of a node for failure detection.
-     *
      */
     void processProbeMessage(final ProbeMessage probeMessage,
                              final StreamObserver<ProbeResponse> probeResponseObserver) {
         linkFailureDetectorRunner.handleProbeMessage(probeMessage, probeResponseObserver);
+    }
+
+
+    /**
+     * Invoked by subscribers waiting for event notifications.
+     * @param event Cluster event to subscribe to
+     * @param callback Callback to be executed when {@code event} occurs.
+     */
+    void registerSubscription(final ClusterEvents event,
+                              final Consumer<List<HostAndPort>> callback) {
+        subscriptions.get(event).add(callback);
+    }
+
+
+    /**
+     * This is a notification from a local link failure detector at a monitor. This changes
+     * the status of the edge between the monitor and the monitoree to DOWN.
+     *
+     * @param monitoree The monitoree that has failed.
+     */
+    private void linkFailureNotification(final HostAndPort monitoree) {
+        executor.execute(() -> {
+            final long configurationId = membershipView.getCurrentConfigurationId();
+            final int size = membershipView.getRing(0).size();
+            LOG.debug("Announcing LinkFail event {monitoree:{}, monitor:{}, config:{}, size:{}}",
+                    monitoree, myAddr, configurationId, size);
+            // Note: setUuid is deliberately missing here because it does not affect leaves.
+            final LinkUpdateMessage.Builder msgTemplate = LinkUpdateMessage.newBuilder()
+                    .setLinkSrc(myAddr.toString())
+                    .setLinkDst(monitoree.toString())
+                    .setLinkStatus(LinkStatus.DOWN)
+                    .setConfigurationId(configurationId);
+            membershipView.getRingNumbers(myAddr, monitoree)
+                          .forEach(i -> enqueueLinkUpdateMessage(msgTemplate.setRingNumber(i).build()));
+        });
     }
 
 
@@ -487,10 +533,6 @@ final class MembershipService {
         }
     }
 
-    private List<HostAndPort> proposedViewChange(final LinkUpdateMessage msg) {
-        return watermarkBuffer.aggregateForProposal(msg);
-    }
-
     /**
      * Batches outgoing LinkUpdateMessages into a single BatchLinkUpdateMessage.
      */
@@ -517,96 +559,6 @@ final class MembershipService {
             }
             finally {
                 batchSchedulerLock.unlock();
-            }
-        }
-    }
-
-    /**
-     * Periodically executes a failure detector. In the future, the frequency of invoking this
-     * function may be left to the LinkFailureDetector object itself.
-     */
-    private class LinkFailureDetectorRunner implements Runnable {
-        @GuardedBy("this") private Set<HostAndPort> monitorees = Collections.emptySet();
-        @GuardedBy("this") private final Map<HostAndPort, FutureCallback<ProbeResponse>> callbackMap = new HashMap<>();
-        private final ILinkFailureDetector linkFailureDetector;
-
-        LinkFailureDetectorRunner(final ILinkFailureDetector linkFailureDetector) {
-            this.linkFailureDetector = linkFailureDetector;
-        }
-
-        synchronized void updateMembership(final List<HostAndPort> newMonitorees) {
-            this.monitorees = new HashSet<>(newMonitorees);
-            rpcClient.updateLongLivedConnections(this.monitorees);
-            this.callbackMap.clear();
-            this.monitorees.forEach(monitoree -> callbackMap.put(monitoree, new FutureCallback<ProbeResponse>() {
-                @Override
-                public void onSuccess(@Nullable final ProbeResponse probeResponse) {
-                    linkFailureDetector.handleProbeOnSuccess(probeResponse, monitoree);
-                }
-
-                @Override
-                public void onFailure(final Throwable throwable) {
-                    linkFailureDetector.handleProbeOnFailure(throwable, monitoree);
-                }
-            }));
-            this.linkFailureDetector.onMembershipChange(newMonitorees);
-        }
-
-        void handleProbeMessage(final ProbeMessage probeMessage,
-                                final StreamObserver<ProbeResponse> probeResponseObserver) {
-            linkFailureDetector.handleProbeMessage(probeMessage, probeResponseObserver);
-        }
-
-        @Override
-        public synchronized void run() {
-            /*
-             * For every monitoree, first check if the link has failed. If not,
-             * send out a probe request and handle the onSuccess and onFailure callbacks.
-             */
-            try {
-                if (monitorees.size() == 0) {
-                    return;
-                }
-                final List<ListenableFuture<ProbeResponse>> probes = new ArrayList<>();
-                for (final HostAndPort monitoree : monitorees) {
-                    if (!linkFailureDetector.hasFailed(monitoree)) {
-                        // Node is up, so send it a probe and attach the callbacks.
-                        final ProbeMessage message = linkFailureDetector.createProbe(monitoree);
-                        final ListenableFuture<ProbeResponse> probeSend = rpcClient.sendProbeMessage(monitoree,
-                                                                                                     message);
-                        Futures.addCallback(probeSend, callbackMap.get(monitoree));
-                        probes.add(probeSend);
-                    } else {
-                        final long configurationId = membershipView.getCurrentConfigurationId();
-                        final int size = membershipView.getRing(0).size();
-
-                        // A link has failed. Announce a LinkStatus.DOWN event.
-                        executor.execute(() -> {
-                            LOG.debug("Announcing LinkFail event {monitoree:{}, monitor:{}, config:{}, size:{}}",
-                                        monitoree, myAddr, configurationId, size);
-                            // Note: setUuid is deliberately missing here because it does not affect leaves.
-                            final LinkUpdateMessage.Builder msgTemplate = LinkUpdateMessage.newBuilder()
-                                    .setLinkSrc(myAddr.toString())
-                                    .setLinkDst(monitoree.toString())
-                                    .setLinkStatus(LinkStatus.DOWN)
-                                    .setConfigurationId(configurationId);
-                            membershipView.getRingNumbers(myAddr, monitoree)
-                                          .forEach(i -> enqueueLinkUpdateMessage(
-                                                  msgTemplate.setRingNumber(i)
-                                                             .build()
-                                                ));
-                        });
-                    }
-                }
-
-                // Failed requests will have their onFailure() events called. So it is okay to
-                // only block for the successful ones here.
-                Futures.successfulAsList(probes).get();
-            }
-            catch (final ExecutionException | StatusRuntimeException e) {
-                LOG.error("Potential link failures: some probe messages have failed.");
-            } catch (final InterruptedException e) {
-                Thread.currentThread().interrupt();
             }
         }
     }

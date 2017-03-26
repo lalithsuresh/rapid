@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 /**
@@ -232,6 +233,16 @@ public final class Cluster {
         return membershipService.getMembershipView();
     }
 
+    /**
+     * Register callbacks for cluster events.
+     *
+     * @param event Cluster event to subscribe to
+     * @param callback Callback to be executed when {@code event} occurs.
+     */
+    public void registerSubscription(final ClusterEvents event,
+                                     final Consumer<List<HostAndPort>> callback) {
+        membershipService.registerSubscription(event, callback);
+    }
 
     /**
      * Shutdown the RpcServer
