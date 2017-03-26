@@ -80,9 +80,10 @@ final class MembershipService {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final LinkFailureDetectorRunner linkFailureDetectorRunner;
     private final RpcClient rpcClient;
+    private final MetadataManager metadataManager;
 
     // Event subscriptions
-    private final Map<ClusterEvents, List<Consumer<List<HostAndPort>>>> subscriptions;
+    private final Map<ClusterEvents, List<Consumer<List<NodeStatusChange>>>> subscriptions;
 
     // Fields used by batching logic.
     @GuardedBy("batchSchedulerLock")
@@ -103,6 +104,7 @@ final class MembershipService {
         private final IBroadcaster broadcaster;
         private final RpcClient rpcClient;
         private boolean logProposals;
+        private List<String> roles = Collections.emptyList();
         private ILinkFailureDetector linkFailureDetector;
 
         Builder(final HostAndPort myAddr,
@@ -118,6 +120,11 @@ final class MembershipService {
 
         Builder setLogProposals(final boolean logProposals) {
             this.logProposals = logProposals;
+            return this;
+        }
+
+        Builder setRole(final List<String> roles) {
+            this.roles = roles;
             return this;
         }
 
@@ -139,11 +146,10 @@ final class MembershipService {
         this.broadcaster = builder.broadcaster;
         this.joinResponseCallbacks = new ConcurrentHashMap<>();
         this.rpcClient = builder.rpcClient;
-        this.subscriptions = new HashMap<>(4); // One for each event.
-        this.subscriptions.put(ClusterEvents.VIEW_CHANGE_PROPOSAL, new ArrayList<>(1));
+        this.metadataManager = new MetadataManager();
+        this.metadataManager.setRoles(myAddr, builder.roles);
+        this.subscriptions = new HashMap<>(1); // One for each event.
         this.subscriptions.put(ClusterEvents.VIEW_CHANGE, new ArrayList<>(1));
-        this.subscriptions.put(ClusterEvents.EDGE_DOWN_HINT, new ArrayList<>(1));
-        this.subscriptions.put(ClusterEvents.EDGE_UP_HINT, new ArrayList<>(1));
 
         // Schedule background jobs
         this.scheduledExecutorService.scheduleAtFixedRate(new LinkUpdateBatcher(),
@@ -210,6 +216,7 @@ final class MembershipService {
                     .setConfigurationId(currentConfiguration)
                     .setUuid(joinMessage.getUuid())
                     .setRingNumber(joinMessage.getRingNumber())
+                    .addAllRoles(joinMessage.getRolesList())
                     .build();
 
             joinResponseCallbacks.computeIfAbsent(HostAndPort.fromString(joinMessage.getSender()),
@@ -311,6 +318,9 @@ final class MembershipService {
 
             if (request.getLinkStatus() == LinkStatus.UP) {
                 joinerUuid.put(destination, UUID.fromString(request.getUuid()));
+
+                // TODO: Ideally, we'd set the role only after the node has successfully joined.
+                metadataManager.setRoles(destination, request.getRolesList());
             }
             validMessages.add(request);
         }
@@ -348,8 +358,6 @@ final class MembershipService {
                                                                     .collect(Collectors.toList()))
                                                             .setSender(myAddr.toString())
                                                             .build();
-            subscriptions.get(ClusterEvents.VIEW_CHANGE_PROPOSAL)
-                         .forEach(cb -> cb.accept(proposalForCurrentConfiguration));
             executor.execute(() -> broadcaster.broadcast(membershipView.getRing(0), proposalMessage));
         }
     }
@@ -381,6 +389,7 @@ final class MembershipService {
                                                               .stream()
                                                               .map(HostAndPort::fromString)
                                                               .collect(Collectors.toList());
+            final List<NodeStatusChange> statusChanges = new ArrayList<>(proposal.size());
             for (final HostAndPort node : proposal) {
                 final boolean isPresent = membershipView.isHostPresent(node);
                 // If the node is already in the ring, remove it. Else, add it.
@@ -388,14 +397,19 @@ final class MembershipService {
                 // this ties us to just two states a node can be in.
                 if (isPresent) {
                     membershipView.ringDelete(node);
+                    statusChanges.add(new NodeStatusChange(node, LinkStatus.DOWN, metadataManager.getRoles(node)));
+                    metadataManager.removeNode(node);
                 }
                 else {
                     assert joinerUuid.containsKey(node);
                     membershipView.ringAdd(node, joinerUuid.get(node));
+                    statusChanges.add(new NodeStatusChange(node, LinkStatus.UP, metadataManager.getRoles(node)));
                 }
             }
+
+            // Publish an event to the listeners.
             subscriptions.get(ClusterEvents.VIEW_CHANGE)
-                    .forEach(cb -> cb.accept(proposalForCurrentConfiguration));
+                    .forEach(cb -> cb.accept(statusChanges));
 
             // Clear data structures for the next round.
             watermarkBuffer.clear();
@@ -459,7 +473,7 @@ final class MembershipService {
      * @param callback Callback to be executed when {@code event} occurs.
      */
     void registerSubscription(final ClusterEvents event,
-                              final Consumer<List<HostAndPort>> callback) {
+                              final Consumer<List<NodeStatusChange>> callback) {
         subscriptions.get(event).add(callback);
     }
 

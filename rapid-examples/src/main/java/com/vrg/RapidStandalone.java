@@ -3,6 +3,7 @@ package com.vrg;
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.Cluster;
 import com.vrg.rapid.ClusterEvents;
+import com.vrg.rapid.NodeStatusChange;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.DefaultParser;
@@ -10,6 +11,7 @@ import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 
 import java.io.IOException;
+import java.util.Collections;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -20,7 +22,7 @@ import java.util.logging.Logger;
  */
 public class RapidStandalone
 {
-    private static void onViewChange(final List<HostAndPort> viewChange) {
+    private static void onViewChange(final List<NodeStatusChange> viewChange) {
         System.out.println(viewChange);
     }
 
@@ -41,10 +43,10 @@ public class RapidStandalone
 
         if (listenAddress.equals(seedAddress)) {
             // Start as a seed node
-            cluster = Cluster.start(listenAddress);
+            cluster = Cluster.start(listenAddress, Collections.singletonList("manager"));
         }
         else {
-            cluster = Cluster.join(seedAddress, listenAddress);
+            cluster = Cluster.join(seedAddress, listenAddress, Collections.singletonList("worker"));
         }
 
         cluster.registerSubscription(ClusterEvents.VIEW_CHANGE, RapidStandalone::onViewChange);

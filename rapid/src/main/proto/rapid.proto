@@ -25,6 +25,7 @@ message JoinMessage
    string uuid = 2;
    int32 ringNumber = 3;
    int64 configurationId = 4;
+   repeated string roles = 5;
 }
 
 message JoinResponse
@@ -60,6 +61,7 @@ message LinkUpdateMessage
     int64 configurationId = 4;
     string uuid = 5;      // Required for join protocol
     int32 ringNumber = 6;
+    repeated string roles = 7;
 }
 
 enum LinkStatus {

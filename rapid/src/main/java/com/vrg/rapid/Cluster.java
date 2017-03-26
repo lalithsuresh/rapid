@@ -64,13 +64,32 @@ public final class Cluster {
                                final HostAndPort listenAddress) throws IOException, InterruptedException {
         Objects.requireNonNull(seedAddress);
         Objects.requireNonNull(listenAddress);
-        return join(seedAddress, listenAddress, false, new PingPongFailureDetector(listenAddress));
+        return join(seedAddress, listenAddress, false, new PingPongFailureDetector(listenAddress),
+                    Collections.emptyList());
+    }
+
+    /**
+     * Joins an existing cluster, using {@code seedAddress} to bootstrap.
+     *
+     * @param seedAddress Seed node for the bootstrap protocol
+     * @param listenAddress Address to bind to after successful bootstrap
+     * @param roles The roles for the joining node
+     * @throws IOException Thrown if we cannot successfully start a server
+     */
+    public static Cluster join(final HostAndPort seedAddress,
+                               final HostAndPort listenAddress,
+                               final List<String> roles) throws IOException, InterruptedException {
+        Objects.requireNonNull(seedAddress);
+        Objects.requireNonNull(listenAddress);
+        Objects.requireNonNull(roles);
+        return join(seedAddress, listenAddress, false, new PingPongFailureDetector(listenAddress), roles);
     }
 
     static Cluster join(final HostAndPort seedAddress,
                         final HostAndPort listenAddress,
                         final boolean logProposals,
-                        final ILinkFailureDetector linkFailureDetector) throws IOException, InterruptedException {
+                        final ILinkFailureDetector linkFailureDetector,
+                        final List<String> roles) throws IOException, InterruptedException {
         UUID currentIdentifier = UUID.randomUUID();
 
         final RpcServer server = new RpcServer(listenAddress);
@@ -126,6 +145,7 @@ public final class Cluster {
             final JoinMessage.Builder builder = JoinMessage.newBuilder()
                                                         .setSender(listenAddress.toString())
                                                         .setUuid(currentIdentifier.toString())
+                                                        .addAllRoles(roles)
                                                         .setConfigurationId(joinPhaseOneResult.getConfigurationId());
             for (final HostAndPort monitor : monitorList) {
                 final JoinMessage msg = builder.setRingNumber(ringNumber).build();
@@ -193,7 +213,20 @@ public final class Cluster {
      */
     public static Cluster start(final HostAndPort listenAddress) throws IOException {
         Objects.requireNonNull(listenAddress);
-        return start(listenAddress, false, new PingPongFailureDetector(listenAddress));
+        return start(listenAddress, false, new PingPongFailureDetector(listenAddress), Collections.emptyList());
+    }
+
+    /**
+     * Start a cluster without joining. Required to bootstrap a seed node.
+     *
+     * @param listenAddress Address to bind to after successful bootstrap
+     * @param roles User-defined cluster roles for this node
+     * @throws IOException Thrown if we cannot successfully start a server
+     */
+    public static Cluster start(final HostAndPort listenAddress, final List<String> roles) throws IOException {
+        Objects.requireNonNull(listenAddress);
+        Objects.requireNonNull(roles);
+        return start(listenAddress, false, new PingPongFailureDetector(listenAddress), roles);
     }
 
     /**
@@ -207,7 +240,8 @@ public final class Cluster {
     @VisibleForTesting
     static Cluster start(final HostAndPort listenAddress,
                          final boolean logProposals,
-                         final ILinkFailureDetector linkFailureDetector) throws IOException {
+                         final ILinkFailureDetector linkFailureDetector,
+                         final List<String> roles) throws IOException {
         Objects.requireNonNull(listenAddress);
         final RpcServer rpcServer = new RpcServer(listenAddress);
         final UUID currentIdentifier = UUID.randomUUID();
@@ -218,6 +252,7 @@ public final class Cluster {
                 membershipView)
                 .setLogProposals(logProposals)
                 .setLinkFailureDetector(linkFailureDetector)
+                .setRole(roles)
                 .build();
         rpcServer.setMembershipService(membershipService);
         rpcServer.startServer();
@@ -240,7 +275,7 @@ public final class Cluster {
      * @param callback Callback to be executed when {@code event} occurs.
      */
     public void registerSubscription(final ClusterEvents event,
-                                     final Consumer<List<HostAndPort>> callback) {
+                                     final Consumer<List<NodeStatusChange>> callback) {
         membershipService.registerSubscription(event, callback);
     }
 
