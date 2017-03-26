@@ -29,7 +29,7 @@ import static org.junit.Assert.assertEquals;
 public class WatermarkBufferTest {
     private static final int K = 10;
     private static final int H = 8;
-    private static final int L = 1;
+    private static final int L = 2;
     private static final long configurationId = -1;  // Should not affect the following tests
 
     /**

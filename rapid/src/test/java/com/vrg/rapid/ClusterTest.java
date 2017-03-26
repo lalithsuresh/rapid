@@ -19,8 +19,10 @@ import org.junit.Before;
 import org.junit.Test;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -190,6 +192,36 @@ public class ClusterTest {
     }
 
     /**
+     * This test starts with a 5 node cluster, then joins two waves of six nodes each.
+     */
+    @Test
+    public void concurrentNodeJoinsNetty() throws IOException, InterruptedException {
+        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 10000;
+        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 10000;
+        RpcServer.USE_IN_PROCESS_SERVER = false;
+        RpcClient.USE_IN_PROCESS_CHANNEL = false;
+        final int numNodes = 5;
+        final int phaseOneJoiners = 6;
+        final int phaseTwojoiners = 6;
+        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
+        createCluster(numNodes, seedHost);
+        verifyClusterSize(numNodes, seedHost);
+        final Random r = new Random();
+
+        for (int i = 0; i < phaseOneJoiners/2; i++) {
+            final List<HostAndPort> keysAsArray = new ArrayList<HostAndPort>(instances.keySet());
+            extendCluster(2, keysAsArray.get(r.nextInt(instances.size())));
+            Thread.sleep(50);
+        }
+        Thread.sleep(100);
+        for (int i = 0; i < phaseTwojoiners; i++) {
+            extendCluster(1, seedHost);
+            Thread.sleep(50);
+        }
+        waitAndVerify(numNodes + phaseOneJoiners + phaseTwojoiners, 20, 1000, seedHost);
+    }
+
+    /**
      * This test starts with a 50 node cluster. We then fail 16 nodes to see if the monitoring mechanism
      * identifies the crashed nodes, and arrives at a decision.
      *
@@ -237,7 +269,7 @@ public class ClusterTest {
      * @throws IOException Thrown if the Cluster.start() or join() methods throw an IOException when trying
      *                     to register an RpcServer.
      */
-    private void extendCluster(final int numNodes, final HostAndPort seedHost) throws IOException {
+    private void extendCluster(final int numNodes, final HostAndPort seedHost) {
         final ExecutorService executor = Executors.newWorkStealingPool(numNodes);
         try {
             final CountDownLatch latch = new CountDownLatch(numNodes);

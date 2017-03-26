@@ -189,6 +189,7 @@ final class MembershipService {
     void processJoinPhaseTwoMessage(final JoinMessage joinMessage,
                                     final StreamObserver<JoinResponse> responseObserver) {
         final long currentConfiguration = membershipView.getCurrentConfigurationId();
+
         if (currentConfiguration == joinMessage.getConfigurationId()) {
             LOG.trace("Enqueuing SAFE_TO_JOIN for {sender:{}, monitor:{}, config:{}, size:{}}",
                     joinMessage.getSender(), myAddr,
@@ -198,7 +199,7 @@ final class MembershipService {
                     .setLinkSrc(this.myAddr.toString())
                     .setLinkDst(joinMessage.getSender())
                     .setLinkStatus(LinkStatus.UP)
-                    .setConfigurationId(joinMessage.getConfigurationId())
+                    .setConfigurationId(currentConfiguration)
                     .setUuid(joinMessage.getUuid())
                     .setRingNumber(joinMessage.getRingNumber())
                     .build();
@@ -211,7 +212,9 @@ final class MembershipService {
             // This handles the corner case where the configuration changed between phase 1 and phase 2
             // of the joining node's bootstrap. It should attempt to rejoin the network.
             final MembershipView.Configuration configuration = membershipView.getConfiguration();
-
+            LOG.trace("WTF man for {sender:{}, monitor:{}, config:{}, size:{}}",
+                    joinMessage.getSender(), myAddr,
+                    currentConfiguration, membershipView.getRing(0).size());
             JoinResponse.Builder responseBuilder = JoinResponse.newBuilder()
                     .setSender(this.myAddr.toString())
                     .setConfigurationId(configuration.getConfigurationId());
@@ -234,7 +237,7 @@ final class MembershipService {
                                 .collect(Collectors.toList()));
             } else {
                 responseBuilder = responseBuilder.setStatusCode(JoinStatusCode.CONFIG_CHANGED);
-                LOG.trace("Returning CONFIG_CHANGED for {sender:{}, monitor:{}, config:{}, size:{}}",
+                LOG.info("Returning CONFIG_CHANGED for {sender:{}, monitor:{}, config:{}, size:{}}",
                         joinMessage.getSender(), myAddr,
                         configuration.getConfigurationId(), configuration.hostAndPorts.size());
             }
@@ -377,6 +380,7 @@ final class MembershipService {
                     membershipView.ringDelete(node);
                 }
                 else {
+                    assert joinerUuid.containsKey(node);
                     membershipView.ringAdd(node, joinerUuid.get(node));
                 }
             }
@@ -417,7 +421,7 @@ final class MembershipService {
                                 observer.onNext(response);
                                 observer.onCompleted();
                             } catch (final StatusRuntimeException e) {
-                                LOG.error("StatusRuntimeException of type {} for JoinPhase2Response to {}",
+                                LOG.trace("StatusRuntimeException of type {} for JoinPhase2Response to {}",
                                         e.getStatus(), response.getSender());
                             }
                         }

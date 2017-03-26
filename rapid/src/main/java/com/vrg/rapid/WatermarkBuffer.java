@@ -130,7 +130,7 @@ final class WatermarkBuffer {
      * Invalidates links between nodes that are failing or have failed. This step may be skipped safely
      * when there are no failing nodes.
      *
-     * @param view MembershipshipView object required to find monitor-monitoree relationships between failing nodes.
+     * @param view MembershipView object required to find monitor-monitoree relationships between failing nodes.
      * @return A list of hosts representing a view change proposal.
      */
     List<HostAndPort> invalidateFailingLinks(final MembershipView view) {

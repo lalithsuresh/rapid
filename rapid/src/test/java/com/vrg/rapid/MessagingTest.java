@@ -14,9 +14,9 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
+import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
-import com.vrg.rapid.pb.LinkStatus;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
 import io.grpc.ServerInterceptor;
@@ -47,7 +47,6 @@ public class MessagingTest {
 
     private final int serverPortBase = 1234;
     private static final String localhostIp = "127.0.0.1";
-    private static final long configurationId = -1;
     private final List<RpcServer> services = new ArrayList<>();
 
     static {
@@ -253,8 +252,7 @@ public class MessagingTest {
         final RpcClient client = new RpcClient(clientAddr);
         boolean exceptionCaught = false;
         try {
-            client.sendLinkUpdateMessage(serverAddr, clientAddr, serverAddr,
-                                         LinkStatus.DOWN, configurationId).get();
+            client.sendLinkUpdateMessage(serverAddr, BatchedLinkUpdateMessage.getDefaultInstance()).get();
         } catch (final ExecutionException e) {
             exceptionCaught = true;
         }

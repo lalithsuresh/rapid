@@ -42,17 +42,17 @@ final class UnicastToAllBroadcaster implements IBroadcaster {
     }
 
     @Override
-    public void broadcast(final List<HostAndPort> recipients,
-                          final BatchedLinkUpdateMessage msg) {
+    public void broadcast(final List<HostAndPort> recipients, final BatchedLinkUpdateMessage msg) {
         final List<ListenableFuture<Response>> list = new ArrayList<>();
         for (final HostAndPort recipient: recipients) {
-            list.add(rpcClient.sendLinkUpdateMessage(recipient, msg));
+            final ListenableFuture<Response> sentLinkUpdate = rpcClient.sendLinkUpdateMessage(recipient, msg);
+            list.add(sentLinkUpdate);
         }
 
         try {
             Futures.successfulAsList(list).get();
         } catch (final InterruptedException | ExecutionException | StatusRuntimeException e) {
-            LOG.error("Broadcast returned an error {}", recipients);
+            LOG.error("Broadcast returned an error {} {}", recipients, e.getLocalizedMessage());
         }
     }
 
@@ -60,14 +60,14 @@ final class UnicastToAllBroadcaster implements IBroadcaster {
     public void broadcast(final List<HostAndPort> recipients, final ConsensusProposal msg) {
         final List<ListenableFuture<ConsensusProposalResponse>> list = new ArrayList<>();
         for (final HostAndPort recipient: recipients) {
-            list.add(rpcClient.sendConsensusProposal(recipient, msg));
+            final ListenableFuture<ConsensusProposalResponse> future = rpcClient.sendConsensusProposal(recipient, msg);
+            list.add(future);
         }
 
         try {
             Futures.successfulAsList(list).get();
         } catch (final InterruptedException | ExecutionException | StatusRuntimeException e) {
-            LOG.error("Broadcast returned an error {}", recipients);
+            LOG.error("Broadcast returned an error {} {}", recipients, e.getLocalizedMessage());
         }
     }
-
 }

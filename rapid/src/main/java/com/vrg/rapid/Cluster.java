@@ -20,6 +20,7 @@ import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.vrg.rapid.monitoring.ILinkFailureDetector;
 import com.vrg.rapid.monitoring.PingPongFailureDetector;
+import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
 import org.slf4j.Logger;
@@ -116,10 +117,14 @@ public final class Cluster {
 
             int ringNumber = 0;
             final List<ListenableFuture<JoinResponse>> responseFutures = new ArrayList<>();
+            final JoinMessage.Builder builder = JoinMessage.newBuilder()
+                                                        .setSender(listenAddress.toString())
+                                                        .setUuid(currentIdentifier.toString())
+                                                        .setConfigurationId(joinPhaseOneResult.getConfigurationId());
             for (final HostAndPort monitor : monitorList) {
-                responseFutures.add(joinerClient.sendJoinPhase2Message(monitor, listenAddress,
-                        currentIdentifier, ringNumber,
-                        joinPhaseOneResult.getConfigurationId()));
+                final JoinMessage msg = builder.setRingNumber(ringNumber).build();
+                final ListenableFuture<JoinResponse> call = joinerClient.sendJoinPhase2Message(monitor, msg);
+                responseFutures.add(call);
                 ringNumber++;
             }
 
@@ -166,7 +171,7 @@ public final class Cluster {
                     }
                 }
             } catch (final ExecutionException e) {
-                LOG.error("JoinePhaseTwo request by {} for configuration {} threw an exception. Retrying. {}",
+                LOG.error("JoinPhaseTwo request by {} for configuration {} threw an exception. Retrying. {}",
                         listenAddress, joinPhaseOneResult.getConfigurationId(), e.getMessage());
             }
         }
