@@ -16,8 +16,10 @@ package com.vrg.rapid;
 import com.google.common.net.HostAndPort;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
+import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -42,13 +44,16 @@ import static org.junit.Assert.fail;
  * Test public API
  */
 public class ClusterTest {
+    @Nullable private static Logger grpcLogger = null;
     private final ConcurrentHashMap<HostAndPort, Cluster> instances = new ConcurrentHashMap<>();
     private final int basePort = 1234;
     private final AtomicInteger portCounter = new AtomicInteger(basePort);
 
-    static {
+    @BeforeClass
+    public static void beforeClass() {
         // gRPC INFO logs clutter the test output
-        Logger.getLogger("io.grpc").setLevel(Level.WARNING);
+        grpcLogger = Logger.getLogger("io.grpc");
+        grpcLogger.setLevel(Level.WARNING);
     }
 
     @Before
