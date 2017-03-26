@@ -94,6 +94,11 @@ public final class Cluster {
                     currentIdentifier = UUID.randomUUID();
                     continue;
                 case HOSTNAME_ALREADY_IN_RING:
+                    /*
+                     * TODO: This special case needs handling. If the joinPhase2 request times out,
+                     * a client may re-try a join by contacting the seed and get this response. It should
+                     * ideally get the configuration streamed to it.
+                     */
                     LOG.error("Hostname already in configuration {}", joinPhaseOneResult.getConfigurationId());
                     continue;
                 case MEMBERSHIP_REJECTED:
