@@ -59,7 +59,7 @@ import java.util.stream.Collectors;
 /**
  * Membership server class that implements the Rapid protocol.
  *
- * Note: This class is not thread-safe yet. RpcServer.start() uses a single threaded executor during the server
+ * Note: This class is not thread-safe yet. RpcServer.start() uses a single threaded broadcastExecutor during the server
  * initialization to make sure that only a single thread runs the process* methods.
  *
  */
@@ -77,8 +77,8 @@ final class MembershipService {
     private final Map<HostAndPort, BlockingQueue<StreamObserver<JoinResponse>>> joinResponseCallbacks;
     private final Map<HostAndPort, UUID> joinerUuid = new HashMap<>(); // XXX: Not being cleared.
     private final List<Set<HostAndPort>> logProposalList = new ArrayList<>();
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final LinkFailureDetectorRunner linkFailureDetectorRunner;
+    private final ExecutorService broadcastExecutor;
     private final RpcClient rpcClient;
     private final MetadataManager metadataManager;
 
@@ -103,9 +103,11 @@ final class MembershipService {
         private final HostAndPort myAddr;
         private final IBroadcaster broadcaster;
         private final RpcClient rpcClient;
+        private final ExecutorService broadcastExecutor = Executors.newSingleThreadExecutor();
         private boolean logProposals;
         private Map<String, String> roles = Collections.emptyMap();
         private ILinkFailureDetector linkFailureDetector;
+
 
         Builder(final HostAndPort myAddr,
                        final WatermarkBuffer watermarkBuffer,
@@ -114,7 +116,7 @@ final class MembershipService {
             this.watermarkBuffer = Objects.requireNonNull(watermarkBuffer);
             this.membershipView = Objects.requireNonNull(membershipView);
             this.rpcClient = new RpcClient(myAddr);
-            this.broadcaster = new UnicastToAllBroadcaster(rpcClient);
+            this.broadcaster = new UnicastToAllBroadcaster(rpcClient, broadcastExecutor);
             this.linkFailureDetector = new PingPongFailureDetector(myAddr);
         }
 
@@ -148,6 +150,7 @@ final class MembershipService {
         this.rpcClient = builder.rpcClient;
         this.metadataManager = new MetadataManager();
         this.metadataManager.setRoles(myAddr, builder.roles);
+        this.broadcastExecutor = builder.broadcastExecutor;
         this.subscriptions = new HashMap<>(1); // One for each event.
         this.subscriptions.put(ClusterEvents.VIEW_CHANGE, new ArrayList<>(1));
 
@@ -358,7 +361,7 @@ final class MembershipService {
                                                                     .collect(Collectors.toList()))
                                                             .setSender(myAddr.toString())
                                                             .build();
-            executor.execute(() -> broadcaster.broadcast(membershipView.getRing(0), proposalMessage));
+            broadcaster.broadcast(membershipView.getRing(0), proposalMessage);
         }
     }
 
@@ -442,7 +445,8 @@ final class MembershipService {
             // Send out responses to all the nodes waiting to join.
             for (final HostAndPort node: proposal) {
                 if (joinResponseCallbacks.containsKey(node)) {
-                    joinResponseCallbacks.get(node).forEach(observer -> executor.execute(() -> {
+                    joinResponseCallbacks.get(node).parallelStream().forEach(
+                        observer -> {
                             try {
                                 observer.onNext(response);
                                 observer.onCompleted();
@@ -451,7 +455,7 @@ final class MembershipService {
                                         e.getStatus(), response.getSender());
                             }
                         }
-                    ));
+                    );
                     joinResponseCallbacks.remove(node);
                 }
             }
@@ -485,20 +489,21 @@ final class MembershipService {
      * @param monitoree The monitoree that has failed.
      */
     private void linkFailureNotification(final HostAndPort monitoree) {
-        executor.execute(() -> {
-            final long configurationId = membershipView.getCurrentConfigurationId();
+        // TODO: This should execute on the grpc-server thread.
+        final long configurationId = membershipView.getCurrentConfigurationId();
+        if (LOG.isDebugEnabled()) {
             final int size = membershipView.getRing(0).size();
             LOG.debug("Announcing LinkFail event {monitoree:{}, monitor:{}, config:{}, size:{}}",
                     monitoree, myAddr, configurationId, size);
-            // Note: setUuid is deliberately missing here because it does not affect leaves.
-            final LinkUpdateMessage.Builder msgTemplate = LinkUpdateMessage.newBuilder()
-                    .setLinkSrc(myAddr.toString())
-                    .setLinkDst(monitoree.toString())
-                    .setLinkStatus(LinkStatus.DOWN)
-                    .setConfigurationId(configurationId);
-            membershipView.getRingNumbers(myAddr, monitoree)
-                          .forEach(i -> enqueueLinkUpdateMessage(msgTemplate.setRingNumber(i).build()));
-        });
+        }
+        // Note: setUuid is deliberately missing here because it does not affect leaves.
+        final LinkUpdateMessage.Builder msgTemplate = LinkUpdateMessage.newBuilder()
+                .setLinkSrc(myAddr.toString())
+                .setLinkDst(monitoree.toString())
+                .setLinkStatus(LinkStatus.DOWN)
+                .setConfigurationId(configurationId);
+        membershipView.getRingNumbers(myAddr, monitoree)
+                      .forEach(i -> enqueueLinkUpdateMessage(msgTemplate.setRingNumber(i).build()));
     }
 
 
@@ -527,6 +532,7 @@ final class MembershipService {
      */
     void shutdown() throws InterruptedException {
         scheduledExecutorService.shutdownNow();
+        broadcastExecutor.shutdownNow();
         rpcClient.shutdown();
     }
 

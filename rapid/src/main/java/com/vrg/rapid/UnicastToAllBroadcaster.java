@@ -27,6 +27,7 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 
 
 /**
@@ -36,38 +37,32 @@ final class UnicastToAllBroadcaster implements IBroadcaster {
     private static final Logger LOG = LoggerFactory.getLogger(UnicastToAllBroadcaster.class);
 
     private final RpcClient rpcClient;
+    private final ExecutorService executorService;
 
-    public UnicastToAllBroadcaster(final RpcClient rpcClient) {
+    public UnicastToAllBroadcaster(final RpcClient rpcClient, final ExecutorService executorService) {
         this.rpcClient = rpcClient;
+        this.executorService = executorService;
     }
 
     @Override
     public void broadcast(final List<HostAndPort> recipients, final BatchedLinkUpdateMessage msg) {
-        final List<ListenableFuture<Response>> list = new ArrayList<>();
-        for (final HostAndPort recipient: recipients) {
-            final ListenableFuture<Response> sentLinkUpdate = rpcClient.sendLinkUpdateMessage(recipient, msg);
-            list.add(sentLinkUpdate);
-        }
-
-        try {
-            Futures.successfulAsList(list).get();
-        } catch (final InterruptedException | ExecutionException | StatusRuntimeException e) {
-            LOG.error("Broadcast returned an error {} {}", recipients, e.getLocalizedMessage());
-        }
+        executorService.execute(
+            () -> {
+                for (final HostAndPort recipient: recipients) {
+                    rpcClient.sendLinkUpdateMessage(recipient, msg);
+                }
+            }
+        );
     }
 
     @Override
     public void broadcast(final List<HostAndPort> recipients, final ConsensusProposal msg) {
-        final List<ListenableFuture<ConsensusProposalResponse>> list = new ArrayList<>();
-        for (final HostAndPort recipient: recipients) {
-            final ListenableFuture<ConsensusProposalResponse> future = rpcClient.sendConsensusProposal(recipient, msg);
-            list.add(future);
-        }
-
-        try {
-            Futures.successfulAsList(list).get();
-        } catch (final InterruptedException | ExecutionException | StatusRuntimeException e) {
-            LOG.error("Broadcast returned an error {} {}", recipients, e.getLocalizedMessage());
-        }
+        executorService.execute(
+            () -> {
+                for (final HostAndPort recipient: recipients) {
+                    rpcClient.sendConsensusProposal(recipient, msg);
+                }
+            }
+        );
     }
 }
