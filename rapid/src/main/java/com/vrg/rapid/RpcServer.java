@@ -184,6 +184,7 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
             }
             server.shutdown();
             server.awaitTermination();
+            executor.shutdownNow();
         } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
         }

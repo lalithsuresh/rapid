@@ -526,8 +526,7 @@ final class MembershipService {
      * Shuts down all the executors.
      */
     void shutdown() throws InterruptedException {
-        scheduledExecutorService.shutdown();
-        scheduledExecutorService.awaitTermination(1, TimeUnit.SECONDS);
+        scheduledExecutorService.shutdownNow();
         rpcClient.shutdown();
     }
 

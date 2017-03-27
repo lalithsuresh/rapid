@@ -36,7 +36,7 @@ final class DeferredReceiveInterceptor implements ServerInterceptor {
                                                                  final Metadata metadata,
                                                                  final ServerCallHandler<ReqT, RespT> next) {
         if (isReady) {
-            next.startCall(serverCall, metadata);
+            return next.startCall(serverCall, metadata);
         }
 
         // We enter this code path only until unblock() is called
