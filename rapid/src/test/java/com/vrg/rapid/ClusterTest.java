@@ -44,6 +44,7 @@ import static org.junit.Assert.fail;
  * Test public API
  */
 public class ClusterTest {
+    @SuppressWarnings("FieldCanBeLocal")
     @Nullable private static Logger grpcLogger = null;
     private final ConcurrentHashMap<HostAndPort, Cluster> instances = new ConcurrentHashMap<>();
     private final int basePort = 1234;
