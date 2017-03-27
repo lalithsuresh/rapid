@@ -1,0 +1,112 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "com.vrg.rapid.pb";
+option java_outer_classname = "Remoting";
+
+package remoting;
+
+service MembershipService {
+  rpc receiveJoinMessage (JoinMessage) returns (JoinResponse) {}
+  rpc receiveJoinPhase2Message (JoinMessage) returns (JoinResponse) {}
+  rpc receiveLinkUpdateMessage (BatchedLinkUpdateMessage) returns (Response) {}
+  rpc receiveConsensusProposal (ConsensusProposal) returns (ConsensusProposalResponse) {}
+  rpc gossip (GossipMessage) returns (GossipResponse) {}
+  rpc receiveProbe (ProbeMessage) returns (ProbeResponse) {}
+}
+
+
+// ******* Join protocol messages *******
+
+// TODO: JoinMessage and JoinResponse are overloaded because they are being used for phase 1 and 2 of the bootstrap.
+message JoinMessage
+{
+   string sender = 1;
+   string uuid = 2;
+   int32 ringNumber = 3;
+   int64 configurationId = 4;
+   map<string, string> metadata = 5;
+}
+
+message JoinResponse
+{
+   string sender = 1;
+   JoinStatusCode statusCode = 2;
+   int64 configurationId = 3;
+   repeated string hosts = 4;
+   repeated string identifiers = 5;
+}
+
+enum JoinStatusCode {
+    HOSTNAME_ALREADY_IN_RING = 0;
+    UUID_ALREADY_IN_RING = 1;
+    SAFE_TO_JOIN = 2;
+    CONFIG_CHANGED = 3;
+    MEMBERSHIP_REJECTED = 4;
+};
+
+// ******* LinkUpdate messages *******
+
+message BatchedLinkUpdateMessage
+{
+    string sender = 1;
+    repeated LinkUpdateMessage messages = 2;
+}
+
+message LinkUpdateMessage
+{
+    string linkSrc = 1;
+    string linkDst = 2;
+    LinkStatus linkStatus = 3;
+    int64 configurationId = 4;
+    int32 ringNumber = 5;
+    string uuid = 6;                      // Required only for join protocol
+    map<string, string> metadata = 7;     // Required only for join protocol
+}
+
+enum LinkStatus {
+    UP = 0;
+    DOWN = 1;
+};
+
+message Response
+{
+}
+
+
+// ******* Fast Paxos Phase 2 messages *******
+
+message ConsensusProposal
+{
+    string sender = 1;
+    int64 configurationId = 2;
+    repeated string hosts = 3;
+}
+
+message ConsensusProposalResponse
+{
+}
+
+// ******* Gossip messages *******
+
+message GossipMessage
+{
+    string messageId = 1;
+    int32 ttl = 2;
+    BatchedLinkUpdateMessage batchedMessages = 3;
+}
+
+message GossipResponse
+{
+}
+
+// ******* Used by simple probing failure detector *******
+
+message ProbeMessage
+{
+    string sender = 1;
+    repeated bytes payload = 2;
+}
+
+message ProbeResponse
+{}
