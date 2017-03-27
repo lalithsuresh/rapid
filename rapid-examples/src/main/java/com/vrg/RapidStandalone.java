@@ -21,8 +21,9 @@ import scala.concurrent.duration.Duration;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
-import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -45,18 +46,18 @@ public class RapidStandalone
 
         final List<ActorRef> joinedNodes = viewChange.stream()
                                            .filter(e -> e.getStatus() == LinkStatus.UP)
-                                           .map(NodeStatusChange::getHostAndPort)
-                                           .map(host -> getActorRefForHost(host, "/user/Printer"))
+                                           .map(RapidStandalone::getActorRefForHost)
                                            .collect(Collectors.toList());
         joinedNodes.forEach(actor -> actor.tell("Hello from " + localActor.toString(), localActor));
     }
 
-    private static ActorRef getActorRefForHost(final HostAndPort host, final String path) {
+    private static ActorRef getActorRefForHost(final NodeStatusChange statusChange) {
         Objects.requireNonNull(actorSystem);
-        final int akkaPort = host.getPort() + 1000;
         try {
+            final String hostname = statusChange.getHostAndPort().getHost();    // Rapid host
+            final String port = statusChange.getMetadata().get("akkaPort");     // Port for actor system
             return Await.result(actorSystem.actorSelection(
-                "akka.tcp://" + APPLICATION + "@" + host.getHost() + ":" + (akkaPort) + path).resolveOne(timeout),
+                "akka.tcp://" + APPLICATION + "@" + hostname + ":" + port + "/user/Printer").resolveOne(timeout),
                 timeout.duration());
         } catch (Exception e) {
             e.printStackTrace();
@@ -65,21 +66,23 @@ public class RapidStandalone
     }
 
     public static void main( String[] args ) throws ParseException, IOException, InterruptedException {
-        // create Options object
+        Logger.getLogger("io.grpc").setLevel(Level.WARNING);
         final Options options = new Options();
         options.addRequiredOption("l", "listenAddress", true, "The listening address for the Rapid Cluster");
         options.addRequiredOption("s", "seedAddress", true, "The seed node's address for the bootstrap protocol");
+        options.addRequiredOption("a", "akkaAddress", true, "The akka system's address");
         options.addRequiredOption("r", "role", true, "The node's role for the cluster");
-
         final CommandLineParser parser = new DefaultParser();
         final CommandLine cmd = parser.parse(options, args);
-        Logger.getLogger("io.grpc").setLevel(Level.WARNING);
 
+        // Get CLI options
         final HostAndPort listenAddress = HostAndPort.fromString(cmd.getOptionValue("listenAddress"));
         final HostAndPort seedAddress = HostAndPort.fromString(cmd.getOptionValue("seedAddress"));
+        final HostAndPort akkaAddress = HostAndPort.fromString(cmd.getOptionValue("akkaAddress"));
         final String role = cmd.getOptionValue("role");
-        final Cluster cluster;
-        final int akkaPort = (1000 + listenAddress.getPort()); // For now, akka port is 1000+ rapid port.
+        final int akkaPort = akkaAddress.getPort();
+
+        // Initialize Actor system
         final Config config = ConfigFactory.parseString(
                 "akka {\n" +
                         " stdout-loglevel = \"OFF\"\n" +
@@ -93,24 +96,26 @@ public class RapidStandalone
                         " remote {\n" +
                         "   enabled-transports = [\"akka.remote.netty.tcp\"]\n" +
                         "   netty.tcp {\n" +
-                        "     hostname = \"" + listenAddress.getHost() + "\"\n" +
-                        "     port = " + akkaPort + "\n" +
+                        "     hostname = \"" + akkaAddress.getHost() + "\"\n" +
+                        "     port = " + akkaAddress.getPort() + "\n" +
                         "   }\n" +
                         " }\n" +
                         "}");
-
         actorSystem = ActorSystem.create(APPLICATION, config);
         assert actorSystem != null;
         localActor = actorSystem.actorOf(Props.create(Printer.class), "Printer");
 
+        // Setup Rapid cluster
+        final Map<String, String> metadata = new HashMap<>(2);
+        metadata.put("role", role);
+        metadata.put("akkaPort", String.valueOf(akkaPort));
+        final Cluster cluster;
         if (listenAddress.equals(seedAddress)) {
-            // Start as a seed node
-            cluster = Cluster.start(listenAddress, Collections.singletonList(role));
+            cluster = Cluster.start(listenAddress, metadata);
         }
         else {
-            cluster = Cluster.join(seedAddress, listenAddress, Collections.singletonList(role));
+            cluster = Cluster.join(seedAddress, listenAddress, metadata);
         }
-
         cluster.registerSubscription(ClusterEvents.VIEW_CHANGE, RapidStandalone::onViewChange);
 
         while (true) {

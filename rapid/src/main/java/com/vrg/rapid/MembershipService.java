@@ -104,7 +104,7 @@ final class MembershipService {
         private final IBroadcaster broadcaster;
         private final RpcClient rpcClient;
         private boolean logProposals;
-        private List<String> roles = Collections.emptyList();
+        private Map<String, String> roles = Collections.emptyMap();
         private ILinkFailureDetector linkFailureDetector;
 
         Builder(final HostAndPort myAddr,
@@ -123,7 +123,7 @@ final class MembershipService {
             return this;
         }
 
-        Builder setRole(final List<String> roles) {
+        Builder setRole(final Map<String, String> roles) {
             this.roles = roles;
             return this;
         }
@@ -216,7 +216,7 @@ final class MembershipService {
                     .setConfigurationId(currentConfiguration)
                     .setUuid(joinMessage.getUuid())
                     .setRingNumber(joinMessage.getRingNumber())
-                    .addAllRoles(joinMessage.getRolesList())
+                    .putAllMetadata(joinMessage.getMetadataMap())
                     .build();
 
             joinResponseCallbacks.computeIfAbsent(HostAndPort.fromString(joinMessage.getSender()),
@@ -320,7 +320,7 @@ final class MembershipService {
                 joinerUuid.put(destination, UUID.fromString(request.getUuid()));
 
                 // TODO: Ideally, we'd set the role only after the node has successfully joined.
-                metadataManager.setRoles(destination, request.getRolesList());
+                metadataManager.setRoles(destination, request.getMetadataMap());
             }
             validMessages.add(request);
         }

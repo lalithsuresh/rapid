@@ -3,7 +3,7 @@ package com.vrg.rapid;
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.LinkStatus;
 
-import java.util.List;
+import java.util.Map;
 
 /**
  * Represents a single node status change event. It is the format used to inform applications about
@@ -12,14 +12,14 @@ import java.util.List;
 public class NodeStatusChange {
     private final HostAndPort hostAndPort;
     private final LinkStatus status;
-    private final List<String> roles;
+    private final Map<String, String> metadata;
 
     NodeStatusChange(final HostAndPort hostAndPort,
-                            final LinkStatus status,
-                            final List<String> roles) {
+                     final LinkStatus status,
+                     final Map<String, String> metadata) {
         this.hostAndPort = hostAndPort;
         this.status = status;
-        this.roles = roles;
+        this.metadata = metadata;
     }
 
     public HostAndPort getHostAndPort() {
@@ -30,12 +30,12 @@ public class NodeStatusChange {
         return status;
     }
 
-    public List<String> getRoles() {
-        return roles;
+    public Map<String, String> getMetadata() {
+        return metadata;
     }
 
     @Override
     public String toString() {
-        return String.valueOf(hostAndPort) + ":" + status + ":" + roles;
+        return String.valueOf(hostAndPort) + ":" + status + ":" + metadata;
     }
 }
