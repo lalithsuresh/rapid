@@ -189,9 +189,9 @@ final class MembershipService {
         if (statusCode.equals(JoinStatusCode.SAFE_TO_JOIN)) {
             // Return a list of monitors for the joiner to contact for phase 2 of the protocol
             builder.addAllHosts(membershipView.getExpectedMonitorsOf(joiningHost)
-                    .stream()
-                    .map(HostAndPort::toString)
-                    .collect(Collectors.toList()));
+                   .stream()
+                   .map(HostAndPort::toString)
+                   .collect(Collectors.toList()));
         }
         responseObserver.onNext(builder.build());
         responseObserver.onCompleted();
@@ -352,11 +352,11 @@ final class MembershipService {
 
             LOG.debug("Node {} has a proposal of size {}: {}", myAddr, proposal.size(), proposal);
 
-            final List<NodeStatusChange> result = createNodeStatusChangeList(proposal);
-
-            // Inform subscribers that a proposal has been announced.
-            subscriptions.get(ClusterEvents.VIEW_CHANGE_PROPOSAL).forEach(cb -> cb.accept(result));
-
+            if (subscriptions.containsKey(ClusterEvents.VIEW_CHANGE_PROPOSAL)) {
+                final List<NodeStatusChange> result = createNodeStatusChangeList(proposal);
+                // Inform subscribers that a proposal has been announced.
+                subscriptions.get(ClusterEvents.VIEW_CHANGE_PROPOSAL).forEach(cb -> cb.accept(result));
+            }
             // TODO: Plug different consensus implementations here
             proposalForCurrentConfiguration = ImmutableList.copyOf(proposal);
             final ConsensusProposal proposalMessage = ConsensusProposal.newBuilder()
@@ -395,65 +395,75 @@ final class MembershipService {
 
         if (count >= (membershipSize - F)) {
             // We have a successful proposal. Consume it.
-            final List<HostAndPort> proposal = proposalMessage.getHostsList()
-                                                              .stream()
-                                                              .map(HostAndPort::fromString)
-                                                              .collect(Collectors.toList());
-            final List<NodeStatusChange> statusChanges = new ArrayList<>(proposal.size());
-            for (final HostAndPort node : proposal) {
-                final boolean isPresent = membershipView.isHostPresent(node);
-                // If the node is already in the ring, remove it. Else, add it.
-                // XXX: Maybe there's a cleaner way to do this in the future because
-                // this ties us to just two states a node can be in.
-                if (isPresent) {
-                    membershipView.ringDelete(node);
-                    statusChanges.add(new NodeStatusChange(node, LinkStatus.DOWN, metadataManager.get(node)));
-                    metadataManager.removeNode(node);
-                }
-                else {
-                    assert joinerUuid.containsKey(node);
-                    membershipView.ringAdd(node, joinerUuid.get(node));
-                    statusChanges.add(new NodeStatusChange(node, LinkStatus.UP, metadataManager.get(node)));
-                }
+            decideViewChange(proposalMessage.getHostsList()
+                                            .stream()
+                                            .map(HostAndPort::fromString)
+                                            .collect(Collectors.toList()));
+        }
+    }
+
+
+    /**
+     * This is invoked by Consensus modules when they arrive at a decision.
+     *
+     * Any node that is not in the membership list will be added to the cluster,
+     * and any node that is currently in the membership list will be removed from it.
+     */
+    private void decideViewChange(final List<HostAndPort> proposal) {
+        final List<NodeStatusChange> statusChanges = new ArrayList<>(proposal.size());
+        for (final HostAndPort node : proposal) {
+            final boolean isPresent = membershipView.isHostPresent(node);
+            // If the node is already in the ring, remove it. Else, add it.
+            // XXX: Maybe there's a cleaner way to do this in the future because
+            // this ties us to just two states a node can be in.
+            if (isPresent) {
+                membershipView.ringDelete(node);
+                statusChanges.add(new NodeStatusChange(node, LinkStatus.DOWN, metadataManager.get(node)));
+                metadataManager.removeNode(node);
             }
+            else {
+                assert joinerUuid.containsKey(node);
+                membershipView.ringAdd(node, joinerUuid.get(node));
+                statusChanges.add(new NodeStatusChange(node, LinkStatus.UP, metadataManager.get(node)));
+            }
+        }
 
-            // Publish an event to the listeners.
-            subscriptions.get(ClusterEvents.VIEW_CHANGE)
-                    .forEach(cb -> cb.accept(statusChanges));
+        // Publish an event to the listeners.
+        subscriptions.get(ClusterEvents.VIEW_CHANGE)
+                .forEach(cb -> cb.accept(statusChanges));
 
-            // Clear data structures for the next round.
-            watermarkBuffer.clear();
-            proposalForCurrentConfiguration = Collections.emptyList();
-            votesPerProposal.clear();
+        // Clear data structures for the next round.
+        watermarkBuffer.clear();
+        proposalForCurrentConfiguration = Collections.emptyList();
+        votesPerProposal.clear();
 
-            // Inform LinkFailureDetector about membership change
-            linkFailureDetectorRunner.updateMembership(membershipView.getMonitoreesOf(myAddr));
+        // Inform LinkFailureDetector about membership change
+        linkFailureDetectorRunner.updateMembership(membershipView.getMonitoreesOf(myAddr));
 
-            // This should yield the new configuration.
-            final MembershipView.Configuration configuration = membershipView.getConfiguration();
+        // This should yield the new configuration.
+        final MembershipView.Configuration configuration = membershipView.getConfiguration();
 
-            assert configuration.hostAndPorts.size() > 0;
-            assert configuration.uuids.size() > 0;
+        assert configuration.hostAndPorts.size() > 0;
+        assert configuration.uuids.size() > 0;
 
-            final JoinResponse response = JoinResponse.newBuilder()
-                    .setSender(this.myAddr.toString())
-                    .setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
-                    .setConfigurationId(configuration.getConfigurationId())
-                    .addAllHosts(configuration.hostAndPorts
-                            .stream()
-                            .map(HostAndPort::toString)
-                            .collect(Collectors.toList()))
-                    .addAllIdentifiers(configuration.uuids
-                            .stream()
-                            .map(UUID::toString)
-                            .collect(Collectors.toList()))
-                    .build();
+        final JoinResponse response = JoinResponse.newBuilder()
+                .setSender(this.myAddr.toString())
+                .setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
+                .setConfigurationId(configuration.getConfigurationId())
+                .addAllHosts(configuration.hostAndPorts
+                        .stream()
+                        .map(HostAndPort::toString)
+                        .collect(Collectors.toList()))
+                .addAllIdentifiers(configuration.uuids
+                        .stream()
+                        .map(UUID::toString)
+                        .collect(Collectors.toList()))
+                .build();
 
-            // Send out responses to all the nodes waiting to join.
-            for (final HostAndPort node: proposal) {
-                if (joinersToRespondTo.contains(node)) {
-                    broadcastExecutor.execute(() -> rpcClient.sendJoinConfirmation(node, response));
-                }
+        // Send out responses to all the nodes waiting to join.
+        for (final HostAndPort node: proposal) {
+            if (joinersToRespondTo.contains(node)) {
+                broadcastExecutor.execute(() -> rpcClient.sendJoinConfirmation(node, response));
             }
         }
     }
