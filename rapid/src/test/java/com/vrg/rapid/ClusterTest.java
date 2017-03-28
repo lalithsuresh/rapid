@@ -257,7 +257,7 @@ public class ClusterTest {
      *                     to register an RpcServer.
      */
     private void createCluster(final int numNodes, final HostAndPort seedHost) throws IOException {
-        final Cluster seed = Cluster.start(seedHost);
+        final Cluster seed = new Cluster.Builder(seedHost).start();
         instances.put(seedHost, seed);
         assertEquals(seed.getMemberlist().size(), 1);
         if (numNodes >= 2) {
@@ -283,7 +283,8 @@ public class ClusterTest {
                     try {
                         final HostAndPort joiningHost =
                                 HostAndPort.fromParts("127.0.0.1", portCounter.incrementAndGet());
-                        final Cluster nonSeed = Cluster.join(seedHost, joiningHost);
+                        final Cluster nonSeed = new Cluster.Builder(joiningHost)
+                                                           .join(seedHost);
                         instances.put(joiningHost, nonSeed);
                     } catch (final Exception e) {
                         e.printStackTrace();

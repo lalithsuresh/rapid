@@ -26,6 +26,7 @@ import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
 import com.vrg.rapid.pb.Response;
+import io.grpc.ExperimentalApi;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -58,43 +59,88 @@ public final class Cluster {
         this.rpcServer = rpcServer;
     }
 
-    /**
-     * Joins an existing cluster, using {@code seedAddress} to bootstrap.
-     *
-     * @param seedAddress Seed node for the bootstrap protocol
-     * @param listenAddress Address to bind to after successful bootstrap
-     * @throws IOException Thrown if we cannot successfully start a server
-     */
-    public static Cluster join(final HostAndPort seedAddress,
-                               final HostAndPort listenAddress) throws IOException, InterruptedException {
-        Objects.requireNonNull(seedAddress);
-        Objects.requireNonNull(listenAddress);
-        return join(seedAddress, listenAddress, false, new PingPongFailureDetector(listenAddress),
-                    Collections.emptyMap());
+    public static class Builder {
+        @Nullable private ILinkFailureDetector linkFailureDetector = null;
+        private boolean logProposals = false;
+        private Map<String, String> metadata = Collections.emptyMap();
+        private final HostAndPort listenAddress;
+
+        /**
+         * Instantiates a builder for a Rapid Cluster node that will listen on the given {@code listenAddress}
+         *
+         * @param listenAddress The listen address of the node being instantiated
+         */
+        public Builder(final HostAndPort listenAddress) {
+            this.listenAddress = listenAddress;
+        }
+
+        /**
+         * Maintain a log of proposals inside Rapid.
+         *
+         * @param logProposals Will log proposals if true.
+         */
+        @ExperimentalApi
+        public Builder setLogProposals(final boolean logProposals) {
+            this.logProposals = logProposals;
+            return this;
+        }
+
+        /**
+         * Set static application-specific metadata that is associated with the node being instantiated.
+         * This may include tags like "role":"frontend".
+         *
+         * @param metadata A map specifying a set of key-value tags.
+         */
+        public Builder setMetadata(final Map<String, String> metadata) {
+            Objects.requireNonNull(metadata);
+            this.metadata = metadata;
+            return this;
+        }
+
+        /**
+         * Set a link failure detector to use for monitors to watch their monitorees.
+         *
+         * @param linkFailureDetector A link failure detector used as input for Rapid's failure detection.
+         */
+        @ExperimentalApi
+        public Builder setLinkFailureDetector(final ILinkFailureDetector linkFailureDetector) {
+            Objects.requireNonNull(linkFailureDetector);
+            this.linkFailureDetector = linkFailureDetector;
+            return this;
+        }
+
+        /**
+         * Joins an existing cluster, using {@code seedAddress} to bootstrap.
+         *
+         * @param seedAddress Seed node for the bootstrap protocol
+         * @throws IOException Thrown if we cannot successfully start a server
+         */
+        public Cluster join(final HostAndPort seedAddress) throws IOException, InterruptedException {
+            if (linkFailureDetector == null) {
+                linkFailureDetector = new PingPongFailureDetector(listenAddress);
+            }
+            return joinCluster(seedAddress, this.listenAddress, this.logProposals,
+                               this.linkFailureDetector, this.metadata);
+        }
+
+        /**
+         * Start a cluster without joining. Required to bootstrap a seed node.
+         *
+         * @throws IOException Thrown if we cannot successfully start a server
+         */
+        public Cluster start() throws IOException {
+            if (linkFailureDetector == null) {
+                linkFailureDetector = new PingPongFailureDetector(listenAddress);
+            }
+            return startCluster(this.listenAddress, this.logProposals, this.linkFailureDetector, this.metadata);
+        }
     }
 
-    /**
-     * Joins an existing cluster, using {@code seedAddress} to bootstrap.
-     *
-     * @param seedAddress Seed node for the bootstrap protocol
-     * @param listenAddress Address to bind to after successful bootstrap
-     * @param metadata The roles for the joining node
-     * @throws IOException Thrown if we cannot successfully start a server
-     */
-    public static Cluster join(final HostAndPort seedAddress,
+    static Cluster joinCluster(final HostAndPort seedAddress,
                                final HostAndPort listenAddress,
+                               final boolean logProposals,
+                               final ILinkFailureDetector linkFailureDetector,
                                final Map<String, String> metadata) throws IOException, InterruptedException {
-        Objects.requireNonNull(seedAddress);
-        Objects.requireNonNull(listenAddress);
-        Objects.requireNonNull(metadata);
-        return join(seedAddress, listenAddress, false, new PingPongFailureDetector(listenAddress), metadata);
-    }
-
-    static Cluster join(final HostAndPort seedAddress,
-                        final HostAndPort listenAddress,
-                        final boolean logProposals,
-                        final ILinkFailureDetector linkFailureDetector,
-                        final Map<String, String> metadata) throws IOException, InterruptedException {
         UUID currentIdentifier = UUID.randomUUID();
 
         final RpcServer server = new RpcServer(listenAddress);
@@ -229,39 +275,15 @@ public final class Cluster {
      * Start a cluster without joining. Required to bootstrap a seed node.
      *
      * @param listenAddress Address to bind to after successful bootstrap
-     * @throws IOException Thrown if we cannot successfully start a server
-     */
-    public static Cluster start(final HostAndPort listenAddress) throws IOException {
-        Objects.requireNonNull(listenAddress);
-        return start(listenAddress, false, new PingPongFailureDetector(listenAddress), Collections.emptyMap());
-    }
-
-    /**
-     * Start a cluster without joining. Required to bootstrap a seed node.
-     *
-     * @param listenAddress Address to bind to after successful bootstrap
-     * @param roles User-defined cluster roles for this node
-     * @throws IOException Thrown if we cannot successfully start a server
-     */
-    public static Cluster start(final HostAndPort listenAddress, final Map<String, String> roles) throws IOException {
-        Objects.requireNonNull(listenAddress);
-        Objects.requireNonNull(roles);
-        return start(listenAddress, false, new PingPongFailureDetector(listenAddress), roles);
-    }
-
-    /**
-     * Start a cluster without joining. Required to bootstrap a seed node.
-     *
-     * @param listenAddress Address to bind to after successful bootstrap
      * @param logProposals maintain a log of announced view change proposals
      * @param linkFailureDetector a list of checks to perform before a monitor processes a join phase two message
      * @throws IOException Thrown if we cannot successfully start a server
      */
     @VisibleForTesting
-    static Cluster start(final HostAndPort listenAddress,
-                         final boolean logProposals,
-                         final ILinkFailureDetector linkFailureDetector,
-                         final Map<String, String> metadata) throws IOException {
+    static Cluster startCluster(final HostAndPort listenAddress,
+                                final boolean logProposals,
+                                final ILinkFailureDetector linkFailureDetector,
+                                final Map<String, String> metadata) throws IOException {
         Objects.requireNonNull(listenAddress);
         final RpcServer rpcServer = new RpcServer(listenAddress);
         final UUID currentIdentifier = UUID.randomUUID();

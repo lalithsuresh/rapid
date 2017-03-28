@@ -110,8 +110,8 @@ final class MembershipService {
 
 
         Builder(final HostAndPort myAddr,
-                       final WatermarkBuffer watermarkBuffer,
-                       final MembershipView membershipView) {
+                final WatermarkBuffer watermarkBuffer,
+                final MembershipView membershipView) {
             this.myAddr = Objects.requireNonNull(myAddr);
             this.watermarkBuffer = Objects.requireNonNull(watermarkBuffer);
             this.membershipView = Objects.requireNonNull(membershipView);

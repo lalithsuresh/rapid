@@ -127,10 +127,14 @@ public class RapidStandalone
         metadata.put("akkaPort", String.valueOf(akkaPort));
         final Cluster cluster;
         if (listenAddress.equals(seedAddress)) {
-            cluster = Cluster.start(listenAddress, metadata);
+            cluster = new Cluster.Builder(listenAddress)
+                                 .setMetadata(metadata)
+                                 .start();
         }
         else {
-            cluster = Cluster.join(seedAddress, listenAddress, metadata);
+            cluster = new Cluster.Builder(listenAddress)
+                                 .setMetadata(metadata)
+                                 .join(seedAddress);
         }
         cluster.registerSubscription(ClusterEvents.VIEW_CHANGE_PROPOSAL, RapidStandalone::onViewChangeProposal);
         cluster.registerSubscription(ClusterEvents.VIEW_CHANGE, RapidStandalone::onViewChange);
