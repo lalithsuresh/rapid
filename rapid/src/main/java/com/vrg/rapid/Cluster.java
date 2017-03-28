@@ -16,16 +16,20 @@ package com.vrg.rapid;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.net.HostAndPort;
+import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.SettableFuture;
 import com.vrg.rapid.monitoring.ILinkFailureDetector;
 import com.vrg.rapid.monitoring.PingPongFailureDetector;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
+import com.vrg.rapid.pb.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -142,15 +146,65 @@ public final class Cluster {
                     .collect(Collectors.toList());
 
             int ringNumber = 0;
-            final List<ListenableFuture<JoinResponse>> responseFutures = new ArrayList<>();
             final JoinMessage.Builder builder = JoinMessage.newBuilder()
                                                         .setSender(listenAddress.toString())
                                                         .setUuid(currentIdentifier.toString())
                                                         .putAllMetadata(metadata)
                                                         .setConfigurationId(joinPhaseOneResult.getConfigurationId());
+            final List<ListenableFuture<Response>> responseFutures = new ArrayList<>();
+            final SettableFuture<Cluster> returnValue = SettableFuture.create();
+            final Object lock = new Object();
             for (final HostAndPort monitor : monitorList) {
                 final JoinMessage msg = builder.setRingNumber(ringNumber).build();
-                final ListenableFuture<JoinResponse> call = joinerClient.sendJoinPhase2Message(monitor, msg);
+                final SettableFuture<JoinResponse> joinListener = SettableFuture.create();
+                Futures.addCallback(joinListener, new FutureCallback<JoinResponse>() {
+                    @Override
+                    public void onSuccess(@Nullable final JoinResponse response) {
+                        synchronized (lock) {
+                            if (response == null) {
+                                LOG.info("Received a null response.");
+                                return;
+                            }
+                            if (response.getStatusCode() == JoinStatusCode.MEMBERSHIP_REJECTED) {
+                                LOG.info("Membership rejected by {}. Quitting.", response.getSender());
+                                return;
+                            }
+
+                            if (response.getStatusCode() == JoinStatusCode.SAFE_TO_JOIN
+                                    && response.getConfigurationId() != joinPhaseOneResult.getConfigurationId()) {
+                                // Safe to proceed. Extract the list of hosts and identifiers from the message,
+                                // assemble a MembershipService object and start an RpcServer.
+                                final List<HostAndPort> allHosts = response.getHostsList().stream()
+                                        .map(HostAndPort::fromString)
+                                        .collect(Collectors.toList());
+                                final List<UUID> identifiersSeen = response.getIdentifiersList().stream()
+                                        .map(UUID::fromString)
+                                        .collect(Collectors.toList());
+
+                                assert identifiersSeen.size() > 0;
+                                assert allHosts.size() > 0;
+                                final MembershipView membershipViewFinal =
+                                        new MembershipView(K, identifiersSeen, allHosts);
+                                final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
+                                final MembershipService membershipService = new MembershipService.Builder(listenAddress,
+                                        watermarkBuffer,
+                                        membershipViewFinal)
+                                        .setLogProposals(logProposals)
+                                        .setLinkFailureDetector(linkFailureDetector)
+                                        .build();
+                                server.setMembershipService(membershipService);
+                                returnValue.set(new Cluster(server, membershipService));
+                            }
+                        }
+                    }
+
+                    @Override
+                    public void onFailure(final Throwable throwable) {
+                        throwable.printStackTrace();
+                    }
+                });
+                server.setJoinResponseListener(monitor, joinListener);
+                final ListenableFuture<Response> call = joinerClient.sendJoinPhase2Message(monitor, msg);
                 responseFutures.add(call);
                 ringNumber++;
             }
@@ -160,43 +214,8 @@ public final class Cluster {
             try {
                 // TODO: This is only correct if we use consensus for node addition.
                 // Unsuccessful responses will be null.
-                final List<JoinResponse> responses = Futures.successfulAsList(responseFutures)
-                        .get()
-                        .stream()
-                        .filter(Objects::nonNull)
-                        .collect(Collectors.toList());
-
-                for (final JoinResponse response : responses) {
-                    if (response.getStatusCode() == JoinStatusCode.MEMBERSHIP_REJECTED) {
-                        LOG.error("Membership rejected by {}. Quitting.", response.getSender());
-                        throw new RuntimeException("Membership rejected");
-                    }
-
-                    if (response.getStatusCode() == JoinStatusCode.SAFE_TO_JOIN
-                            && response.getConfigurationId() != joinPhaseOneResult.getConfigurationId()) {
-                        // Safe to proceed. Extract the list of hosts and identifiers from the message,
-                        // assemble a MembershipService object and start an RpcServer.
-                        final List<HostAndPort> allHosts = response.getHostsList().stream()
-                                .map(HostAndPort::fromString)
-                                .collect(Collectors.toList());
-                        final List<UUID> identifiersSeen = response.getIdentifiersList().stream()
-                                .map(UUID::fromString)
-                                .collect(Collectors.toList());
-
-                        assert identifiersSeen.size() > 0;
-                        assert allHosts.size() > 0;
-                        final MembershipView membershipViewFinal = new MembershipView(K, identifiersSeen, allHosts);
-                        final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
-                        final MembershipService membershipService = new MembershipService.Builder(listenAddress,
-                                watermarkBuffer,
-                                membershipViewFinal)
-                                .setLogProposals(logProposals)
-                                .setLinkFailureDetector(linkFailureDetector)
-                                .build();
-                        server.setMembershipService(membershipService);
-                        return new Cluster(server, membershipService);
-                    }
-                }
+                Futures.successfulAsList(responseFutures).get();
+                return returnValue.get();
             } catch (final ExecutionException e) {
                 LOG.error("JoinPhaseTwo request by {} for configuration {} threw an exception. Retrying. {}",
                         listenAddress, joinPhaseOneResult.getConfigurationId(), e.getMessage());

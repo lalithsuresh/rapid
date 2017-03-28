@@ -18,53 +18,29 @@ import io.grpc.ServerCall;
 import io.grpc.ServerCallHandler;
 import io.grpc.ServerInterceptor;
 
-import java.util.concurrent.locks.Condition;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
-
 /**
  * An interceptor that blocks server calls from being invoked until requested.
- * Used by the RpcServer to defer service method invocations until it is ready.
+ * Used by the RpcServer to defer service method invocations until it has instantiated
+ * a MembershipService object.
  */
 final class DeferredReceiveInterceptor implements ServerInterceptor {
-    private final Lock lock = new ReentrantLock();
-    private final Condition serverReadyCondition = lock.newCondition();
     private boolean isReady = false;
+    static final Metadata.Key<String> CONFIRMATION_MSG = Metadata.Key.of("CONF", Metadata.ASCII_STRING_MARSHALLER);
 
     @Override
     public <ReqT, RespT> ServerCall.Listener<ReqT> interceptCall(final ServerCall<ReqT, RespT> serverCall,
                                                                  final Metadata metadata,
                                                                  final ServerCallHandler<ReqT, RespT> next) {
-        if (isReady) {
+        if (isReady || metadata.containsKey(CONFIRMATION_MSG)) {
             return next.startCall(serverCall, metadata);
         }
-
-        // We enter this code path only until unblock() is called
-        while (!isReady) {
-            lock.lock();
-            try {
-                serverReadyCondition.await();
-            } catch (final InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-            finally {
-                lock.unlock();
-            }
-        }
-        return next.startCall(serverCall, metadata);
+        return new ServerCall.Listener<ReqT>() { }; // Forces remote to retry
     }
 
     /**
-     * This stops the interceptor from deferring server calls.
+     * Stops the interceptor from deferring server calls.
      */
     void unblock() {
-        lock.lock();
-        try {
-            serverReadyCondition.signalAll();
-            isReady = true;
-        }
-        finally {
-            lock.unlock();
-        }
+        isReady = true;
     }
 }

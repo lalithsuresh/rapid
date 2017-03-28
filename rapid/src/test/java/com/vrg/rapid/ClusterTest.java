@@ -105,7 +105,6 @@ public class ClusterTest {
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         createCluster(1, seedHost); // Only bootstrap a seed.
         verifyClusterSize(1, seedHost);
-
         for (int i = 0; i < numNodes; i++) {
             extendCluster(1, seedHost);
             waitAndVerify( i + 2, 5, 100, seedHost);
@@ -153,9 +152,9 @@ public class ClusterTest {
         final int numNodesPhase2 = 100;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         createCluster(numNodesPhase1, seedHost);
-        verifyClusterSize(numNodesPhase1, seedHost);
+        waitAndVerify(numNodesPhase1, 10, 100, seedHost);
         extendCluster(numNodesPhase2, seedHost);
-        verifyClusterSize(numNodesPhase1 + numNodesPhase2, seedHost);
+        waitAndVerify(numNodesPhase1 + numNodesPhase2, 10, 100, seedHost);
     }
 
     /**

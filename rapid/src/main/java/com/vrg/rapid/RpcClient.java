@@ -29,9 +29,11 @@ import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
 import com.vrg.rapid.pb.Response;
 import io.grpc.Channel;
+import io.grpc.Metadata;
 import io.grpc.StatusRuntimeException;
 import io.grpc.inprocess.InProcessChannelBuilder;
 import io.grpc.netty.NettyChannelBuilder;
+import io.grpc.stub.MetadataUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -108,15 +110,38 @@ final class RpcClient {
      * @param msg The JoinMessage for phase two.
      * @return A future that returns a JoinResponse if the call was successful.
      */
-    ListenableFuture<JoinResponse> sendJoinPhase2Message(final HostAndPort remote,
+    ListenableFuture<Response> sendJoinPhase2Message(final HostAndPort remote,
                                                          final JoinMessage msg) {
         Objects.requireNonNull(remote);
         Objects.requireNonNull(msg);
 
         final MembershipServiceFutureStub stub = channelMap.computeIfAbsent(remote, this::getFutureStub)
-                                                           .withDeadlineAfter(RPC_TIMEOUT_SECONDS * 20,
+                                                           .withDeadlineAfter(RPC_TIMEOUT_SECONDS * 5,
                                                                               TimeUnit.SECONDS);
-        final Supplier<ListenableFuture<JoinResponse>> call = () -> stub.receiveJoinPhase2Message(msg);
+        final Supplier<ListenableFuture<Response>> call = () -> stub.receiveJoinPhase2Message(msg);
+        return callWithRetries(call, RPC_DEFAULT_RETRIES);
+    }
+
+    /**
+     * Create and send a protobuf JoinPhase2Message to a remote host.
+     *
+     * @param remote Remote host to send the message to. This node is expected to initiate LinkUpdate-UP messages.
+     * @param msg The JoinMessage for phase two.
+     * @return A future that returns a JoinResponse if the call was successful.
+     */
+    ListenableFuture<Response> sendJoinConfirmation(final HostAndPort remote,
+                                                        final JoinResponse msg) {
+        Objects.requireNonNull(remote);
+        Objects.requireNonNull(msg);
+
+        final Metadata exceptionHeader = new Metadata();
+        exceptionHeader.put(DeferredReceiveInterceptor.CONFIRMATION_MSG, "");
+        final MembershipServiceFutureStub stub =
+                MetadataUtils.attachHeaders(channelMap.computeIfAbsent(remote, this::getFutureStub)
+                .withDeadlineAfter(RPC_TIMEOUT_SECONDS * 5,
+                        TimeUnit.SECONDS), exceptionHeader);
+
+        final Supplier<ListenableFuture<Response>> call = () -> stub.receiveJoinConfirmation(msg);
         return callWithRetries(call, RPC_DEFAULT_RETRIES);
     }
 

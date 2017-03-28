@@ -15,6 +15,7 @@ package com.vrg.rapid;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.vrg.rapid.monitoring.ILinkFailureDetector;
 import com.vrg.rapid.monitoring.PingPongFailureDetector;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
@@ -26,7 +27,7 @@ import com.vrg.rapid.pb.LinkStatus;
 import com.vrg.rapid.pb.LinkUpdateMessage;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
-import io.grpc.StatusRuntimeException;
+import com.vrg.rapid.pb.Response;
 import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,8 +43,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -74,7 +73,7 @@ final class MembershipService {
     private final HostAndPort myAddr;
     private final boolean logProposals;
     private final IBroadcaster broadcaster;
-    private final Map<HostAndPort, BlockingQueue<StreamObserver<JoinResponse>>> joinResponseCallbacks;
+    private final Set<HostAndPort> joinersToRespondTo = new HashSet<>();
     private final Map<HostAndPort, UUID> joinerUuid = new HashMap<>(); // XXX: Not being cleared.
     private final List<Set<HostAndPort>> logProposalList = new ArrayList<>();
     private final LinkFailureDetectorRunner linkFailureDetectorRunner;
@@ -103,7 +102,8 @@ final class MembershipService {
         private final HostAndPort myAddr;
         private final IBroadcaster broadcaster;
         private final RpcClient rpcClient;
-        private final ExecutorService broadcastExecutor = Executors.newSingleThreadExecutor();
+        private final ExecutorService broadcastExecutor = Executors.newSingleThreadExecutor(new ThreadFactoryBuilder()
+                .setUncaughtExceptionHandler((t, e) -> System.err.println(String.format("Bad %s %s", t, t))).build());
         private boolean logProposals;
         private Map<String, String> roles = Collections.emptyMap();
         private ILinkFailureDetector linkFailureDetector;
@@ -146,7 +146,6 @@ final class MembershipService {
         this.watermarkBuffer = builder.watermarkBuffer;
         this.logProposals = builder.logProposals;
         this.broadcaster = builder.broadcaster;
-        this.joinResponseCallbacks = new ConcurrentHashMap<>();
         this.rpcClient = builder.rpcClient;
         this.metadataManager = new MetadataManager();
         this.metadataManager.setRoles(myAddr, builder.roles);
@@ -204,7 +203,7 @@ final class MembershipService {
      * is now a part of.
      */
     void processJoinPhaseTwoMessage(final JoinMessage joinMessage,
-                                    final StreamObserver<JoinResponse> responseObserver) {
+                                    final StreamObserver<Response> responseObserver) {
         final long currentConfiguration = membershipView.getCurrentConfigurationId();
 
         if (currentConfiguration == joinMessage.getConfigurationId()) {
@@ -222,15 +221,15 @@ final class MembershipService {
                     .putAllMetadata(joinMessage.getMetadataMap())
                     .build();
 
-            joinResponseCallbacks.computeIfAbsent(HostAndPort.fromString(joinMessage.getSender()),
-                    (k) -> new LinkedBlockingQueue<>())
-                    .add(responseObserver);
+            joinersToRespondTo.add(HostAndPort.fromString(joinMessage.getSender()));
             enqueueLinkUpdateMessage(msg);
+            responseObserver.onNext(Response.getDefaultInstance()); // new config
+            responseObserver.onCompleted();
         } else {
             // This handles the corner case where the configuration changed between phase 1 and phase 2
             // of the joining node's bootstrap. It should attempt to rejoin the network.
             final MembershipView.Configuration configuration = membershipView.getConfiguration();
-            LOG.trace("WTF man for {sender:{}, monitor:{}, config:{}, size:{}}",
+            LOG.info("Wrong configuration for {sender:{}, monitor:{}, config:{}, size:{}}",
                     joinMessage.getSender(), myAddr,
                     currentConfiguration, membershipView.getRing(0).size());
             JoinResponse.Builder responseBuilder = JoinResponse.newBuilder()
@@ -259,8 +258,11 @@ final class MembershipService {
                         joinMessage.getSender(), myAddr,
                         configuration.getConfigurationId(), configuration.hostAndPorts.size());
             }
-
-            responseObserver.onNext(responseBuilder.build()); // new config
+            final JoinResponse response = responseBuilder.build();
+            broadcastExecutor.execute(() -> {
+                rpcClient.sendJoinConfirmation(HostAndPort.fromString(joinMessage.getSender()), response);
+            });
+            responseObserver.onNext(Response.getDefaultInstance()); // new config
             responseObserver.onCompleted();
         }
     }
@@ -444,19 +446,8 @@ final class MembershipService {
 
             // Send out responses to all the nodes waiting to join.
             for (final HostAndPort node: proposal) {
-                if (joinResponseCallbacks.containsKey(node)) {
-                    joinResponseCallbacks.get(node).parallelStream().forEach(
-                        observer -> {
-                            try {
-                                observer.onNext(response);
-                                observer.onCompleted();
-                            } catch (final StatusRuntimeException e) {
-                                LOG.trace("StatusRuntimeException of type {} for JoinPhase2Response to {}",
-                                        e.getStatus(), response.getSender());
-                            }
-                        }
-                    );
-                    joinResponseCallbacks.remove(node);
+                if (joinersToRespondTo.contains(node)) {
+                    broadcastExecutor.execute(() -> rpcClient.sendJoinConfirmation(node, response));
                 }
             }
         }
@@ -490,20 +481,23 @@ final class MembershipService {
      */
     private void linkFailureNotification(final HostAndPort monitoree) {
         // TODO: This should execute on the grpc-server thread.
-        final long configurationId = membershipView.getCurrentConfigurationId();
-        if (LOG.isDebugEnabled()) {
-            final int size = membershipView.getRing(0).size();
-            LOG.debug("Announcing LinkFail event {monitoree:{}, monitor:{}, config:{}, size:{}}",
-                    monitoree, myAddr, configurationId, size);
-        }
-        // Note: setUuid is deliberately missing here because it does not affect leaves.
-        final LinkUpdateMessage.Builder msgTemplate = LinkUpdateMessage.newBuilder()
-                .setLinkSrc(myAddr.toString())
-                .setLinkDst(monitoree.toString())
-                .setLinkStatus(LinkStatus.DOWN)
-                .setConfigurationId(configurationId);
-        membershipView.getRingNumbers(myAddr, monitoree)
-                      .forEach(i -> enqueueLinkUpdateMessage(msgTemplate.setRingNumber(i).build()));
+        broadcastExecutor.execute(() -> {
+                final long configurationId = membershipView.getCurrentConfigurationId();
+                if (LOG.isDebugEnabled()) {
+                    final int size = membershipView.getRing(0).size();
+                    LOG.debug("Announcing LinkFail event {monitoree:{}, monitor:{}, config:{}, size:{}}",
+                            monitoree, myAddr, configurationId, size);
+                }
+                // Note: setUuid is deliberately missing here because it does not affect leaves.
+                final LinkUpdateMessage.Builder msgTemplate = LinkUpdateMessage.newBuilder()
+                        .setLinkSrc(myAddr.toString())
+                        .setLinkDst(monitoree.toString())
+                        .setLinkStatus(LinkStatus.DOWN)
+                        .setConfigurationId(configurationId);
+                membershipView.getRingNumbers(myAddr, monitoree)
+                        .forEach(i -> enqueueLinkUpdateMessage(msgTemplate.setRingNumber(i).build()));
+            }
+        );
     }
 
 

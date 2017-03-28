@@ -8,7 +8,8 @@ package remoting;
 
 service MembershipService {
   rpc receiveJoinMessage (JoinMessage) returns (JoinResponse) {}
-  rpc receiveJoinPhase2Message (JoinMessage) returns (JoinResponse) {}
+  rpc receiveJoinPhase2Message (JoinMessage) returns (Response) {}
+  rpc receiveJoinConfirmation (JoinResponse) returns (Response) {}
   rpc receiveLinkUpdateMessage (BatchedLinkUpdateMessage) returns (Response) {}
   rpc receiveConsensusProposal (ConsensusProposal) returns (ConsensusProposalResponse) {}
   rpc gossip (GossipMessage) returns (GossipResponse) {}
