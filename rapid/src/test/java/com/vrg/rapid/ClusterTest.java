@@ -107,7 +107,7 @@ public class ClusterTest {
         verifyClusterSize(1, seedHost);
         for (int i = 0; i < numNodes; i++) {
             extendCluster(1, seedHost);
-            waitAndVerify( i + 2, 5, 100, seedHost);
+            waitAndVerify( i + 2, 5, 1000, seedHost);
         }
     }
 
@@ -123,7 +123,7 @@ public class ClusterTest {
 
         for (int i = 0; i < numNodes; i++) {
             extendCluster(1, seedHost);
-            waitAndVerify( i + 2, 5, 100, seedHost);
+            waitAndVerify( i + 2, 5, 1000, seedHost);
         }
     }
 
@@ -154,7 +154,7 @@ public class ClusterTest {
         createCluster(numNodesPhase1, seedHost);
         waitAndVerify(numNodesPhase1, 10, 100, seedHost);
         extendCluster(numNodesPhase2, seedHost);
-        waitAndVerify(numNodesPhase1 + numNodesPhase2, 10, 100, seedHost);
+        waitAndVerify(numNodesPhase1 + numNodesPhase2, 10, 1000, seedHost);
     }
 
     /**
