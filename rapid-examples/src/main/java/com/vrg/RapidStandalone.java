@@ -40,7 +40,7 @@ public class RapidStandalone
     private static final Timeout timeout = new Timeout(Duration.create(1000, "milliseconds"));
 
     /**
-     * Executed whenever a Cluster VIEW_CHANGE event occurs.
+     * Executed whenever a Cluster VIEW_CHANGE_PROPOSAL event occurs.
      */
     private static void onViewChangeProposal(final List<NodeStatusChange> viewChange) {
         Objects.requireNonNull(localActor);
