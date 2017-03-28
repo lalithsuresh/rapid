@@ -5,4 +5,5 @@ package com.vrg.rapid;
  */
 public enum ClusterEvents {
     VIEW_CHANGE,
+    VIEW_CHANGE_PROPOSAL,
 }

@@ -30,8 +30,7 @@ import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 /**
- * Standalone Rapid Cluster Daemon
- *
+ * Rapid Cluster example.
  */
 public class RapidStandalone
 {
@@ -40,6 +39,20 @@ public class RapidStandalone
     private static final String APPLICATION = "rapid-akka";
     private static final Timeout timeout = new Timeout(Duration.create(1000, "milliseconds"));
 
+    /**
+     * Executed whenever a Cluster VIEW_CHANGE event occurs.
+     */
+    private static void onViewChangeProposal(final List<NodeStatusChange> viewChange) {
+        Objects.requireNonNull(localActor);
+        Objects.requireNonNull(actorSystem);
+
+        System.out.println("The condition detector has outputted a proposal: " + viewChange);
+    }
+
+
+    /**
+     * Executed whenever a Cluster VIEW_CHANGE event occurs.
+     */
     private static void onViewChange(final List<NodeStatusChange> viewChange) {
         Objects.requireNonNull(localActor);
         Objects.requireNonNull(actorSystem);
@@ -51,6 +64,9 @@ public class RapidStandalone
         joinedNodes.forEach(actor -> actor.tell("Hello from " + localActor.toString(), localActor));
     }
 
+    /**
+     * Takes a node-change event and the associated metadata to obtain an ActorRef.
+     */
     private static ActorRef getActorRefForHost(final NodeStatusChange statusChange) {
         Objects.requireNonNull(actorSystem);
         try {
@@ -116,6 +132,7 @@ public class RapidStandalone
         else {
             cluster = Cluster.join(seedAddress, listenAddress, metadata);
         }
+        cluster.registerSubscription(ClusterEvents.VIEW_CHANGE_PROPOSAL, RapidStandalone::onViewChangeProposal);
         cluster.registerSubscription(ClusterEvents.VIEW_CHANGE, RapidStandalone::onViewChange);
 
         while (true) {

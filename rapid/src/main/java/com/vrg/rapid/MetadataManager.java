@@ -21,7 +21,7 @@ final class MetadataManager {
      *
      * @param node Node for which the roles are being set.
      */
-    Map<String, String> getRoles(final HostAndPort node) {
+    Map<String, String> get(final HostAndPort node) {
         Objects.requireNonNull(node);
         return roleMap.containsKey(node) ? ImmutableMap.copyOf(roleMap.get(node)) : Collections.emptyMap();
     }

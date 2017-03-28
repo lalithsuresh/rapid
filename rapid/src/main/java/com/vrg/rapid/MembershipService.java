@@ -150,8 +150,9 @@ final class MembershipService {
         this.metadataManager = new MetadataManager();
         this.metadataManager.setRoles(myAddr, builder.roles);
         this.broadcastExecutor = builder.broadcastExecutor;
-        this.subscriptions = new HashMap<>(1); // One for each event.
+        this.subscriptions = new HashMap<>(ClusterEvents.values().length); // One for each event.
         this.subscriptions.put(ClusterEvents.VIEW_CHANGE, new ArrayList<>(1));
+        this.subscriptions.put(ClusterEvents.VIEW_CHANGE_PROPOSAL, new ArrayList<>(1));
 
         // Schedule background jobs
         this.scheduledExecutorService.scheduleAtFixedRate(new LinkUpdateBatcher(),
@@ -279,8 +280,7 @@ final class MembershipService {
     synchronized void processLinkUpdateMessage(final BatchedLinkUpdateMessage messageBatch) {
         Objects.requireNonNull(messageBatch);
 
-        // Unfortunate, but we already have a proposal for this round => we have initiated
-        // consensus and cannot go back on our proposal.
+        // We already have a proposal for this round => we have initiated consensus and cannot go back on our proposal.
         if (proposalForCurrentConfiguration.size() > 0) {
             return;
         }
@@ -352,7 +352,12 @@ final class MembershipService {
 
             LOG.debug("Node {} has a proposal of size {}: {}", myAddr, proposal.size(), proposal);
 
-            // TODO: Initiate consensus here.
+            final List<NodeStatusChange> result = createNodeStatusChangeList(proposal);
+
+            // Inform subscribers that a proposal has been announced.
+            subscriptions.get(ClusterEvents.VIEW_CHANGE_PROPOSAL).forEach(cb -> cb.accept(result));
+
+            // TODO: Plug different consensus implementations here
             proposalForCurrentConfiguration = ImmutableList.copyOf(proposal);
             final ConsensusProposal proposalMessage = ConsensusProposal.newBuilder()
                                                             .setConfigurationId(currentConfigurationId)
@@ -402,13 +407,13 @@ final class MembershipService {
                 // this ties us to just two states a node can be in.
                 if (isPresent) {
                     membershipView.ringDelete(node);
-                    statusChanges.add(new NodeStatusChange(node, LinkStatus.DOWN, metadataManager.getRoles(node)));
+                    statusChanges.add(new NodeStatusChange(node, LinkStatus.DOWN, metadataManager.get(node)));
                     metadataManager.removeNode(node);
                 }
                 else {
                     assert joinerUuid.containsKey(node);
                     membershipView.ringAdd(node, joinerUuid.get(node));
-                    statusChanges.add(new NodeStatusChange(node, LinkStatus.UP, metadataManager.getRoles(node)));
+                    statusChanges.add(new NodeStatusChange(node, LinkStatus.UP, metadataManager.get(node)));
                 }
             }
 
@@ -544,6 +549,18 @@ final class MembershipService {
         finally {
             batchSchedulerLock.unlock();
         }
+    }
+
+    /**
+     * Formats a proposal or a view change for application subscriptions.
+     */
+    private List<NodeStatusChange> createNodeStatusChangeList(final Set<HostAndPort> proposal) {
+        final List<NodeStatusChange> list = new ArrayList<>(proposal.size());
+        for (final HostAndPort node: proposal) {
+            final LinkStatus status = membershipView.isHostPresent(node) ? LinkStatus.UP : LinkStatus.DOWN;
+            list.add(new NodeStatusChange(node, status, metadataManager.get(node)));
+        }
+        return list;
     }
 
     /**
