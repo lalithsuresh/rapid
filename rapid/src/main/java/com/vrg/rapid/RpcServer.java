@@ -139,9 +139,15 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
         responseObserver.onCompleted();
     }
 
-    public void setJoinResponseListener(final HostAndPort hostAndPort,
-                                        final SettableFuture<JoinResponse> listener) {
-        joinResponseListener.put(hostAndPort, listener);
+    /**
+     * Used by Cluster.join() to register a callback which is invoked when monitors send a join confirmation.
+     *
+     * @param monitor the monitor node from whom to expect a confirmation
+     * @param listener the listener to invoke when a confirmation arrives
+     */
+    void setJoinResponseListener(final HostAndPort monitor,
+                                 final SettableFuture<JoinResponse> listener) {
+        joinResponseListener.put(monitor, listener);
     }
 
     /**
