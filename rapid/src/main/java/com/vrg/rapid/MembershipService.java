@@ -14,7 +14,6 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.vrg.rapid.monitoring.ILinkFailureDetector;
 import com.vrg.rapid.monitoring.PingPongFailureDetector;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
@@ -43,7 +42,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
@@ -58,7 +56,7 @@ import java.util.stream.Collectors;
 /**
  * Membership server class that implements the Rapid protocol.
  *
- * Note: This class is not thread-safe yet. RpcServer.start() uses a single threaded broadcastExecutor during the server
+ * Note: This class is not thread-safe yet. RpcServer.start() uses a single threaded messagingExecutor during the server
  * initialization to make sure that only a single thread runs the process* methods.
  *
  */
@@ -77,7 +75,7 @@ final class MembershipService {
     private final Map<HostAndPort, UUID> joinerUuid = new HashMap<>(); // XXX: Not being cleared.
     private final List<Set<HostAndPort>> logProposalList = new ArrayList<>();
     private final LinkFailureDetectorRunner linkFailureDetectorRunner;
-    private final ExecutorService broadcastExecutor;
+    private final ScheduledExecutorService messagingExecutor;
     private final RpcClient rpcClient;
     private final MetadataManager metadataManager;
     private final boolean isExternalConsensusEnabled;
@@ -101,14 +99,11 @@ final class MembershipService {
         private final MembershipView membershipView;
         private final WatermarkBuffer watermarkBuffer;
         private final HostAndPort myAddr;
-        private final IBroadcaster broadcaster;
-        private final RpcClient rpcClient;
-        private final ExecutorService broadcastExecutor = Executors.newSingleThreadExecutor(new ThreadFactoryBuilder()
-                .setUncaughtExceptionHandler((t, e) -> System.err.println(String.format("Bad %s %s", t, t))).build());
         private boolean logProposals;
         private boolean isExternalConsensusEnabled = false;
         private Map<String, String> metadata = Collections.emptyMap();
         private ILinkFailureDetector linkFailureDetector;
+        private ScheduledExecutorService messagingExecutor = Executors.newScheduledThreadPool(2);
 
 
         Builder(final HostAndPort myAddr,
@@ -117,8 +112,6 @@ final class MembershipService {
             this.myAddr = Objects.requireNonNull(myAddr);
             this.watermarkBuffer = Objects.requireNonNull(watermarkBuffer);
             this.membershipView = Objects.requireNonNull(membershipView);
-            this.rpcClient = new RpcClient(myAddr);
-            this.broadcaster = new UnicastToAllBroadcaster(rpcClient, broadcastExecutor);
             this.linkFailureDetector = new PingPongFailureDetector(myAddr);
         }
 
@@ -137,6 +130,11 @@ final class MembershipService {
             return this;
         }
 
+        Builder setScheduledExecutorService(final ScheduledExecutorService executorService) {
+            this.messagingExecutor = executorService;
+            return this;
+        }
+
         Builder enableExternalConsensus() {
             this.isExternalConsensusEnabled = true;
             return this;
@@ -152,11 +150,11 @@ final class MembershipService {
         this.membershipView = builder.membershipView;
         this.watermarkBuffer = builder.watermarkBuffer;
         this.logProposals = builder.logProposals;
-        this.broadcaster = builder.broadcaster;
-        this.rpcClient = builder.rpcClient;
         this.metadataManager = new MetadataManager();
         this.metadataManager.setMetadata(myAddr, builder.metadata);
-        this.broadcastExecutor = builder.broadcastExecutor;
+        this.messagingExecutor = builder.messagingExecutor;
+        this.rpcClient = new RpcClient(myAddr);
+        this.broadcaster = new UnicastToAllBroadcaster(rpcClient, builder.messagingExecutor);
         this.isExternalConsensusEnabled = builder.isExternalConsensusEnabled;
 
         this.subscriptions = new HashMap<>(ClusterEvents.values().length); // One for each event.
@@ -269,7 +267,7 @@ final class MembershipService {
                         configuration.getConfigurationId(), configuration.hostAndPorts.size());
             }
             final JoinResponse response = responseBuilder.build();
-            broadcastExecutor.execute(() -> {
+            messagingExecutor.execute(() -> {
                 rpcClient.sendJoinConfirmation(HostAndPort.fromString(joinMessage.getSender()), response);
             });
             responseObserver.onNext(Response.getDefaultInstance()); // new config
@@ -476,7 +474,7 @@ final class MembershipService {
         // Send out responses to all the nodes waiting to join.
         for (final HostAndPort node: proposal) {
             if (joinersToRespondTo.contains(node)) {
-                broadcastExecutor.execute(() -> rpcClient.sendJoinConfirmation(node, response));
+                messagingExecutor.execute(() -> rpcClient.sendJoinConfirmation(node, response));
             }
         }
     }
@@ -509,7 +507,7 @@ final class MembershipService {
      */
     private void linkFailureNotification(final HostAndPort monitoree) {
         // TODO: This should execute on the grpc-server thread.
-        broadcastExecutor.execute(() -> {
+        messagingExecutor.execute(() -> {
                 final long configurationId = membershipView.getCurrentConfigurationId();
                 if (LOG.isDebugEnabled()) {
                     final int size = membershipView.getRing(0).size();
@@ -554,7 +552,7 @@ final class MembershipService {
      */
     void shutdown() throws InterruptedException {
         scheduledExecutorService.shutdownNow();
-        broadcastExecutor.shutdownNow();
+        messagingExecutor.shutdownNow();
         rpcClient.shutdown();
     }
 
