@@ -29,6 +29,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -48,6 +50,7 @@ public class MessagingTest {
     private final int serverPortBase = 1234;
     private static final String localhostIp = "127.0.0.1";
     private final List<RpcServer> services = new ArrayList<>();
+    private final ExecutorService executorService = Executors.newSingleThreadScheduledExecutor();
 
     static {
         // gRPC INFO logs clutter the test output
@@ -271,7 +274,7 @@ public class MessagingTest {
                 new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView)
                                     .setLogProposals(true)
                                     .build();
-        final RpcServer rpcServer = new RpcServer(serverAddr);
+        final RpcServer rpcServer = new RpcServer(serverAddr, executorService);
         rpcServer.setMembershipService(service);
         rpcServer.startServer();
         services.add(rpcServer);
@@ -291,7 +294,7 @@ public class MessagingTest {
                 new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView)
                         .setLogProposals(true)
                         .build();
-        final RpcServer rpcServer = new RpcServer(serverAddr);
+        final RpcServer rpcServer = new RpcServer(serverAddr, executorService);
         rpcServer.setMembershipService(service);
         rpcServer.startServer(interceptors);
         services.add(rpcServer);
@@ -310,7 +313,7 @@ public class MessagingTest {
                 new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView)
                         .setLogProposals(true)
                         .build();
-        final RpcServer rpcServer = new RpcServer(serverAddr);
+        final RpcServer rpcServer = new RpcServer(serverAddr, executorService);
         rpcServer.setMembershipService(service);
         rpcServer.startServer(interceptors);
         services.add(rpcServer);

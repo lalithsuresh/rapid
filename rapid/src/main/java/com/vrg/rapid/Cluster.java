@@ -225,34 +225,40 @@ public final class Cluster {
                                                         .setConfigurationId(joinPhaseOneResult.getConfigurationId());
             final List<ListenableFuture<Response>> responseFutures = new ArrayList<>();
             final SettableFuture<Cluster> returnValue = SettableFuture.create();
-            for (final HostAndPort monitor : monitorList) {
-                final JoinMessage msg = builder.setRingNumber(ringNumber).build();
-                final SettableFuture<JoinResponse> joinListener = SettableFuture.create();
-                Futures.addCallback(joinListener, new FutureCallback<JoinResponse>() {
-                    @Override
-                    public void onSuccess(@Nullable final JoinResponse response) {
-                        if (response == null) {
-                            LOG.info("Received a null response.");
-                            return;
-                        }
-                        if (response.getStatusCode() == JoinStatusCode.MEMBERSHIP_REJECTED) {
-                            LOG.info("Membership rejected by {}. Quitting.", response.getSender());
-                            return;
-                        }
+            final FutureCallback<JoinResponse> callback = new FutureCallback<JoinResponse>() {
+                private boolean completed = false;
+                private final Object lock = new Object();
 
-                        if (response.getStatusCode() == JoinStatusCode.SAFE_TO_JOIN
-                                && response.getConfigurationId() != joinPhaseOneResult.getConfigurationId()) {
-                            // Safe to proceed. Extract the list of hosts and identifiers from the message,
-                            // assemble a MembershipService object and start an RpcServer.
-                            final List<HostAndPort> allHosts = response.getHostsList().stream()
-                                    .map(HostAndPort::fromString)
-                                    .collect(Collectors.toList());
-                            final List<UUID> identifiersSeen = response.getIdentifiersList().stream()
-                                    .map(UUID::fromString)
-                                    .collect(Collectors.toList());
+                @Override
+                public void onSuccess(@Nullable final JoinResponse response) {
+                    if (response == null) {
+                        LOG.info("Received a null response.");
+                        return;
+                    }
+                    if (response.getStatusCode() == JoinStatusCode.MEMBERSHIP_REJECTED) {
+                        LOG.info("Membership rejected by {}. Quitting.", response.getSender());
+                        return;
+                    }
 
-                            assert identifiersSeen.size() > 0;
-                            assert allHosts.size() > 0;
+                    if (response.getStatusCode() == JoinStatusCode.SAFE_TO_JOIN
+                            && response.getConfigurationId() != joinPhaseOneResult.getConfigurationId()) {
+                        // Safe to proceed. Extract the list of hosts and identifiers from the message,
+                        // assemble a MembershipService object and start an RpcServer.
+                        final List<HostAndPort> allHosts = response.getHostsList().stream()
+                                .map(HostAndPort::fromString)
+                                .collect(Collectors.toList());
+                        final List<UUID> identifiersSeen = response.getIdentifiersList().stream()
+                                .map(UUID::fromString)
+                                .collect(Collectors.toList());
+
+                        assert identifiersSeen.size() > 0;
+                        assert allHosts.size() > 0;
+
+                        synchronized (lock) {
+                            if (completed) {
+                                return;
+                            }
+                            completed = true;
                             final MembershipView membershipViewFinal =
                                     new MembershipView(K, identifiersSeen, allHosts);
                             final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
@@ -264,15 +270,21 @@ public final class Cluster {
                                     .build();
                             server.setMembershipService(membershipService);
                             returnValue.set(new Cluster(server, membershipService,
-                                                        isExternalConsensusEnabled, executor));
+                                    isExternalConsensusEnabled, executor));
                         }
                     }
+                }
 
-                    @Override
-                    public void onFailure(final Throwable throwable) {
-                        throwable.printStackTrace();
-                    }
-                });
+                @Override
+                public void onFailure(final Throwable throwable) {
+                    throwable.printStackTrace();
+                }
+            };
+
+            for (final HostAndPort monitor : monitorList) {
+                final JoinMessage msg = builder.setRingNumber(ringNumber).build();
+                final SettableFuture<JoinResponse> joinListener = SettableFuture.create();
+                Futures.addCallback(joinListener, callback);
                 server.setJoinResponseListener(monitor, joinListener);
                 final ListenableFuture<Response> call = joinerClient.sendJoinPhase2Message(monitor, msg);
                 responseFutures.add(call);

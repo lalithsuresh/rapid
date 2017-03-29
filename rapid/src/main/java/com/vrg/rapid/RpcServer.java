@@ -15,7 +15,6 @@ package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.SettableFuture;
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
 import com.vrg.rapid.pb.ConsensusProposalResponse;
@@ -44,7 +43,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 
 /**
