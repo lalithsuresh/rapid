@@ -75,7 +75,6 @@ final class MembershipService {
     private final Map<HostAndPort, UUID> joinerUuid = new HashMap<>(); // XXX: Not being cleared.
     private final List<Set<HostAndPort>> logProposalList = new ArrayList<>();
     private final LinkFailureDetectorRunner linkFailureDetectorRunner;
-    private final ScheduledExecutorService messagingExecutor;
     private final RpcClient rpcClient;
     private final MetadataManager metadataManager;
     private final boolean isExternalConsensusEnabled;
@@ -103,8 +102,6 @@ final class MembershipService {
         private boolean isExternalConsensusEnabled = false;
         private Map<String, String> metadata = Collections.emptyMap();
         private ILinkFailureDetector linkFailureDetector;
-        private ScheduledExecutorService messagingExecutor = Executors.newScheduledThreadPool(2);
-
 
         Builder(final HostAndPort myAddr,
                 final WatermarkBuffer watermarkBuffer,
@@ -130,16 +127,6 @@ final class MembershipService {
             return this;
         }
 
-        Builder setScheduledExecutorService(final ScheduledExecutorService executorService) {
-            this.messagingExecutor = executorService;
-            return this;
-        }
-
-        Builder enableExternalConsensus() {
-            this.isExternalConsensusEnabled = true;
-            return this;
-        }
-
         MembershipService build() {
             return new MembershipService(this);
         }
@@ -152,9 +139,8 @@ final class MembershipService {
         this.logProposals = builder.logProposals;
         this.metadataManager = new MetadataManager();
         this.metadataManager.setMetadata(myAddr, builder.metadata);
-        this.messagingExecutor = builder.messagingExecutor;
         this.rpcClient = new RpcClient(myAddr);
-        this.broadcaster = new UnicastToAllBroadcaster(rpcClient, builder.messagingExecutor);
+        this.broadcaster = new UnicastToAllBroadcaster(rpcClient, scheduledExecutorService);
         this.isExternalConsensusEnabled = builder.isExternalConsensusEnabled;
 
         this.subscriptions = new HashMap<>(ClusterEvents.values().length); // One for each event.
@@ -267,7 +253,7 @@ final class MembershipService {
                         configuration.getConfigurationId(), configuration.hostAndPorts.size());
             }
             final JoinResponse response = responseBuilder.build();
-            messagingExecutor.execute(() -> {
+            scheduledExecutorService.execute(() -> {
                 rpcClient.sendJoinConfirmation(HostAndPort.fromString(joinMessage.getSender()), response);
             });
             responseObserver.onNext(Response.getDefaultInstance()); // new config
@@ -474,7 +460,7 @@ final class MembershipService {
         // Send out responses to all the nodes waiting to join.
         for (final HostAndPort node: proposal) {
             if (joinersToRespondTo.contains(node)) {
-                messagingExecutor.execute(() -> rpcClient.sendJoinConfirmation(node, response));
+                scheduledExecutorService.execute(() -> rpcClient.sendJoinConfirmation(node, response));
             }
         }
     }
@@ -507,7 +493,7 @@ final class MembershipService {
      */
     private void linkFailureNotification(final HostAndPort monitoree) {
         // TODO: This should execute on the grpc-server thread.
-        messagingExecutor.execute(() -> {
+        scheduledExecutorService.execute(() -> {
                 final long configurationId = membershipView.getCurrentConfigurationId();
                 if (LOG.isDebugEnabled()) {
                     final int size = membershipView.getRing(0).size();
@@ -552,7 +538,6 @@ final class MembershipService {
      */
     void shutdown() throws InterruptedException {
         scheduledExecutorService.shutdownNow();
-        messagingExecutor.shutdownNow();
         rpcClient.shutdown();
     }
 

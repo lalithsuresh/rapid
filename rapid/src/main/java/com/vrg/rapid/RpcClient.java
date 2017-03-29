@@ -43,6 +43,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
@@ -57,6 +59,7 @@ final class RpcClient {
     private static final int RPC_TIMEOUT_SECONDS = 1;
     private static final int RPC_DEFAULT_RETRIES = 5;
     private final Map<HostAndPort, MembershipServiceFutureStub> channelMap = new ConcurrentHashMap<>();
+    private final ScheduledExecutorService executorService = Executors.newSingleThreadScheduledExecutor();
 
     RpcClient(final HostAndPort address) {
         this.address = address;
@@ -200,6 +203,7 @@ final class RpcClient {
      * Recover resources. For future use in case we provide custom executors for the ManagedChannels.
      */
     void shutdown() {
+        executorService.shutdownNow();
     }
 
     /**
