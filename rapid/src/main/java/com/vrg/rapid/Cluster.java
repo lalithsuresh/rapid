@@ -53,17 +53,22 @@ public final class Cluster {
     private static final int RETRIES = 5;
     private final MembershipService membershipService;
     private final RpcServer rpcServer;
+    private final boolean isExternalConsensusEnabled;
 
-    private Cluster(final RpcServer rpcServer, final MembershipService membershipService) {
+    private Cluster(final RpcServer rpcServer,
+                    final MembershipService membershipService,
+                    final boolean isExternalConsensusEnabled) {
         this.membershipService = membershipService;
         this.rpcServer = rpcServer;
+        this.isExternalConsensusEnabled = isExternalConsensusEnabled;
     }
 
     public static class Builder {
+        private final HostAndPort listenAddress;
         @Nullable private ILinkFailureDetector linkFailureDetector = null;
         private boolean logProposals = false;
         private Map<String, String> metadata = Collections.emptyMap();
-        private final HostAndPort listenAddress;
+        private boolean isExternalConsensusEnabled = false;
 
         /**
          * Instantiates a builder for a Rapid Cluster node that will listen on the given {@code listenAddress}
@@ -110,6 +115,15 @@ public final class Cluster {
         }
 
         /**
+         * This enables applications to receive consensus proposals and install their decisions into Rapid.
+         */
+        @ExperimentalApi
+        public Builder enableExternalConsensus() {
+            this.isExternalConsensusEnabled = true;
+            return this;
+        }
+
+        /**
          * Joins an existing cluster, using {@code seedAddress} to bootstrap.
          *
          * @param seedAddress Seed node for the bootstrap protocol
@@ -120,7 +134,7 @@ public final class Cluster {
                 linkFailureDetector = new PingPongFailureDetector(listenAddress);
             }
             return joinCluster(seedAddress, this.listenAddress, this.logProposals,
-                               this.linkFailureDetector, this.metadata);
+                               this.linkFailureDetector, this.metadata, this.isExternalConsensusEnabled);
         }
 
         /**
@@ -132,7 +146,8 @@ public final class Cluster {
             if (linkFailureDetector == null) {
                 linkFailureDetector = new PingPongFailureDetector(listenAddress);
             }
-            return startCluster(this.listenAddress, this.logProposals, this.linkFailureDetector, this.metadata);
+            return startCluster(this.listenAddress, this.logProposals, this.linkFailureDetector,
+                                this.metadata, this.isExternalConsensusEnabled);
         }
     }
 
@@ -140,7 +155,8 @@ public final class Cluster {
                                final HostAndPort listenAddress,
                                final boolean logProposals,
                                final ILinkFailureDetector linkFailureDetector,
-                               final Map<String, String> metadata) throws IOException, InterruptedException {
+                               final Map<String, String> metadata,
+                               final boolean isExternalConsensusEnabled) throws IOException, InterruptedException {
         UUID currentIdentifier = UUID.randomUUID();
 
         final RpcServer server = new RpcServer(listenAddress);
@@ -239,7 +255,7 @@ public final class Cluster {
                                         .setLinkFailureDetector(linkFailureDetector)
                                         .build();
                                 server.setMembershipService(membershipService);
-                                returnValue.set(new Cluster(server, membershipService));
+                                returnValue.set(new Cluster(server, membershipService, isExternalConsensusEnabled));
                             }
                         }
                     }
@@ -283,7 +299,8 @@ public final class Cluster {
     static Cluster startCluster(final HostAndPort listenAddress,
                                 final boolean logProposals,
                                 final ILinkFailureDetector linkFailureDetector,
-                                final Map<String, String> metadata) throws IOException {
+                                final Map<String, String> metadata,
+                                final boolean isExternalConsensusEnabled) throws IOException {
         Objects.requireNonNull(listenAddress);
         final RpcServer rpcServer = new RpcServer(listenAddress);
         final UUID currentIdentifier = UUID.randomUUID();
@@ -294,11 +311,11 @@ public final class Cluster {
                 membershipView)
                 .setLogProposals(logProposals)
                 .setLinkFailureDetector(linkFailureDetector)
-                .setRole(metadata)
+                .setMetadata(metadata)
                 .build();
         rpcServer.setMembershipService(membershipService);
         rpcServer.startServer();
-        return new Cluster(rpcServer, membershipService);
+        return new Cluster(rpcServer, membershipService, isExternalConsensusEnabled);
     }
 
     /**
@@ -319,6 +336,21 @@ public final class Cluster {
     public void registerSubscription(final ClusterEvents event,
                                      final Consumer<List<NodeStatusChange>> callback) {
         membershipService.registerSubscription(event, callback);
+    }
+
+    /**
+     * If external consensus is enabled applies {@code decision} against the current view.
+     *
+     * @param decision A list of nodes to apply as a view change. Nodes in {@code decision} that are part
+     *                 of the current view will be removed, nodes in {@code decision}
+     *                 that are not in the current view will be added.
+     */
+    @ExperimentalApi
+    public void applyViewChangeDecision(final List<HostAndPort> decision) {
+        if (!isExternalConsensusEnabled) {
+            throw new RuntimeException("installNewView not supported when external consensus is disabled");
+        }
+        membershipService.decideViewChange(decision);
     }
 
     /**

@@ -32,7 +32,7 @@ final class MetadataManager {
      * @param node Node for which the roles are being set.
      * @param roles The list of roles for the node.
      */
-    void setRoles(final HostAndPort node, final Map<String, String> roles) {
+    void setMetadata(final HostAndPort node, final Map<String, String> roles) {
         Objects.requireNonNull(node);
         Objects.requireNonNull(roles);
         roleMap.putIfAbsent(node, roles);

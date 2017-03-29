@@ -13,7 +13,6 @@
 
 package com.vrg.rapid;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.vrg.rapid.monitoring.ILinkFailureDetector;
@@ -28,6 +27,7 @@ import com.vrg.rapid.pb.LinkUpdateMessage;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
 import com.vrg.rapid.pb.Response;
+import io.grpc.ExperimentalApi;
 import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -80,6 +80,7 @@ final class MembershipService {
     private final ExecutorService broadcastExecutor;
     private final RpcClient rpcClient;
     private final MetadataManager metadataManager;
+    private final boolean isExternalConsensusEnabled;
 
     // Event subscriptions
     private final Map<ClusterEvents, List<Consumer<List<NodeStatusChange>>>> subscriptions;
@@ -93,8 +94,8 @@ final class MembershipService {
     private final ScheduledExecutorService scheduledExecutorService = Executors.newSingleThreadScheduledExecutor();
 
     // Fields used by consensus protocol
-    private List<HostAndPort> proposalForCurrentConfiguration = Collections.emptyList();
     private final Map<List<String>, AtomicInteger> votesPerProposal = new HashMap<>();
+    private boolean announcedProposal = false;
 
     static class Builder {
         private final MembershipView membershipView;
@@ -105,7 +106,8 @@ final class MembershipService {
         private final ExecutorService broadcastExecutor = Executors.newSingleThreadExecutor(new ThreadFactoryBuilder()
                 .setUncaughtExceptionHandler((t, e) -> System.err.println(String.format("Bad %s %s", t, t))).build());
         private boolean logProposals;
-        private Map<String, String> roles = Collections.emptyMap();
+        private boolean isExternalConsensusEnabled = false;
+        private Map<String, String> metadata = Collections.emptyMap();
         private ILinkFailureDetector linkFailureDetector;
 
 
@@ -125,13 +127,18 @@ final class MembershipService {
             return this;
         }
 
-        Builder setRole(final Map<String, String> roles) {
-            this.roles = roles;
+        Builder setMetadata(final Map<String, String> metadata) {
+            this.metadata = metadata;
             return this;
         }
 
         Builder setLinkFailureDetector(final ILinkFailureDetector linkFailureDetector) {
             this.linkFailureDetector = linkFailureDetector;
+            return this;
+        }
+
+        Builder enableExternalConsensus() {
+            this.isExternalConsensusEnabled = true;
             return this;
         }
 
@@ -148,8 +155,10 @@ final class MembershipService {
         this.broadcaster = builder.broadcaster;
         this.rpcClient = builder.rpcClient;
         this.metadataManager = new MetadataManager();
-        this.metadataManager.setRoles(myAddr, builder.roles);
+        this.metadataManager.setMetadata(myAddr, builder.metadata);
         this.broadcastExecutor = builder.broadcastExecutor;
+        this.isExternalConsensusEnabled = builder.isExternalConsensusEnabled;
+
         this.subscriptions = new HashMap<>(ClusterEvents.values().length); // One for each event.
         this.subscriptions.put(ClusterEvents.VIEW_CHANGE, new ArrayList<>(1));
         this.subscriptions.put(ClusterEvents.VIEW_CHANGE_PROPOSAL, new ArrayList<>(1));
@@ -281,7 +290,7 @@ final class MembershipService {
         Objects.requireNonNull(messageBatch);
 
         // We already have a proposal for this round => we have initiated consensus and cannot go back on our proposal.
-        if (proposalForCurrentConfiguration.size() > 0) {
+        if (announcedProposal) {
             return;
         }
 
@@ -325,7 +334,7 @@ final class MembershipService {
                 joinerUuid.put(destination, UUID.fromString(request.getUuid()));
 
                 // TODO: Ideally, we'd set the role only after the node has successfully joined.
-                metadataManager.setRoles(destination, request.getMetadataMap());
+                metadataManager.setMetadata(destination, request.getMetadataMap());
             }
             validMessages.add(request);
         }
@@ -351,24 +360,26 @@ final class MembershipService {
             }
 
             LOG.debug("Node {} has a proposal of size {}: {}", myAddr, proposal.size(), proposal);
+            announcedProposal = true;
 
             if (subscriptions.containsKey(ClusterEvents.VIEW_CHANGE_PROPOSAL)) {
                 final List<NodeStatusChange> result = createNodeStatusChangeList(proposal);
                 // Inform subscribers that a proposal has been announced.
                 subscriptions.get(ClusterEvents.VIEW_CHANGE_PROPOSAL).forEach(cb -> cb.accept(result));
             }
-            // TODO: Plug different consensus implementations here
-            proposalForCurrentConfiguration = ImmutableList.copyOf(proposal);
-            final ConsensusProposal proposalMessage = ConsensusProposal.newBuilder()
-                                                            .setConfigurationId(currentConfigurationId)
-                                                            .addAllHosts(proposalForCurrentConfiguration
-                                                                    .stream()
-                                                                    .map(HostAndPort::toString)
-                                                                    .sorted()
-                                                                    .collect(Collectors.toList()))
-                                                            .setSender(myAddr.toString())
-                                                            .build();
-            broadcaster.broadcast(membershipView.getRing(0), proposalMessage);
+            if (!isExternalConsensusEnabled) {
+                // TODO: Plug different consensus implementations here
+                final ConsensusProposal proposalMessage = ConsensusProposal.newBuilder()
+                        .setConfigurationId(currentConfigurationId)
+                        .addAllHosts(proposal
+                                .stream()
+                                .map(HostAndPort::toString)
+                                .sorted()
+                                .collect(Collectors.toList()))
+                        .setSender(myAddr.toString())
+                        .build();
+                broadcaster.broadcast(membershipView.getRing(0), proposalMessage);
+            }
         }
     }
 
@@ -380,6 +391,7 @@ final class MembershipService {
      *
      */
     void processConsensusProposal(final ConsensusProposal proposalMessage) {
+        assert !isExternalConsensusEnabled;
         final long currentConfigurationId = membershipView.getCurrentConfigurationId();
         final long membershipSize = membershipView.getRing(0).size();
 
@@ -409,7 +421,8 @@ final class MembershipService {
      * Any node that is not in the membership list will be added to the cluster,
      * and any node that is currently in the membership list will be removed from it.
      */
-    private void decideViewChange(final List<HostAndPort> proposal) {
+    @ExperimentalApi
+    void decideViewChange(final List<HostAndPort> proposal) {
         final List<NodeStatusChange> statusChanges = new ArrayList<>(proposal.size());
         for (final HostAndPort node : proposal) {
             final boolean isPresent = membershipView.isHostPresent(node);
@@ -434,8 +447,8 @@ final class MembershipService {
 
         // Clear data structures for the next round.
         watermarkBuffer.clear();
-        proposalForCurrentConfiguration = Collections.emptyList();
         votesPerProposal.clear();
+        announcedProposal = false;
 
         // Inform LinkFailureDetector about membership change
         linkFailureDetectorRunner.updateMembership(membershipView.getMonitoreesOf(myAddr));
