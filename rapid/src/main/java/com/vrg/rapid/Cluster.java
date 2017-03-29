@@ -28,6 +28,8 @@ import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
 import com.vrg.rapid.pb.Response;
 import io.grpc.ExperimentalApi;
+import io.grpc.Internal;
+import io.grpc.ServerInterceptor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -75,6 +77,7 @@ public final class Cluster {
         private boolean logProposals = false;
         private Map<String, String> metadata = Collections.emptyMap();
         private boolean isExternalConsensusEnabled = false;
+        private List<ServerInterceptor> serverInterceptors = Collections.emptyList();
 
         /**
          * Instantiates a builder for a Rapid Cluster node that will listen on the given {@code listenAddress}
@@ -130,6 +133,15 @@ public final class Cluster {
         }
 
         /**
+         * This is used by tests to inject message drop interceptors.
+         */
+        @Internal
+        Builder setServerInterceptors(final List<ServerInterceptor> interceptors) {
+            this.serverInterceptors = interceptors;
+            return this;
+        }
+
+        /**
          * Joins an existing cluster, using {@code seedAddress} to bootstrap.
          *
          * @param seedAddress Seed node for the bootstrap protocol
@@ -140,7 +152,8 @@ public final class Cluster {
                 linkFailureDetector = new PingPongFailureDetector(listenAddress);
             }
             return joinCluster(seedAddress, this.listenAddress, this.logProposals,
-                               this.linkFailureDetector, this.metadata, this.isExternalConsensusEnabled);
+                               this.linkFailureDetector, this.metadata, this.isExternalConsensusEnabled,
+                               this.serverInterceptors);
         }
 
         /**
@@ -153,7 +166,7 @@ public final class Cluster {
                 linkFailureDetector = new PingPongFailureDetector(listenAddress);
             }
             return startCluster(this.listenAddress, this.logProposals, this.linkFailureDetector,
-                                this.metadata, this.isExternalConsensusEnabled);
+                                this.metadata, this.isExternalConsensusEnabled, this.serverInterceptors);
         }
     }
 
@@ -162,7 +175,8 @@ public final class Cluster {
                                final boolean logProposals,
                                final ILinkFailureDetector linkFailureDetector,
                                final Map<String, String> metadata,
-                               final boolean isExternalConsensusEnabled) throws IOException, InterruptedException {
+                               final boolean isExternalConsensusEnabled,
+                               final List<ServerInterceptor> interceptors) throws IOException, InterruptedException {
         UUID currentIdentifier = UUID.randomUUID();
         final ExecutorService executor = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder()
                 .setUncaughtExceptionHandler(
@@ -171,7 +185,7 @@ public final class Cluster {
 
         final RpcServer server = new RpcServer(listenAddress, executor);
         final RpcClient joinerClient = new RpcClient(listenAddress);
-        server.startServer();
+        server.startServer(interceptors);
         for (int attempt = 0; attempt < RETRIES; attempt++) {
             joinerClient.createLongLivedConnections(ImmutableSet.of(seedAddress));
             // First, get the configuration ID and the monitors to contact from the seed node.
@@ -320,7 +334,8 @@ public final class Cluster {
                                 final boolean logProposals,
                                 final ILinkFailureDetector linkFailureDetector,
                                 final Map<String, String> metadata,
-                                final boolean isExternalConsensusEnabled) throws IOException {
+                                final boolean isExternalConsensusEnabled,
+                                final List<ServerInterceptor> interceptors) throws IOException {
         Objects.requireNonNull(listenAddress);
         final ExecutorService executor = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder()
                 .setUncaughtExceptionHandler(
@@ -338,7 +353,7 @@ public final class Cluster {
                 .setMetadata(metadata)
                 .build();
         rpcServer.setMembershipService(membershipService);
-        rpcServer.startServer();
+        rpcServer.startServer(interceptors);
         return new Cluster(rpcServer, membershipService, isExternalConsensusEnabled, executor);
     }
 

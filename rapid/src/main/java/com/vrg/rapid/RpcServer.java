@@ -13,6 +13,7 @@
 
 package com.vrg.rapid;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.SettableFuture;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
@@ -37,7 +38,7 @@ import io.grpc.stub.StreamObserver;
 import javax.annotation.Nullable;
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -166,6 +167,9 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
      * @param service a fully initialized MembershipService object.
      */
     void setMembershipService(final MembershipService service) {
+        if (this.membershipService != null) {
+            throw new RuntimeException("setMembershipService called more than once");
+        }
         this.membershipService = service;
         deferringInterceptor.unblock();
     }
@@ -176,17 +180,19 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
      * @throws IOException if a server cannot be successfully initialized
      */
     void startServer() throws IOException {
-        startServer(new ArrayList<>());
+        startServer(Collections.emptyList());
     }
 
     void startServer(final List<ServerInterceptor> interceptors) throws IOException {
         Objects.requireNonNull(interceptors);
-        interceptors.add(deferringInterceptor);
-
+        final ImmutableList.Builder<ServerInterceptor> listBuilder = ImmutableList.builder();
+        final List<ServerInterceptor> interceptorList = listBuilder.add(deferringInterceptor)
+                                                                   .addAll(interceptors) // called first by grpc
+                                                                   .build();
         if (USE_IN_PROCESS_SERVER) {
             final ServerBuilder builder = InProcessServerBuilder.forName(address.toString());
             server = builder.addService(ServerInterceptors
-                    .intercept(this, interceptors))
+                    .intercept(this, interceptorList))
                     .executor(executor)
                     .build()
                     .start();
@@ -194,7 +200,7 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
             final ServerBuilder builder = NettyServerBuilder.forAddress(new InetSocketAddress(address.getHost(),
                                                                                               address.getPort()));
             server = builder.addService(ServerInterceptors
-                    .intercept(this, interceptors))
+                    .intercept(this, interceptorList))
                     .executor(executor)
                     .build()
                     .start();

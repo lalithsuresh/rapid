@@ -248,7 +248,7 @@ public class MessagingTest {
         final int serverPort = 1234;
         final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, serverPort);
         final List<ServerInterceptor> interceptors = new ArrayList<>();
-        interceptors.add(new MessageDropInterceptor());
+        interceptors.add(new MessageDropInterceptor(1.0));
         final RpcServer rpcServer = createAndStartMembershipService(serverAddr, interceptors);
 
         final HostAndPort clientAddr = HostAndPort.fromParts(localhostIp, serverPort);
