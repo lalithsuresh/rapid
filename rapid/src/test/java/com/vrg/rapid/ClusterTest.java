@@ -279,7 +279,7 @@ public class ClusterTest {
         try {
             final CountDownLatch latch = new CountDownLatch(numNodes);
             for (int i = 0; i < numNodes; i++) {
-                executor.execute(() -> {
+                executor.submit(() -> {
                     try {
                         final HostAndPort joiningHost =
                                 HostAndPort.fromParts("127.0.0.1", portCounter.incrementAndGet());
@@ -342,6 +342,7 @@ public class ClusterTest {
      * @param seedHost seed node to validate the cluster view against
      */
     private void verifyClusterSize(final int expectedSize, final HostAndPort seedHost) {
+        assertEquals(expectedSize, instances.values().size());
         for (final Cluster cluster : instances.values()) {
             assertEquals(cluster.getMemberlist().size(), expectedSize);
             assertEquals(cluster.getMemberlist(), instances.get(seedHost).getMemberlist());
