@@ -286,7 +286,7 @@ final class MembershipService {
      * Link update messages that do not affect an ongoing proposal
      * needs to be dropped.
      */
-    synchronized void processLinkUpdateMessage(final BatchedLinkUpdateMessage messageBatch) {
+    void processLinkUpdateMessage(final BatchedLinkUpdateMessage messageBatch) {
         Objects.requireNonNull(messageBatch);
 
         // We already have a proposal for this round => we have initiated consensus and cannot go back on our proposal.

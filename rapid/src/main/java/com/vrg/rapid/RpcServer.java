@@ -57,17 +57,17 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     @Nullable private MembershipService membershipService;
     @Nullable private Server server;
     private Map<HostAndPort, SettableFuture<JoinResponse>> joinResponseListener = new ConcurrentHashMap<>();
-    private final ExecutorService executor = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder()
-            .setUncaughtExceptionHandler(
-                (t, e) -> System.err.println(String.format("RpcServer executor caught exception: %s %s", t, t))
-            ).build());
+    private final ExecutorService executor;
+
 
     // Used to queue messages in the RPC layer until we are ready with
     // a MembershipService object
     private final DeferredReceiveInterceptor deferringInterceptor = new DeferredReceiveInterceptor();
 
-    public RpcServer(final HostAndPort address) {
+    public RpcServer(final HostAndPort address,
+                     final ExecutorService executorService) {
         this.address = address;
+        this.executor = executorService;
     }
 
     /**

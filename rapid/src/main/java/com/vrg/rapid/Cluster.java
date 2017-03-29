@@ -20,6 +20,7 @@ import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.vrg.rapid.monitoring.ILinkFailureDetector;
 import com.vrg.rapid.monitoring.PingPongFailureDetector;
 import com.vrg.rapid.pb.JoinMessage;
@@ -39,6 +40,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -54,13 +57,16 @@ public final class Cluster {
     private final MembershipService membershipService;
     private final RpcServer rpcServer;
     private final boolean isExternalConsensusEnabled;
+    private final ExecutorService executor;
 
     private Cluster(final RpcServer rpcServer,
                     final MembershipService membershipService,
-                    final boolean isExternalConsensusEnabled) {
+                    final boolean isExternalConsensusEnabled,
+                    final ExecutorService executorService) {
         this.membershipService = membershipService;
         this.rpcServer = rpcServer;
         this.isExternalConsensusEnabled = isExternalConsensusEnabled;
+        this.executor = executorService;
     }
 
     public static class Builder {
@@ -158,8 +164,12 @@ public final class Cluster {
                                final Map<String, String> metadata,
                                final boolean isExternalConsensusEnabled) throws IOException, InterruptedException {
         UUID currentIdentifier = UUID.randomUUID();
+        final ExecutorService executor = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder()
+                .setUncaughtExceptionHandler(
+                        (t, e) -> System.err.println(String.format("Server executor caught exception: %s %s", t, t))
+                ).build());
 
-        final RpcServer server = new RpcServer(listenAddress);
+        final RpcServer server = new RpcServer(listenAddress, executor);
         final RpcClient joinerClient = new RpcClient(listenAddress);
         server.startServer();
         for (int attempt = 0; attempt < RETRIES; attempt++) {
@@ -215,48 +225,46 @@ public final class Cluster {
                                                         .setConfigurationId(joinPhaseOneResult.getConfigurationId());
             final List<ListenableFuture<Response>> responseFutures = new ArrayList<>();
             final SettableFuture<Cluster> returnValue = SettableFuture.create();
-            final Object lock = new Object();
             for (final HostAndPort monitor : monitorList) {
                 final JoinMessage msg = builder.setRingNumber(ringNumber).build();
                 final SettableFuture<JoinResponse> joinListener = SettableFuture.create();
                 Futures.addCallback(joinListener, new FutureCallback<JoinResponse>() {
                     @Override
                     public void onSuccess(@Nullable final JoinResponse response) {
-                        synchronized (lock) {
-                            if (response == null) {
-                                LOG.info("Received a null response.");
-                                return;
-                            }
-                            if (response.getStatusCode() == JoinStatusCode.MEMBERSHIP_REJECTED) {
-                                LOG.info("Membership rejected by {}. Quitting.", response.getSender());
-                                return;
-                            }
+                        if (response == null) {
+                            LOG.info("Received a null response.");
+                            return;
+                        }
+                        if (response.getStatusCode() == JoinStatusCode.MEMBERSHIP_REJECTED) {
+                            LOG.info("Membership rejected by {}. Quitting.", response.getSender());
+                            return;
+                        }
 
-                            if (response.getStatusCode() == JoinStatusCode.SAFE_TO_JOIN
-                                    && response.getConfigurationId() != joinPhaseOneResult.getConfigurationId()) {
-                                // Safe to proceed. Extract the list of hosts and identifiers from the message,
-                                // assemble a MembershipService object and start an RpcServer.
-                                final List<HostAndPort> allHosts = response.getHostsList().stream()
-                                        .map(HostAndPort::fromString)
-                                        .collect(Collectors.toList());
-                                final List<UUID> identifiersSeen = response.getIdentifiersList().stream()
-                                        .map(UUID::fromString)
-                                        .collect(Collectors.toList());
+                        if (response.getStatusCode() == JoinStatusCode.SAFE_TO_JOIN
+                                && response.getConfigurationId() != joinPhaseOneResult.getConfigurationId()) {
+                            // Safe to proceed. Extract the list of hosts and identifiers from the message,
+                            // assemble a MembershipService object and start an RpcServer.
+                            final List<HostAndPort> allHosts = response.getHostsList().stream()
+                                    .map(HostAndPort::fromString)
+                                    .collect(Collectors.toList());
+                            final List<UUID> identifiersSeen = response.getIdentifiersList().stream()
+                                    .map(UUID::fromString)
+                                    .collect(Collectors.toList());
 
-                                assert identifiersSeen.size() > 0;
-                                assert allHosts.size() > 0;
-                                final MembershipView membershipViewFinal =
-                                        new MembershipView(K, identifiersSeen, allHosts);
-                                final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
-                                final MembershipService membershipService = new MembershipService.Builder(listenAddress,
-                                        watermarkBuffer,
-                                        membershipViewFinal)
-                                        .setLogProposals(logProposals)
-                                        .setLinkFailureDetector(linkFailureDetector)
-                                        .build();
-                                server.setMembershipService(membershipService);
-                                returnValue.set(new Cluster(server, membershipService, isExternalConsensusEnabled));
-                            }
+                            assert identifiersSeen.size() > 0;
+                            assert allHosts.size() > 0;
+                            final MembershipView membershipViewFinal =
+                                    new MembershipView(K, identifiersSeen, allHosts);
+                            final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
+                            final MembershipService membershipService = new MembershipService.Builder(listenAddress,
+                                    watermarkBuffer,
+                                    membershipViewFinal)
+                                    .setLogProposals(logProposals)
+                                    .setLinkFailureDetector(linkFailureDetector)
+                                    .build();
+                            server.setMembershipService(membershipService);
+                            returnValue.set(new Cluster(server, membershipService,
+                                                        isExternalConsensusEnabled, executor));
                         }
                     }
 
@@ -302,7 +310,11 @@ public final class Cluster {
                                 final Map<String, String> metadata,
                                 final boolean isExternalConsensusEnabled) throws IOException {
         Objects.requireNonNull(listenAddress);
-        final RpcServer rpcServer = new RpcServer(listenAddress);
+        final ExecutorService executor = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder()
+                .setUncaughtExceptionHandler(
+                        (t, e) -> System.err.println(String.format("Server executor caught exception: %s %s", t, t))
+                ).build());
+        final RpcServer rpcServer = new RpcServer(listenAddress, executor);
         final UUID currentIdentifier = UUID.randomUUID();
         final MembershipView membershipView = new MembershipView(K, Collections.singletonList(currentIdentifier),
                 Collections.singletonList(listenAddress));
@@ -315,7 +327,7 @@ public final class Cluster {
                 .build();
         rpcServer.setMembershipService(membershipService);
         rpcServer.startServer();
-        return new Cluster(rpcServer, membershipService, isExternalConsensusEnabled);
+        return new Cluster(rpcServer, membershipService, isExternalConsensusEnabled, executor);
     }
 
     /**
@@ -350,7 +362,9 @@ public final class Cluster {
         if (!isExternalConsensusEnabled) {
             throw new RuntimeException("installNewView not supported when external consensus is disabled");
         }
-        membershipService.decideViewChange(decision);
+
+        // This is the same executor being used by the rpc-server.
+        executor.execute(() -> membershipService.decideViewChange(decision));
     }
 
     /**
@@ -360,6 +374,7 @@ public final class Cluster {
         // TODO: this should probably be a "leave" method
         LOG.debug("Shutting down RpcServer and MembershipService");
         rpcServer.stopServer();
+        executor.shutdownNow();
         membershipService.shutdown();
     }
 }
