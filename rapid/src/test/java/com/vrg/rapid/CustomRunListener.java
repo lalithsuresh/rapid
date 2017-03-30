@@ -31,6 +31,11 @@ public class CustomRunListener extends RunListener {
     private final Stopwatch stopwatch = Stopwatch.createUnstarted();
 
     @Override
+    public void testRunStarted(final Description description) {
+        System.out.println("Runtime diagnostics: " + getRuntimeStats());
+    }
+
+    @Override
     public void testFinished(final Description description) throws Exception {
         if (!description.getChildren().contains(FAILED)) {
             final long elapsedTime = stopwatch.elapsed(TimeUnit.MILLISECONDS);
@@ -41,7 +46,8 @@ public class CustomRunListener extends RunListener {
     @Override
     public void testFailure(final Failure failure) throws Exception {
         final long elapsedTime = stopwatch.elapsed(TimeUnit.MILLISECONDS);
-        System.out.println(RED + "     [FAILED] [Time: " + elapsedTime + " ms]" + RESET + " " + failure);
+        System.out.println(RED + "     [FAILED] [Time: " + elapsedTime + " ms]" + getRuntimeStats()
+                + RESET + " " + failure);
         System.out.println(RED + "     " + RESET + failure.getException());
         failure.getDescription().addChild(FAILED);
     }
@@ -50,5 +56,11 @@ public class CustomRunListener extends RunListener {
     public void testStarted(final Description description) throws Exception {
         stopwatch.reset();
         stopwatch.start();
+    }
+
+    private String getRuntimeStats() {
+        final Runtime runtime = Runtime.getRuntime();
+        return String.format("[Proc:%d Mem:%s Free:%s]", runtime.availableProcessors(),
+                              runtime.totalMemory(), runtime.freeMemory());
     }
 }
