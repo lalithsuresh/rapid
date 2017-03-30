@@ -92,6 +92,7 @@ final class MembershipService {
 
     // Fields used by consensus protocol
     private final Map<List<String>, AtomicInteger> votesPerProposal = new HashMap<>();
+    private final Set<String> votesReceived = new HashSet<>(); // Should be a bitset
     private boolean announcedProposal = false;
 
     static class Builder {
@@ -385,17 +386,38 @@ final class MembershipService {
             return;
         }
 
+        if (votesReceived.contains(proposalMessage.getSender())) {
+            return;
+        }
+        votesReceived.add(proposalMessage.getSender());
         final AtomicInteger proposalsReceived = votesPerProposal.computeIfAbsent(proposalMessage.getHostsList(),
                                                                             (k) -> new AtomicInteger(0));
         final int count = proposalsReceived.incrementAndGet();
         final double F = ((double) membershipSize) / 3.0; // Fast Paxos resiliency.
 
-        if (count >= (membershipSize - F)) {
-            // We have a successful proposal. Consume it.
-            decideViewChange(proposalMessage.getHostsList()
-                                            .stream()
-                                            .map(HostAndPort::fromString)
-                                            .collect(Collectors.toList()));
+        if (votesReceived.size() >= (membershipSize - F)) {
+            if (count >= (membershipSize - F)) {
+                // We have a successful proposal. Consume it.
+                decideViewChange(proposalMessage.getHostsList()
+                                                .stream()
+                                                .map(HostAndPort::fromString)
+                                                .collect(Collectors.toList()));
+            }
+            else {
+                // Extremely rare scenario. Complain to the application.
+                List<String> proposalWithMostVotes = Collections.emptyList();
+                int min = Integer.MIN_VALUE;
+                for (final Map.Entry<List<String>, AtomicInteger> entry: votesPerProposal.entrySet()) {
+                    if (entry.getValue().get() > min) {
+                        proposalWithMostVotes = entry.getKey();
+                        min = entry.getValue().get();
+                    }
+                }
+                final Set<HostAndPort> toSet = proposalWithMostVotes.stream()
+                                                    .map(HostAndPort::fromString).collect(Collectors.toSet());
+                subscriptions.get(ClusterEvents.VIEW_CHANGE_ONE_STEP_FAILED)
+                        .forEach(cb -> cb.accept(createNodeStatusChangeList(toSet)));
+            }
         }
     }
 
@@ -433,6 +455,7 @@ final class MembershipService {
         // Clear data structures for the next round.
         watermarkBuffer.clear();
         votesPerProposal.clear();
+        votesReceived.clear();
         announcedProposal = false;
 
         // Inform LinkFailureDetector about membership change
