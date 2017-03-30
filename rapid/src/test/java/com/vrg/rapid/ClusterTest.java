@@ -354,7 +354,7 @@ public class ClusterTest {
      * between attempts. This is used to give failure detector logic some time to kick in.
      *
      * @param expectedSize expected size of each cluster
-     * @param maxTries number of tries to check if the cluster has stabilized.
+     * @param maxTries number of tries to checkMonitoree if the cluster has stabilized.
      * @param intervalInMs the time duration between checks.
      * @param seedNode the seed node to validate the cluster membership against
      */

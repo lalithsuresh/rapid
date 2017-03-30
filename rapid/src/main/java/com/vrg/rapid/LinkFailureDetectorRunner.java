@@ -1,11 +1,7 @@
 package com.vrg.rapid;
 
-/**
- * Created by lsuresh on 3/25/17.
- */
 
 import com.google.common.net.HostAndPort;
-import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.vrg.rapid.monitoring.ILinkFailureDetector;
@@ -16,14 +12,11 @@ import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Consumer;
@@ -35,7 +28,6 @@ import java.util.function.Consumer;
 public class LinkFailureDetectorRunner implements Runnable {
     private static final Logger LOG = LoggerFactory.getLogger(LinkFailureDetectorRunner.class);
     @GuardedBy("this") private Set<HostAndPort> monitorees = Collections.emptySet();
-    @GuardedBy("this") private final Map<HostAndPort, FutureCallback<ProbeResponse>> callbackMap = new HashMap<>();
     private final ILinkFailureDetector linkFailureDetector;
     private final RpcClient rpcClient;
     private final List<Consumer<HostAndPort>> linkFailureSubscriptions = new ArrayList<>();
@@ -54,18 +46,6 @@ public class LinkFailureDetectorRunner implements Runnable {
     synchronized void updateMembership(final List<HostAndPort> newMonitorees) {
         this.monitorees = new HashSet<>(newMonitorees);
         rpcClient.updateLongLivedConnections(this.monitorees);
-        this.callbackMap.clear();
-        this.monitorees.forEach(monitoree -> callbackMap.put(monitoree, new FutureCallback<ProbeResponse>() {
-            @Override
-            public void onSuccess(@Nullable final ProbeResponse probeResponse) {
-                linkFailureDetector.handleProbeOnSuccess(probeResponse, monitoree);
-            }
-
-            @Override
-            public void onFailure(final Throwable throwable) {
-                linkFailureDetector.handleProbeOnFailure(throwable, monitoree);
-            }
-        }));
         this.linkFailureDetector.onMembershipChange(newMonitorees);
     }
 
@@ -85,7 +65,7 @@ public class LinkFailureDetectorRunner implements Runnable {
     }
 
     /**
-     * For every monitoree, first check if the link has failed. If not, send out a probe request
+     * For every monitoree, first checkMonitoree if the link has failed. If not, send out a probe request
      * and handle the onSuccess and onFailure callbacks. If a link has failed, inform the MembershipService.
      */
     @Override
@@ -94,15 +74,12 @@ public class LinkFailureDetectorRunner implements Runnable {
             if (monitorees.size() == 0) {
                 return;
             }
-            final List<ListenableFuture<ProbeResponse>> probes = new ArrayList<>();
+            final List<ListenableFuture<Void>> healthChecks = new ArrayList<>();
             for (final HostAndPort monitoree : monitorees) {
                 if (!linkFailureDetector.hasFailed(monitoree)) {
                     // Node is up, so send it a probe and attach the callbacks.
-                    final ProbeMessage message = linkFailureDetector.createProbe(monitoree);
-                    final ListenableFuture<ProbeResponse> probeSend = rpcClient.sendProbeMessage(monitoree,
-                            message);
-                    Futures.addCallback(probeSend, callbackMap.get(monitoree));
-                    probes.add(probeSend);
+                    final ListenableFuture<Void> check = linkFailureDetector.checkMonitoree(monitoree);
+                    healthChecks.add(check);
                 } else {
                     // Informs MembershipService and other subscribers, if any, about the failure.
                     linkFailureSubscriptions.forEach(subscriber -> subscriber.accept(monitoree));
@@ -111,7 +88,7 @@ public class LinkFailureDetectorRunner implements Runnable {
 
             // Failed requests will have their onFailure() events called. So it is okay to
             // only block for the successful ones here.
-            Futures.successfulAsList(probes).get();
+            Futures.successfulAsList(healthChecks).get();
         }
         catch (final ExecutionException | StatusRuntimeException e) {
             LOG.error("Potential link failures: some probe messages have failed.");

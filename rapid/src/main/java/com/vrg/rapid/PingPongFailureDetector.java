@@ -11,15 +11,21 @@
  * permissions and limitations under the License.
  */
 
-package com.vrg.rapid.monitoring;
+package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
+import com.google.common.util.concurrent.FutureCallback;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.SettableFuture;
+import com.vrg.rapid.monitoring.ILinkFailureDetector;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
 import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nullable;
 import javax.annotation.concurrent.NotThreadSafe;
 import java.util.HashMap;
 import java.util.List;
@@ -35,27 +41,43 @@ public class PingPongFailureDetector implements ILinkFailureDetector {
     private static final int FAILURE_THRESHOLD = 3;
     private final HostAndPort address;
     private final ConcurrentHashMap<HostAndPort, AtomicInteger> failureCount;
+    private final RpcClient rpcClient;
 
     // A cache for probe messages. Avoids creating an unnecessary copy of a probe message each time.
     private final HashMap<HostAndPort, ProbeMessage> messageHashMap;
 
-    public PingPongFailureDetector(final HostAndPort address) {
+    public PingPongFailureDetector(final HostAndPort address,
+                                   final RpcClient rpcClient) {
         this.address = address;
         this.failureCount = new ConcurrentHashMap<>();
         this.messageHashMap = new HashMap<>();
+        this.rpcClient = rpcClient;
     }
 
     // Executed at monitor
     @Override
-    public ProbeMessage createProbe(final HostAndPort monitoree) {
+    public ListenableFuture<Void> checkMonitoree(final HostAndPort monitoree) {
         LOG.trace("{} sending probe to {}", address, monitoree);
-        return messageHashMap.get(monitoree);
+        final ProbeMessage probeMessage = messageHashMap.get(monitoree);
+        final SettableFuture<Void> completionEvent = SettableFuture.create();
+        Futures.addCallback(rpcClient.sendProbeMessage(monitoree, probeMessage), new FutureCallback<ProbeResponse>() {
+            @Override
+            public void onSuccess(@Nullable final ProbeResponse probeResponse) {
+                handleProbeOnSuccess(monitoree);
+                completionEvent.set(null);
+            }
+
+            @Override
+            public void onFailure(final Throwable throwable) {
+                handleProbeOnFailure(throwable, monitoree);
+                completionEvent.set(null);
+            }
+        });
+        return completionEvent;
     }
 
     // Executed at monitor
-    @Override
-    public void handleProbeOnSuccess(final ProbeResponse probeResponse,
-                                     final HostAndPort monitoree) {
+    private void handleProbeOnSuccess(final HostAndPort monitoree) {
         if (!failureCount.containsKey(monitoree)) {
             LOG.trace("handleProbeOnSuccess at {} heard from a node we are not assigned to ({})", address, monitoree);
         }
@@ -63,9 +85,8 @@ public class PingPongFailureDetector implements ILinkFailureDetector {
     }
 
     // Executed at monitor
-    @Override
-    public void handleProbeOnFailure(final Throwable throwable,
-                                     final HostAndPort monitoree) {
+    private void handleProbeOnFailure(final Throwable throwable,
+                                      final HostAndPort monitoree) {
         if (!failureCount.containsKey(monitoree)) {
             LOG.trace("handleProbeOnSuccess at {} heard from a node we are not assigned to ({})", address, monitoree);
         }
@@ -97,7 +118,6 @@ public class PingPongFailureDetector implements ILinkFailureDetector {
     }
 
     // Executed at monitoree
-    @Override
     public void handleProbeMessage(final ProbeMessage probeMessage,
                                    final StreamObserver<ProbeResponse> probeResponseStreamObserver) {
         LOG.trace("handleProbeMessage at {} from {}", address, probeMessage.getSender());

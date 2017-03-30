@@ -22,7 +22,6 @@ import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.vrg.rapid.monitoring.ILinkFailureDetector;
-import com.vrg.rapid.monitoring.PingPongFailureDetector;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
@@ -148,9 +147,6 @@ public final class Cluster {
          * @throws IOException Thrown if we cannot successfully start a server
          */
         public Cluster join(final HostAndPort seedAddress) throws IOException, InterruptedException {
-            if (linkFailureDetector == null) {
-                linkFailureDetector = new PingPongFailureDetector(listenAddress);
-            }
             return joinCluster(seedAddress, this.listenAddress, this.logProposals,
                                this.linkFailureDetector, this.metadata, this.isExternalConsensusEnabled,
                                this.serverInterceptors);
@@ -162,9 +158,6 @@ public final class Cluster {
          * @throws IOException Thrown if we cannot successfully start a server
          */
         public Cluster start() throws IOException {
-            if (linkFailureDetector == null) {
-                linkFailureDetector = new PingPongFailureDetector(listenAddress);
-            }
             return startCluster(this.listenAddress, this.logProposals, this.linkFailureDetector,
                                 this.metadata, this.isExternalConsensusEnabled, this.serverInterceptors);
         }
@@ -173,7 +166,7 @@ public final class Cluster {
     static Cluster joinCluster(final HostAndPort seedAddress,
                                final HostAndPort listenAddress,
                                final boolean logProposals,
-                               final ILinkFailureDetector linkFailureDetector,
+                               @Nullable final ILinkFailureDetector linkFailureDetector,
                                final Map<String, String> metadata,
                                final boolean isExternalConsensusEnabled,
                                final List<ServerInterceptor> interceptors) throws IOException, InterruptedException {
@@ -232,7 +225,7 @@ public final class Cluster {
                     .collect(Collectors.toList());
 
             int ringNumber = 0;
-            final JoinMessage.Builder builder = JoinMessage.newBuilder()
+            final JoinMessage.Builder joinMsgBuilder = JoinMessage.newBuilder()
                                                         .setSender(listenAddress.toString())
                                                         .setUuid(currentIdentifier.toString())
                                                         .putAllMetadata(metadata)
@@ -276,12 +269,14 @@ public final class Cluster {
                             final MembershipView membershipViewFinal =
                                     new MembershipView(K, identifiersSeen, allHosts);
                             final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
-                            final MembershipService membershipService = new MembershipService.Builder(listenAddress,
-                                    watermarkBuffer,
-                                    membershipViewFinal)
-                                    .setLogProposals(logProposals)
-                                    .setLinkFailureDetector(linkFailureDetector)
-                                    .build();
+                            MembershipService.Builder msBuilder =
+                                    new MembershipService.Builder(listenAddress, watermarkBuffer, membershipViewFinal);
+                            if (linkFailureDetector != null) {
+                                msBuilder = msBuilder.setLinkFailureDetector(linkFailureDetector);
+                            }
+                            final MembershipService membershipService = msBuilder.setLogProposals(logProposals)
+                                                                                .setMetadata(metadata)
+                                                                                .build();
                             server.setMembershipService(membershipService);
                             returnValue.set(new Cluster(server, membershipService,
                                     isExternalConsensusEnabled, executor));
@@ -296,7 +291,7 @@ public final class Cluster {
             };
 
             for (final HostAndPort monitor : monitorList) {
-                final JoinMessage msg = builder.setRingNumber(ringNumber).build();
+                final JoinMessage msg = joinMsgBuilder.setRingNumber(ringNumber).build();
                 final SettableFuture<JoinResponse> joinListener = SettableFuture.create();
                 Futures.addCallback(joinListener, callback);
                 server.setJoinResponseListener(monitor, joinListener);
@@ -332,7 +327,7 @@ public final class Cluster {
     @VisibleForTesting
     static Cluster startCluster(final HostAndPort listenAddress,
                                 final boolean logProposals,
-                                final ILinkFailureDetector linkFailureDetector,
+                                @Nullable final ILinkFailureDetector linkFailureDetector,
                                 final Map<String, String> metadata,
                                 final boolean isExternalConsensusEnabled,
                                 final List<ServerInterceptor> interceptors) throws IOException {
@@ -346,12 +341,13 @@ public final class Cluster {
         final MembershipView membershipView = new MembershipView(K, Collections.singletonList(currentIdentifier),
                 Collections.singletonList(listenAddress));
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
-        final MembershipService membershipService = new MembershipService.Builder(listenAddress, watermarkBuffer,
-                membershipView)
-                .setLogProposals(logProposals)
-                .setLinkFailureDetector(linkFailureDetector)
-                .setMetadata(metadata)
-                .build();
+        MembershipService.Builder builder = new MembershipService.Builder(listenAddress, watermarkBuffer,
+                membershipView);
+        if (linkFailureDetector != null) {
+            builder = builder.setLinkFailureDetector(linkFailureDetector);
+        }
+        final MembershipService membershipService = builder.setLogProposals(logProposals)
+                                                           .setMetadata(metadata).build();
         rpcServer.setMembershipService(membershipService);
         rpcServer.startServer(interceptors);
         return new Cluster(rpcServer, membershipService, isExternalConsensusEnabled, executor);

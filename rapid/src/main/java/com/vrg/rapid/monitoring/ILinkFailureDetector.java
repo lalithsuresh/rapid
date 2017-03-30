@@ -14,8 +14,10 @@
 package com.vrg.rapid.monitoring;
 
 import com.google.common.net.HostAndPort;
+import com.google.common.util.concurrent.ListenableFuture;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
+import io.grpc.ExperimentalApi;
 import io.grpc.stub.StreamObserver;
 
 import java.util.List;
@@ -24,27 +26,18 @@ import java.util.List;
  * The LinkFailureDetector interface. Objects that implement this interface can be
  * supplied to the MembershipService to perform failure detection.
  */
+@ExperimentalApi
 public interface ILinkFailureDetector {
     /**
      * Executed at the monitor. Implementors are expected to create a self containing
      * ProbeMessage that will be sent to each monitor.
      */
-    ProbeMessage createProbe(final HostAndPort monitoree);
-
-    /**
-     * Executed at the monitor on successfully receiving a ProbeResponse for a sent
-     * ProbeMessage.
-     */
-    void handleProbeOnSuccess(final ProbeResponse probeResponse,
-                              final HostAndPort monitoree);
-    /**
-     * Executed at the monitor if an attempt to send a probe threw an exception.
-     */
-    void handleProbeOnFailure(final Throwable throwable,
-                              final HostAndPort monitoree);
+    ListenableFuture<Void> checkMonitoree(final HostAndPort monitoree);
 
     /**
      * Executed at the monitoree upon successfully receiving a probe message from a monitor.
+     *
+     * TODO: Expected to be removed when failure detectors can register their own gRPC services.
      */
     void handleProbeMessage(final ProbeMessage probeMessage,
                             final StreamObserver<ProbeResponse> probeResponseStreamObserver);

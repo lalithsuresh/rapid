@@ -15,7 +15,6 @@ package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.monitoring.ILinkFailureDetector;
-import com.vrg.rapid.monitoring.PingPongFailureDetector;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
 import com.vrg.rapid.pb.JoinMessage;
@@ -31,6 +30,7 @@ import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
 import javax.annotation.concurrent.NotThreadSafe;
 import java.util.ArrayList;
@@ -101,7 +101,7 @@ final class MembershipService {
         private boolean logProposals;
         private boolean isExternalConsensusEnabled = false;
         private Map<String, String> metadata = Collections.emptyMap();
-        private ILinkFailureDetector linkFailureDetector;
+        @Nullable private ILinkFailureDetector linkFailureDetector = null;
 
         Builder(final HostAndPort myAddr,
                 final WatermarkBuffer watermarkBuffer,
@@ -109,7 +109,6 @@ final class MembershipService {
             this.myAddr = Objects.requireNonNull(myAddr);
             this.watermarkBuffer = Objects.requireNonNull(watermarkBuffer);
             this.membershipView = Objects.requireNonNull(membershipView);
-            this.linkFailureDetector = new PingPongFailureDetector(myAddr);
         }
 
         Builder setLogProposals(final boolean logProposals) {
@@ -142,7 +141,6 @@ final class MembershipService {
         this.rpcClient = new RpcClient(myAddr);
         this.broadcaster = new UnicastToAllBroadcaster(rpcClient, scheduledExecutorService);
         this.isExternalConsensusEnabled = builder.isExternalConsensusEnabled;
-
         this.subscriptions = new HashMap<>(ClusterEvents.values().length); // One for each event.
         this.subscriptions.put(ClusterEvents.VIEW_CHANGE, new ArrayList<>(1));
         this.subscriptions.put(ClusterEvents.VIEW_CHANGE_PROPOSAL, new ArrayList<>(1));
@@ -153,7 +151,10 @@ final class MembershipService {
 
         // this::linkFailureNotification is invoked by the failure detector whenever an edge
         // to a monitor is marked faulty.
-        this.linkFailureDetectorRunner = new LinkFailureDetectorRunner(builder.linkFailureDetector, rpcClient);
+        final ILinkFailureDetector fd  = builder.linkFailureDetector != null
+                                        ? builder.linkFailureDetector
+                                        : new PingPongFailureDetector(myAddr, this.rpcClient);
+        this.linkFailureDetectorRunner = new LinkFailureDetectorRunner(fd, rpcClient);
         this.linkFailureDetectorRunner.registerSubscription(this::linkFailureNotification);
 
         // This primes the link failure detector with the initial set of monitorees.
@@ -264,7 +265,7 @@ final class MembershipService {
 
     /**
      * This method receives link update events and delivers them to
-     * the watermark buffer to check if it will return a valid
+     * the watermark buffer to checkMonitoree if it will return a valid
      * proposal.
      *
      * Link update messages that do not affect an ongoing proposal
