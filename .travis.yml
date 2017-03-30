@@ -5,4 +5,4 @@ jdk:
 script: mvn clean verify
 
 after_success:
-        - mvn jacoco:report coveralls:report
+        - mvn -pl '!rapid-examples' jacoco:report coveralls:report
