@@ -7,7 +7,6 @@ import com.vrg.rapid.monitoring.ILinkFailureDetector;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
 import io.grpc.stub.StreamObserver;
-import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
 import java.util.List;
 import java.util.Set;
@@ -30,7 +29,7 @@ public class StaticFailureDetector implements ILinkFailureDetector {
     @Override
     public void handleProbeMessage(final ProbeMessage probeMessage,
                                    final StreamObserver<ProbeResponse> probeResponseStreamObserver) {
-        throw new NotImplementedException();
+        throw new UnsupportedOperationException();
     }
 
     @Override
