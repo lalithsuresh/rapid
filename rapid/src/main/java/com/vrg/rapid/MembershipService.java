@@ -459,7 +459,17 @@ final class MembershipService {
         announcedProposal = false;
 
         // Inform LinkFailureDetector about membership change
-        linkFailureDetectorRunner.updateMembership(membershipView.getMonitoreesOf(myAddr));
+        if (membershipView.isHostPresent(myAddr)) {
+            linkFailureDetectorRunner.updateMembership(membershipView.getMonitoreesOf(myAddr));
+        }
+        else {
+            // We need to gracefully exit by calling a user handler and invalidating
+            // the current session.
+            LOG.error("{} got kicked out and is shutting down.", myAddr);
+            linkFailureDetectorRunner.updateMembership(Collections.emptyList());
+            // TODO: Invoke a "kicked-out" callback here that calls Cluster.shutdown().
+            return;
+        }
 
         // This should yield the new configuration.
         final MembershipView.Configuration configuration = membershipView.getConfiguration();

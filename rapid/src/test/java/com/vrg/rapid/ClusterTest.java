@@ -14,6 +14,7 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
+import com.vrg.rapid.monitoring.ILinkFailureDetector;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -23,8 +24,11 @@ import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -46,9 +50,11 @@ import static org.junit.Assert.fail;
 public class ClusterTest {
     @SuppressWarnings("FieldCanBeLocal")
     @Nullable private static Logger grpcLogger = null;
-    private final ConcurrentHashMap<HostAndPort, Cluster> instances = new ConcurrentHashMap<>();
+    private final Map<HostAndPort, Cluster> instances = new ConcurrentHashMap<>();
     private final int basePort = 1234;
     private final AtomicInteger portCounter = new AtomicInteger(basePort);
+    private final Map<HostAndPort, StaticFailureDetector> staticFds = new ConcurrentHashMap<>();
+    private boolean useStaticFd = false;
 
     @BeforeClass
     public static void beforeClass() {
@@ -68,6 +74,9 @@ public class ClusterTest {
         // Tests that depend on failure detection should set intervals by themselves
         MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 100000;
         MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 100000;
+
+        useStaticFd = false;
+        staticFds.clear();
     }
 
     @After
@@ -247,6 +256,32 @@ public class ClusterTest {
         waitAndVerify(numNodes - failingNodes, 20, 1000, seedHost);
     }
 
+
+    /**
+     * This test starts with a 50 node cluster. We then fail 16 nodes to see if the monitoring mechanism
+     * identifies the crashed nodes, and arrives at a decision.
+     *
+     */
+    @Test
+    public void useStaticExternalFailureDetector() throws IOException, InterruptedException {
+        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 3000;
+        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
+        useStaticFd = true;
+        final int numNodes = 50;
+        final int numFailingNodes = 3;
+        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
+        createCluster(numNodes, seedHost);
+        verifyClusterSize(numNodes, seedHost);
+
+        // Fail the first 3 nodes.
+        final Set<HostAndPort> failingSet = instances.entrySet()
+                                            .stream().limit(numFailingNodes)
+                                            .map(Map.Entry::getKey).collect(Collectors.toSet());
+        staticFds.values().forEach(e -> e.addFailedNodes(failingSet));
+        waitAndVerify(numNodes - numFailingNodes, 20, 1000, seedHost);
+    }
+
+
     /**
      * Creates a cluster of size {@code numNodes} with a seed {@code seedHost}.
      *
@@ -257,7 +292,13 @@ public class ClusterTest {
      *                     to register an RpcServer.
      */
     private void createCluster(final int numNodes, final HostAndPort seedHost) throws IOException {
-        final Cluster seed = new Cluster.Builder(seedHost).start();
+        Cluster.Builder seedBuilder = new Cluster.Builder(seedHost);
+        if (useStaticFd) {
+            final StaticFailureDetector fd = new StaticFailureDetector(new HashSet<>());
+            seedBuilder = seedBuilder.setLinkFailureDetector(fd);
+            staticFds.put(seedHost, fd);
+        }
+        final Cluster seed = seedBuilder.start();
         instances.put(seedHost, seed);
         assertEquals(seed.getMemberlist().size(), 1);
         if (numNodes >= 2) {
@@ -283,8 +324,13 @@ public class ClusterTest {
                     try {
                         final HostAndPort joiningHost =
                                 HostAndPort.fromParts("127.0.0.1", portCounter.incrementAndGet());
-                        final Cluster nonSeed = new Cluster.Builder(joiningHost)
-                                                           .join(seedHost);
+                        Cluster.Builder nonSeedBuilder = new Cluster.Builder(joiningHost);
+                        if (useStaticFd) {
+                            final StaticFailureDetector fd = new StaticFailureDetector(new HashSet<>());
+                            nonSeedBuilder = nonSeedBuilder.setLinkFailureDetector(fd);
+                            staticFds.put(joiningHost, fd);
+                        }
+                        final Cluster nonSeed = nonSeedBuilder.join(seedHost);
                         instances.put(joiningHost, nonSeed);
                     } catch (final Exception e) {
                         e.printStackTrace();
@@ -342,7 +388,6 @@ public class ClusterTest {
      * @param seedHost seed node to validate the cluster view against
      */
     private void verifyClusterSize(final int expectedSize, final HostAndPort seedHost) {
-        assertEquals(expectedSize, instances.values().size());
         for (final Cluster cluster : instances.values()) {
             assertEquals(cluster.getMemberlist().size(), expectedSize);
             assertEquals(cluster.getMemberlist(), instances.get(seedHost).getMemberlist());
