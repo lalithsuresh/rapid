@@ -106,7 +106,7 @@ public class MessagingTest {
         final JoinResponse result1 = client1.sendJoinMessage(serverAddr, clientAddr1, UUID.randomUUID()).get();
         assertNotNull(result1);
         assertEquals(JoinStatusCode.HOSTNAME_ALREADY_IN_RING, result1.getStatusCode());
-        assertEquals(0, result1.getHostsCount());
+        assertEquals(K, result1.getHostsCount());
         assertEquals(0, result1.getIdentifiersCount());
 
         // Try again with a different port, this should fail because we're using the same
@@ -248,7 +248,7 @@ public class MessagingTest {
         final int serverPort = 1234;
         final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, serverPort);
         final List<ServerInterceptor> interceptors = new ArrayList<>();
-        interceptors.add(new DropInterceptors.FixedProbability(1.0));
+        interceptors.add(new ServerDropInterceptors.FixedProbability(1.0));
         final RpcServer rpcServer = createAndStartMembershipService(serverAddr, interceptors);
 
         final HostAndPort clientAddr = HostAndPort.fromParts(localhostIp, serverPort);

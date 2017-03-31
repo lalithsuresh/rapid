@@ -26,6 +26,7 @@ import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
 import com.vrg.rapid.pb.Response;
+import io.grpc.ClientInterceptor;
 import io.grpc.ExperimentalApi;
 import io.grpc.Internal;
 import io.grpc.ServerInterceptor;
@@ -83,6 +84,7 @@ public final class Cluster {
         private Map<String, String> metadata = Collections.emptyMap();
         private boolean isExternalConsensusEnabled = false;
         private List<ServerInterceptor> serverInterceptors = Collections.emptyList();
+        private List<ClientInterceptor> clientInterceptors = Collections.emptyList();
 
         /**
          * Instantiates a builder for a Rapid Cluster node that will listen on the given {@code listenAddress}
@@ -138,11 +140,20 @@ public final class Cluster {
         }
 
         /**
-         * This is used by tests to inject message drop interceptors.
+         * This is used by tests to inject message drop interceptors at the RpcServer.
          */
         @Internal
         Builder setServerInterceptors(final List<ServerInterceptor> interceptors) {
             this.serverInterceptors = interceptors;
+            return this;
+        }
+
+        /**
+         * This is used by tests to inject message drop interceptors at the client channels.
+         */
+        @Internal
+        Builder setClientInterceptors(final List<ClientInterceptor> interceptors) {
+            this.clientInterceptors = interceptors;
             return this;
         }
 
@@ -155,7 +166,7 @@ public final class Cluster {
         public Cluster join(final HostAndPort seedAddress) throws IOException, InterruptedException {
             return joinCluster(seedAddress, this.listenAddress, this.logProposals,
                                this.linkFailureDetector, this.metadata, this.isExternalConsensusEnabled,
-                               this.serverInterceptors);
+                               this.serverInterceptors, this.clientInterceptors);
         }
 
         /**
@@ -169,13 +180,11 @@ public final class Cluster {
         }
     }
 
-    static Cluster joinCluster(final HostAndPort seedAddress,
-                               final HostAndPort listenAddress,
-                               final boolean logProposals,
-                               @Nullable final ILinkFailureDetector linkFailureDetector,
-                               final Map<String, String> metadata,
-                               final boolean isExternalConsensusEnabled,
-                               final List<ServerInterceptor> interceptors) throws IOException, InterruptedException {
+    static Cluster joinCluster(final HostAndPort seedAddress, final HostAndPort listenAddress,
+               final boolean logProposals, @Nullable final ILinkFailureDetector linkFailureDetector,
+               final Map<String, String> metadata, final boolean isExternalConsensusEnabled,
+               final List<ServerInterceptor> serverInterceptors, final List<ClientInterceptor> clientInterceptors)
+                                                                            throws IOException, InterruptedException {
         UUID currentIdentifier = UUID.randomUUID();
         final ExecutorService executor = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder()
                 .setUncaughtExceptionHandler(
@@ -183,8 +192,10 @@ public final class Cluster {
                 ).build());
 
         final RpcServer server = new RpcServer(listenAddress, executor);
-        final RpcClient joinerClient = new RpcClient(listenAddress);
-        server.startServer(interceptors);
+        final RpcClient joinerClient = new RpcClient(listenAddress, clientInterceptors);
+        server.startServer(serverInterceptors);
+        final SettableFuture<Cluster> returnValue = SettableFuture.create();
+        boolean didPreviousJoinSucceed = false;
         for (int attempt = 0; attempt < RETRIES; attempt++) {
             joinerClient.createLongLivedConnections(ImmutableSet.of(seedAddress));
             // First, get the configuration ID and the monitors to contact from the seed node.
@@ -203,26 +214,31 @@ public final class Cluster {
                 case UUID_ALREADY_IN_RING:
                     currentIdentifier = UUID.randomUUID();
                     continue;
-                case HOSTNAME_ALREADY_IN_RING:
-                    /*
-                     * TODO: This special case needs handling. If the joinPhase2 request times out,
-                     * a client may re-try a join by contacting the seed and get this response. It should
-                     * ideally get the configuration streamed to it.
-                     */
-                    LOG.error("Hostname already in configuration {}", joinPhaseOneResult.getConfigurationId());
-                    continue;
                 case MEMBERSHIP_REJECTED:
                     LOG.error("Membership rejected by {}. Quitting.", joinPhaseOneResult.getSender());
                     throw new RuntimeException("Membership rejected");
+                case HOSTNAME_ALREADY_IN_RING:
+                    /*
+                     * This is a special case. If the joinPhase2 request times out before the join confirmation
+                     * arrives from a monitor, a client may re-try a join by contacting the seed and get this response.
+                     * It should simply get the configuration streamed to it. To do that, that client retries the
+                     * join protocol but with a configuration id of -1.
+                     */
+                    LOG.error("Hostname already in configuration {}", joinPhaseOneResult.getConfigurationId());
+                    didPreviousJoinSucceed = true;
+                    break;
                 case SAFE_TO_JOIN:
                     break;
                 default:
                     throw new RuntimeException("Unrecognized status code");
             }
 
+            // -1 if we got a HOSTNAME_ALREADY_IN_RING status code in phase 1. This means we only need to ask
+            // monitors to stream us a configuration.
+            final long configurationToJoin = didPreviousJoinSucceed ? -1 : joinPhaseOneResult.getConfigurationId();
             if (attempt > 0) {
                 LOG.info("{} is retrying a join under a new configuration {}",
-                        listenAddress, joinPhaseOneResult.getConfigurationId());
+                        listenAddress, configurationToJoin);
             }
 
             // We have the list of monitors. Now contact them as part of phase 2.
@@ -235,9 +251,8 @@ public final class Cluster {
                                                         .setSender(listenAddress.toString())
                                                         .setUuid(currentIdentifier.toString())
                                                         .putAllMetadata(metadata)
-                                                        .setConfigurationId(joinPhaseOneResult.getConfigurationId());
+                                                        .setConfigurationId(configurationToJoin);
             final List<ListenableFuture<Response>> responseFutures = new ArrayList<>();
-            final SettableFuture<Cluster> returnValue = SettableFuture.create();
             final FutureCallback<JoinResponse> callback = new FutureCallback<JoinResponse>() {
                 private boolean completed = false;
                 private final Object lock = new Object();
@@ -254,7 +269,7 @@ public final class Cluster {
                     }
 
                     if (response.getStatusCode() == JoinStatusCode.SAFE_TO_JOIN
-                            && response.getConfigurationId() != joinPhaseOneResult.getConfigurationId()) {
+                            && response.getConfigurationId() != configurationToJoin) {
                         // Safe to proceed. Extract the list of hosts and identifiers from the message,
                         // assemble a MembershipService object and start an RpcServer.
                         final List<HostAndPort> allHosts = response.getHostsList().stream()
@@ -321,10 +336,10 @@ public final class Cluster {
                 return returnValue.get(JOIN_ATTEMPT_TIMEOUT_MS, TimeUnit.MILLISECONDS);
             } catch (final ExecutionException e) {
                 LOG.error("JoinPhaseTwo request by {} for configuration {} threw an exception. Retrying. {}",
-                        listenAddress, joinPhaseOneResult.getConfigurationId(), e.getMessage());
+                        listenAddress, configurationToJoin, e.getMessage());
             } catch (final TimeoutException e) {
                 LOG.error("JoinPhaseTwo request by {} for configuration {} timed-out. Retrying. {}",
-                        listenAddress, joinPhaseOneResult.getConfigurationId(), e.getMessage());
+                        listenAddress, configurationToJoin, e.getMessage());
             }
         }
         server.stopServer();

@@ -2,7 +2,7 @@ language: java
 sudo: true
 jdk:
         - oraclejdk8
-script: mvn clean verify
+script: mvn clean verify -Dorg.slf4j.simpleLogger.defaultLogLevel=OFF
 
 after_success:
         - mvn -pl '!rapid-examples' jacoco:report coveralls:report

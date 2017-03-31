@@ -30,6 +30,8 @@ import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
 import com.vrg.rapid.pb.Response;
 import io.grpc.Channel;
+import io.grpc.ClientInterceptor;
+import io.grpc.ClientInterceptors;
 import io.grpc.Metadata;
 import io.grpc.StatusRuntimeException;
 import io.grpc.inprocess.InProcessChannelBuilder;
@@ -39,6 +41,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -55,10 +59,16 @@ final class RpcClient {
     private static final Logger LOG = LoggerFactory.getLogger(RpcClient.class);
     static boolean USE_IN_PROCESS_CHANNEL = false;
     private final HostAndPort address;
+    private final List<ClientInterceptor> interceptors;
     private final Map<HostAndPort, MembershipServiceFutureStub> channelMap = new ConcurrentHashMap<>();
 
     RpcClient(final HostAndPort address) {
+        this(address, Collections.emptyList());
+    }
+
+    RpcClient(final HostAndPort address, final List<ClientInterceptor> interceptors) {
         this.address = address;
+        this.interceptors = interceptors;
     }
 
     /**
@@ -273,7 +283,7 @@ final class RpcClient {
 
     private MembershipServiceFutureStub getFutureStub(final HostAndPort remote) {
         // TODO: allow configuring SSL/TLS
-        final Channel channel;
+        Channel channel;
         LOG.debug("Creating channel from {} to {}", address, remote);
 
         if (channelMap.containsKey(remote)) {
@@ -290,6 +300,10 @@ final class RpcClient {
                     .forAddress(remote.getHost(), remote.getPort())
                     .usePlaintext(true)
                     .build();
+        }
+
+        if (interceptors.size() > 0) {
+            channel = ClientInterceptors.intercept(channel, interceptors);
         }
 
         return MembershipServiceGrpc.newFutureStub(channel);

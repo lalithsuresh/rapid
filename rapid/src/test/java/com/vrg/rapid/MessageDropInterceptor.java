@@ -14,20 +14,24 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
+import io.grpc.CallOptions;
+import io.grpc.Channel;
+import io.grpc.ClientCall;
+import io.grpc.ClientInterceptor;
 import io.grpc.Metadata;
 import io.grpc.MethodDescriptor;
 import io.grpc.ServerCall;
 import io.grpc.ServerCallHandler;
 import io.grpc.ServerInterceptor;
 
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Drops messages at the server of a gRPC call. Used for testing.
  */
-class DropInterceptors {
-
+class ServerDropInterceptors {
     /**
      * Drops messages with a fixed probability
      */
@@ -78,6 +82,37 @@ class DropInterceptors {
                 return new ServerCall.Listener<ReqT>() {};
             }
             return serverCallHandler.startCall(serverCall, metadata);
+        }
+    }
+}
+
+/**
+ * Drops messages at the client of a gRPC call. Used for testing.
+ */
+class ClientInterceptors {
+    static class Delayer<T1, T2> implements ClientInterceptor {
+        private final CountDownLatch latch;
+        private final MethodDescriptor<T1, T2> methodToblock;
+
+        /**
+         * Drops messages of a specific type until the latch permits.
+         */
+        Delayer(final CountDownLatch latch, final MethodDescriptor<T1, T2> methodToblock) {
+            this.latch = latch;
+            this.methodToblock = methodToblock;
+        }
+
+        @Override
+        public <ReqT, RespT> ClientCall<ReqT, RespT> interceptCall(final MethodDescriptor<ReqT, RespT> methodDescriptor,
+                                                               final CallOptions callOptions, final Channel channel) {
+            if (methodToblock.getFullMethodName().equals(methodDescriptor.getFullMethodName())) {
+                try {
+                    latch.await();
+                } catch (final InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            return channel.newCall(methodDescriptor, callOptions);
         }
     }
 }

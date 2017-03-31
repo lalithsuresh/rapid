@@ -184,7 +184,8 @@ final class MembershipService {
         LOG.trace("Join at seed for {seed:{}, sender:{}, config:{}, size:{}}",
                 myAddr, joinMessage.getSender(),
                 membershipView.getCurrentConfigurationId(), membershipView.getRing(0).size());
-        if (statusCode.equals(JoinStatusCode.SAFE_TO_JOIN)) {
+        if (statusCode.equals(JoinStatusCode.SAFE_TO_JOIN)
+                || statusCode.equals(JoinStatusCode.HOSTNAME_ALREADY_IN_RING)) {
             // Return a list of monitors for the joiner to contact for phase 2 of the protocol
             builder.addAllHosts(membershipView.getExpectedMonitorsOf(joiningHost)
                    .stream()
@@ -204,7 +205,6 @@ final class MembershipService {
     void processJoinPhaseTwoMessage(final JoinMessage joinMessage,
                                     final StreamObserver<Response> responseObserver) {
         final long currentConfiguration = membershipView.getCurrentConfigurationId();
-
         if (currentConfiguration == joinMessage.getConfigurationId()) {
             LOG.trace("Enqueuing SAFE_TO_JOIN for {sender:{}, monitor:{}, config:{}, size:{}}",
                     joinMessage.getSender(), myAddr,
