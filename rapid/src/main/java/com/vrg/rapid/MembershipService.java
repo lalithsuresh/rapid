@@ -45,6 +45,7 @@ import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
@@ -89,6 +90,8 @@ final class MembershipService {
     private final LinkedBlockingQueue<LinkUpdateMessage> sendQueue = new LinkedBlockingQueue<>();
     private final Lock batchSchedulerLock = new ReentrantLock();
     private final ScheduledExecutorService scheduledExecutorService = Executors.newSingleThreadScheduledExecutor();
+    private final ScheduledFuture<?> linkUpdateBatcherJob;
+    private final ScheduledFuture<?> failureDetectorJob;
 
     // Fields used by consensus protocol
     private final Map<List<String>, AtomicInteger> votesPerProposal = new HashMap<>();
@@ -147,7 +150,7 @@ final class MembershipService {
         this.subscriptions.put(ClusterEvents.VIEW_CHANGE_PROPOSAL, new ArrayList<>(1));
 
         // Schedule background jobs
-        this.scheduledExecutorService.scheduleAtFixedRate(new LinkUpdateBatcher(),
+        linkUpdateBatcherJob = this.scheduledExecutorService.scheduleAtFixedRate(new LinkUpdateBatcher(),
                 0, BATCHING_WINDOW_IN_MS, TimeUnit.MILLISECONDS);
 
         // this::linkFailureNotification is invoked by the failure detector whenever an edge
@@ -160,7 +163,7 @@ final class MembershipService {
 
         // This primes the link failure detector with the initial set of monitorees.
         linkFailureDetectorRunner.updateMembership(membershipView.getMonitoreesOf(myAddr));
-        this.scheduledExecutorService.scheduleAtFixedRate(linkFailureDetectorRunner,
+        failureDetectorJob = this.scheduledExecutorService.scheduleAtFixedRate(linkFailureDetectorRunner,
                 FAILURE_DETECTOR_INITIAL_DELAY_IN_MS, FAILURE_DETECTOR_INTERVAL_IN_MS, TimeUnit.MILLISECONDS);
     }
 
@@ -345,7 +348,7 @@ final class MembershipService {
                 logProposalList.add(proposal);
             }
 
-            LOG.debug("Node {} has a proposal of size {}: {}", myAddr, proposal.size(), proposal);
+            LOG.trace("Node {} has a proposal of size {}: {}", myAddr, proposal.size(), proposal);
             announcedProposal = true;
 
             if (subscriptions.containsKey(ClusterEvents.VIEW_CHANGE_PROPOSAL)) {
@@ -397,6 +400,7 @@ final class MembershipService {
 
         if (votesReceived.size() >= (membershipSize - F)) {
             if (count >= (membershipSize - F)) {
+                LOG.trace("{} has decided on a view change: {}", myAddr, proposalMessage.getHostsList());
                 // We have a successful proposal. Consume it.
                 decideViewChange(proposalMessage.getHostsList()
                                                 .stream()
@@ -460,12 +464,13 @@ final class MembershipService {
 
         // Inform LinkFailureDetector about membership change
         if (membershipView.isHostPresent(myAddr)) {
-            linkFailureDetectorRunner.updateMembership(membershipView.getMonitoreesOf(myAddr));
+            final List<HostAndPort> newMonitorees = membershipView.getMonitoreesOf(myAddr);
+            linkFailureDetectorRunner.updateMembership(newMonitorees);
         }
         else {
             // We need to gracefully exit by calling a user handler and invalidating
             // the current session.
-            LOG.error("{} got kicked out and is shutting down.", myAddr);
+            LOG.trace("{} got kicked out and is shutting down.", myAddr);
             linkFailureDetectorRunner.updateMembership(Collections.emptyList());
             // TODO: Invoke a "kicked-out" callback here that calls Cluster.shutdown().
             return;
@@ -571,6 +576,8 @@ final class MembershipService {
      * Shuts down all the executors.
      */
     void shutdown() throws InterruptedException {
+        linkUpdateBatcherJob.cancel(true);
+        failureDetectorJob.cancel(true);
         scheduledExecutorService.shutdownNow();
         rpcClient.shutdown();
     }

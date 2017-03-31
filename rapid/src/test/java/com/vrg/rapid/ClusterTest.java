@@ -14,11 +14,15 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
-import com.vrg.rapid.monitoring.ILinkFailureDetector;
+import com.vrg.rapid.pb.MembershipServiceGrpc;
+import io.grpc.ServerInterceptor;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.BeforeClass;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TestWatcher;
+import org.junit.runner.Description;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -34,6 +38,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -54,7 +59,21 @@ public class ClusterTest {
     private final int basePort = 1234;
     private final AtomicInteger portCounter = new AtomicInteger(basePort);
     private final Map<HostAndPort, StaticFailureDetector> staticFds = new ConcurrentHashMap<>();
+    private final Map<HostAndPort, ServerInterceptor> serverInterceptors = new ConcurrentHashMap<>();
     private boolean useStaticFd = false;
+    private boolean injectInterceptor = false;
+    @Nullable private Random random = null;
+    private long seed;
+
+    @Rule
+    public final TestWatcher testWatcher = new TestWatcher() {
+        @Override
+        protected void failed(final Throwable e, final Description description) {
+
+            System.out.println("\u001B[31m     [FAILED] [Seed: " + seed + "] " + description.getMethodName()
+                               + "\u001B[0m");
+        }
+    };
 
     @BeforeClass
     public static void beforeClass() {
@@ -66,6 +85,8 @@ public class ClusterTest {
     @Before
     public void beforeTest() {
         instances.clear();
+        seed = ThreadLocalRandom.current().nextLong();
+        random = new Random(seed);
 
         // Tests need to opt out of the in-process channel
         RpcServer.USE_IN_PROCESS_SERVER = true;
@@ -76,7 +97,9 @@ public class ClusterTest {
         MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 100000;
 
         useStaticFd = false;
+        injectInterceptor = false;
         staticFds.clear();
+        serverInterceptors.clear();
     }
 
     @After
@@ -256,31 +279,48 @@ public class ClusterTest {
         waitAndVerify(numNodes - failingNodes, 20, 1000, seedHost);
     }
 
-
     /**
-     * This test starts with a 50 node cluster. We then fail 16 nodes to see if the monitoring mechanism
-     * identifies the crashed nodes, and arrives at a decision.
-     *
+     * This test starts with a 50 node cluster. We then use the static failure detector to fail
+     * all edges to 3 nodes.
      */
     @Test
-    public void useStaticExternalFailureDetector() throws IOException, InterruptedException {
+    public void failTenRandomNodes() throws IOException, InterruptedException {
         MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 3000;
         MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
         useStaticFd = true;
         final int numNodes = 50;
-        final int numFailingNodes = 3;
+        final int numFailingNodes = 10;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         createCluster(numNodes, seedHost);
         verifyClusterSize(numNodes, seedHost);
-
         // Fail the first 3 nodes.
-        final Set<HostAndPort> failingSet = instances.entrySet()
-                                            .stream().limit(numFailingNodes)
-                                            .map(Map.Entry::getKey).collect(Collectors.toSet());
-        staticFds.values().forEach(e -> e.addFailedNodes(failingSet));
+        final Set<HostAndPort> failingNodes = getRandomHosts(numFailingNodes);
+        staticFds.values().forEach(e -> e.addFailedNodes(failingNodes));
         waitAndVerify(numNodes - numFailingNodes, 20, 1000, seedHost);
     }
 
+    /**
+     * This test starts with a 50 node cluster. We then randomly fail at most 10 randomly selected nodes.
+     */
+    @Test
+    public void injectAsymmetricDrops() throws IOException, InterruptedException {
+        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 3000;
+        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
+        injectInterceptor = true;
+        final int numNodes = 50;
+        final int numFailingNodes = 10;
+        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
+
+        // These nodes will drop the first 100 probe requests they receive
+        final Set<HostAndPort> failedNodes =
+                getRandomHosts(basePort + 1, basePort + numNodes, numFailingNodes);
+        // Since the random function returns a set of failed nodes,
+        // we may have less than numFailedNodes entries in the set
+        failedNodes.forEach(host -> serverInterceptors.put(host,
+                     new DropInterceptors.FirstN<>(100, MembershipServiceGrpc.METHOD_RECEIVE_PROBE, host)));
+        createCluster(numNodes, seedHost);
+        waitAndVerify(numNodes - failedNodes.size(), 15, 1000, seedHost);
+    }
 
     /**
      * Creates a cluster of size {@code numNodes} with a seed {@code seedHost}.
@@ -292,13 +332,7 @@ public class ClusterTest {
      *                     to register an RpcServer.
      */
     private void createCluster(final int numNodes, final HostAndPort seedHost) throws IOException {
-        Cluster.Builder seedBuilder = new Cluster.Builder(seedHost);
-        if (useStaticFd) {
-            final StaticFailureDetector fd = new StaticFailureDetector(new HashSet<>());
-            seedBuilder = seedBuilder.setLinkFailureDetector(fd);
-            staticFds.put(seedHost, fd);
-        }
-        final Cluster seed = seedBuilder.start();
+        final Cluster seed = buildCluster(seedHost).start();
         instances.put(seedHost, seed);
         assertEquals(seed.getMemberlist().size(), 1);
         if (numNodes >= 2) {
@@ -324,13 +358,7 @@ public class ClusterTest {
                     try {
                         final HostAndPort joiningHost =
                                 HostAndPort.fromParts("127.0.0.1", portCounter.incrementAndGet());
-                        Cluster.Builder nonSeedBuilder = new Cluster.Builder(joiningHost);
-                        if (useStaticFd) {
-                            final StaticFailureDetector fd = new StaticFailureDetector(new HashSet<>());
-                            nonSeedBuilder = nonSeedBuilder.setLinkFailureDetector(fd);
-                            staticFds.put(joiningHost, fd);
-                        }
-                        final Cluster nonSeed = nonSeedBuilder.join(seedHost);
+                        final Cluster nonSeed = buildCluster(joiningHost).join(seedHost);
                         instances.put(joiningHost, nonSeed);
                     } catch (final Exception e) {
                         e.printStackTrace();
@@ -389,7 +417,7 @@ public class ClusterTest {
      */
     private void verifyClusterSize(final int expectedSize, final HostAndPort seedHost) {
         for (final Cluster cluster : instances.values()) {
-            assertEquals(cluster.getMemberlist().size(), expectedSize);
+            assertEquals(cluster.toString(), expectedSize, cluster.getMemberlist().size());
             assertEquals(cluster.getMemberlist(), instances.get(seedHost).getMemberlist());
         }
     }
@@ -404,8 +432,7 @@ public class ClusterTest {
      * @param seedNode the seed node to validate the cluster membership against
      */
     private void waitAndVerify(final int expectedSize, final int maxTries, final int intervalInMs,
-                               final HostAndPort seedNode)
-                                    throws InterruptedException {
+                               final HostAndPort seedNode) throws InterruptedException {
         int tries = maxTries;
         while (--tries > 0) {
             boolean ready = true;
@@ -415,7 +442,6 @@ public class ClusterTest {
                     ready = false;
                 }
             }
-
             if (!ready) {
                 Thread.sleep(intervalInMs);
             } else {
@@ -424,5 +450,37 @@ public class ClusterTest {
         }
 
         verifyClusterSize(expectedSize, seedNode);
+    }
+
+    // Helper that provides a list of N random nodes that have already been added to the instances map
+    private Set<HostAndPort> getRandomHosts(final int N) {
+        assert random != null;
+        final List<Map.Entry<HostAndPort, Cluster>> entries = new ArrayList<>(instances.entrySet());
+        Collections.shuffle(entries);
+        return random.ints(instances.size(), 0, N)
+                     .mapToObj(i -> entries.get(i).getKey())
+                     .collect(Collectors.toSet());
+    }
+
+    // Helper that provides a list of N random nodes from portStart to portEnd
+    private Set<HostAndPort> getRandomHosts(final int portStart, final int portEnd, final int N) {
+        assert random != null;
+        return random.ints(N, portStart, portEnd)
+                .mapToObj(i -> HostAndPort.fromParts("127.0.0.1", i))
+                .collect(Collectors.toSet());
+    }
+
+    // Helper to use static-failure-detectors and inject interceptors
+    private Cluster.Builder buildCluster(final HostAndPort host) {
+        Cluster.Builder builder = new Cluster.Builder(host);
+        if (useStaticFd) {
+            final StaticFailureDetector fd = new StaticFailureDetector(new HashSet<>());
+            builder = builder.setLinkFailureDetector(fd);
+            staticFds.put(host, fd);
+        }
+        if (injectInterceptor && serverInterceptors.containsKey(host)) {
+            builder = builder.setServerInterceptors(Collections.singletonList(serverInterceptors.get(host)));
+        }
+        return builder;
     }
 }

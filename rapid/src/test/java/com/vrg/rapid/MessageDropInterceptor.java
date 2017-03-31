@@ -13,7 +13,9 @@
 
 package com.vrg.rapid;
 
+import com.google.common.net.HostAndPort;
 import io.grpc.Metadata;
+import io.grpc.MethodDescriptor;
 import io.grpc.ServerCall;
 import io.grpc.ServerCallHandler;
 import io.grpc.ServerInterceptor;
@@ -52,27 +54,30 @@ class DropInterceptors {
     }
 
     /**
-     * Drops the first N messages
+     * Drops the first N messages of a particular type.
      */
-    static class FirstN implements ServerInterceptor {
+    static class FirstN<T1, T2> implements ServerInterceptor {
         private final AtomicInteger counter;
+        private final MethodDescriptor<T1, T2> methodDescriptor;
+        private final HostAndPort host;
 
-        FirstN(final int N) {
+        FirstN(final int N, final MethodDescriptor<T1, T2> methodDescriptor, final HostAndPort host) {
             if (N < 1) {
                 throw new IllegalArgumentException("N must be >= 1");
             }
             this.counter = new AtomicInteger(N);
+            this.methodDescriptor = methodDescriptor;
+            this.host = host;
         }
 
         @Override
         public <ReqT, RespT> ServerCall.Listener<ReqT> interceptCall(final ServerCall<ReqT, RespT> serverCall,
                                      final Metadata metadata, final ServerCallHandler<ReqT, RespT> serverCallHandler) {
-            if (counter.getAndDecrement() >= 0) {
+            if (methodDescriptor.getFullMethodName().equals(serverCall.getMethodDescriptor().getFullMethodName())
+                    && counter.getAndDecrement() >= 0) {
                 return new ServerCall.Listener<ReqT>() {};
             }
-            else {
-                return serverCallHandler.startCall(serverCall, metadata);
-            }
+            return serverCallHandler.startCall(serverCall, metadata);
         }
     }
 }

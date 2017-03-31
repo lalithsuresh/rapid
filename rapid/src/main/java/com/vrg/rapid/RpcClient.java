@@ -75,7 +75,7 @@ final class RpcClient {
         Objects.requireNonNull(probeMessage);
 
         final MembershipServiceFutureStub stub = channelMap.computeIfAbsent(remote, this::getFutureStub);
-        return stub.receiveProbe(probeMessage);
+        return stub.withDeadlineAfter(RPC_TIMEOUT_SECONDS, TimeUnit.SECONDS).receiveProbe(probeMessage);
     }
 
     /**

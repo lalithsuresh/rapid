@@ -44,6 +44,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 
 
 /**
@@ -220,7 +221,7 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
                 membershipService.shutdown();
             }
             server.shutdown();
-            server.awaitTermination();
+            server.awaitTermination(1, TimeUnit.SECONDS);
             executor.shutdownNow();
         } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();

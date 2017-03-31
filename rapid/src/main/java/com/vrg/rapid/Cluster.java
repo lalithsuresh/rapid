@@ -59,15 +59,18 @@ public final class Cluster {
     private final RpcServer rpcServer;
     private final boolean isExternalConsensusEnabled;
     private final ExecutorService executor;
+    private final HostAndPort listenAddress;
 
     private Cluster(final RpcServer rpcServer,
                     final MembershipService membershipService,
                     final boolean isExternalConsensusEnabled,
-                    final ExecutorService executorService) {
+                    final ExecutorService executorService,
+                    final HostAndPort listenAddress) {
         this.membershipService = membershipService;
         this.rpcServer = rpcServer;
         this.isExternalConsensusEnabled = isExternalConsensusEnabled;
         this.executor = executorService;
+        this.listenAddress = listenAddress;
     }
 
     public static class Builder {
@@ -278,8 +281,14 @@ public final class Cluster {
                                                                                 .setMetadata(metadata)
                                                                                 .build();
                             server.setMembershipService(membershipService);
+                            if (LOG.isTraceEnabled()) {
+                                LOG.trace("{} has monitors {}", listenAddress,
+                                        membershipViewFinal.getMonitorsOf(listenAddress));
+                                LOG.trace("{} has monitorees {}", listenAddress,
+                                        membershipViewFinal.getMonitorsOf(listenAddress));
+                            }
                             returnValue.set(new Cluster(server, membershipService,
-                                    isExternalConsensusEnabled, executor));
+                                    isExternalConsensusEnabled, executor, listenAddress));
                         }
                     }
                 }
@@ -350,7 +359,7 @@ public final class Cluster {
                                                            .setMetadata(metadata).build();
         rpcServer.setMembershipService(membershipService);
         rpcServer.startServer(interceptors);
-        return new Cluster(rpcServer, membershipService, isExternalConsensusEnabled, executor);
+        return new Cluster(rpcServer, membershipService, isExternalConsensusEnabled, executor, listenAddress);
     }
 
     /**
@@ -399,5 +408,10 @@ public final class Cluster {
         rpcServer.stopServer();
         executor.shutdownNow();
         membershipService.shutdown();
+    }
+
+    @Override
+    public String toString() {
+        return "Cluster:" + listenAddress;
     }
 }
