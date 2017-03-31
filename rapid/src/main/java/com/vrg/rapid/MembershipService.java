@@ -34,6 +34,7 @@ import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
 import javax.annotation.concurrent.NotThreadSafe;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -146,8 +147,7 @@ final class MembershipService {
         this.broadcaster = new UnicastToAllBroadcaster(rpcClient, scheduledExecutorService);
         this.isExternalConsensusEnabled = builder.isExternalConsensusEnabled;
         this.subscriptions = new HashMap<>(ClusterEvents.values().length); // One for each event.
-        this.subscriptions.put(ClusterEvents.VIEW_CHANGE, new ArrayList<>(1));
-        this.subscriptions.put(ClusterEvents.VIEW_CHANGE_PROPOSAL, new ArrayList<>(1));
+        Arrays.stream(ClusterEvents.values()).forEach(event -> this.subscriptions.put(event, new ArrayList<>(1)));
 
         // Schedule background jobs
         linkUpdateBatcherJob = this.scheduledExecutorService.scheduleAtFixedRate(new LinkUpdateBatcher(),

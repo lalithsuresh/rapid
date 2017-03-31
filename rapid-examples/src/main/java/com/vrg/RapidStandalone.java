@@ -45,10 +45,26 @@ public class RapidStandalone
     private static void onViewChangeProposal(final List<NodeStatusChange> viewChange) {
         Objects.requireNonNull(localActor);
         Objects.requireNonNull(actorSystem);
-
         System.out.println("The condition detector has outputted a proposal: " + viewChange);
     }
 
+    /**
+     * Executed whenever a Cluster VIEW_CHANGE_ONE_STEP_FAILED event occurs.
+     */
+    private static void onViewChangeOneStepFailed(final List<NodeStatusChange> viewChange) {
+        Objects.requireNonNull(localActor);
+        Objects.requireNonNull(actorSystem);
+        System.out.println("The condition detector had a conflict during one-step consensus: " + viewChange);
+    }
+
+    /**
+     * Executed whenever a Cluster KICKED event occurs.
+     */
+    private static void onKicked(final List<NodeStatusChange> viewChange) {
+        Objects.requireNonNull(localActor);
+        Objects.requireNonNull(actorSystem);
+        System.out.println("We got kicked from the network: " + viewChange);
+    }
 
     /**
      * Executed whenever a Cluster VIEW_CHANGE event occurs.
@@ -138,6 +154,8 @@ public class RapidStandalone
         }
         cluster.registerSubscription(ClusterEvents.VIEW_CHANGE_PROPOSAL, RapidStandalone::onViewChangeProposal);
         cluster.registerSubscription(ClusterEvents.VIEW_CHANGE, RapidStandalone::onViewChange);
+        cluster.registerSubscription(ClusterEvents.VIEW_CHANGE_ONE_STEP_FAILED, RapidStandalone::onViewChangeOneStepFailed);
+        cluster.registerSubscription(ClusterEvents.KICKED, RapidStandalone::onKicked);
 
         while (true) {
             System.out.println(cluster.getMemberlist().size());
