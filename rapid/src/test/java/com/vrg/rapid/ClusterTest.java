@@ -15,6 +15,7 @@ package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.MembershipServiceGrpc;
+import io.grpc.MethodDescriptor;
 import io.grpc.ServerInterceptor;
 import org.junit.After;
 import org.junit.Before;
@@ -55,11 +56,12 @@ import static org.junit.Assert.fail;
 public class ClusterTest {
     @SuppressWarnings("FieldCanBeLocal")
     @Nullable private static Logger grpcLogger = null;
+    private static final int RPC_TIMEOUT_SHORT_MS = 100;
     private final Map<HostAndPort, Cluster> instances = new ConcurrentHashMap<>();
     private final int basePort = 1234;
     private final AtomicInteger portCounter = new AtomicInteger(basePort);
     private final Map<HostAndPort, StaticFailureDetector> staticFds = new ConcurrentHashMap<>();
-    private final Map<HostAndPort, ServerInterceptor> serverInterceptors = new ConcurrentHashMap<>();
+    private final Map<HostAndPort, List<ServerInterceptor>> serverInterceptors = new ConcurrentHashMap<>();
     private boolean useStaticFd = false;
     private boolean injectInterceptor = false;
     @Nullable private Random random = null;
@@ -95,6 +97,8 @@ public class ClusterTest {
         // Tests that depend on failure detection should set intervals by themselves
         MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 100000;
         MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 100000;
+        Cluster.JOIN_ATTEMPT_TIMEOUT_MS = RpcClient.Conf.RPC_TIMEOUT_MEDIUM_MS * 20;
+        RpcClient.Conf.RPC_TIMEOUT_MS = RpcClient.Conf.RPC_TIMEOUT_MEDIUM_MS;
 
         useStaticFd = false;
         injectInterceptor = false;
@@ -316,10 +320,45 @@ public class ClusterTest {
                 getRandomHosts(basePort + 1, basePort + numNodes, numFailingNodes);
         // Since the random function returns a set of failed nodes,
         // we may have less than numFailedNodes entries in the set
-        failedNodes.forEach(host -> serverInterceptors.put(host,
-                     new DropInterceptors.FirstN<>(100, MembershipServiceGrpc.METHOD_RECEIVE_PROBE, host)));
+        failedNodes.forEach(host -> dropFirstN(host, 100, MembershipServiceGrpc.METHOD_RECEIVE_PROBE));
         createCluster(numNodes, seedHost);
         waitAndVerify(numNodes - failedNodes.size(), 15, 1000, seedHost);
+    }
+
+    /**
+     * This test starts with a node joining a 1 node cluster. We drop phase 2 messages at the seed
+     * such that RPC-level retries of the first join attempt eventually get through.
+     */
+    @Test
+    public void phase2MessageDropsRpcRetries() throws IOException, InterruptedException {
+        Cluster.JOIN_ATTEMPT_TIMEOUT_MS = RPC_TIMEOUT_SHORT_MS * 5;
+        RpcClient.Conf.RPC_TIMEOUT_MS = RPC_TIMEOUT_SHORT_MS; // use short retry delays to run tests faster.
+        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
+        injectInterceptor = true;
+        // Drop join-phase-2 attempts by nextNode, but only enough that the RPC retries make it past
+        dropFirstN(seedHost, (10 * RpcClient.Conf.RPC_DEFAULT_RETRIES) - 1,
+                   MembershipServiceGrpc.METHOD_RECEIVE_JOIN_PHASE2MESSAGE);
+        createCluster(1, seedHost);
+        extendCluster(1, seedHost);
+        waitAndVerify(2, 15, 1000, seedHost);
+    }
+
+    /**
+     * This test starts with a node joining a 1 node cluster. We drop phase 2 messages at the seed
+     * such that RPC-level retries of the first join attempt fail, and the client re-initiates a join.
+     */
+    @Test
+    public void phase2JoinAttemptRetry() throws IOException, InterruptedException {
+        Cluster.JOIN_ATTEMPT_TIMEOUT_MS = RPC_TIMEOUT_SHORT_MS * 5;
+        RpcClient.Conf.RPC_TIMEOUT_MS = RPC_TIMEOUT_SHORT_MS; // use short retry delays to run tests faster.
+        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
+        injectInterceptor = true;
+        // Drop join-phase-2 attempts by nextNode such that it re-attempts a join under a new configuration
+        dropFirstN(seedHost, (10 * RpcClient.Conf.RPC_DEFAULT_RETRIES) + 1,
+                   MembershipServiceGrpc.METHOD_RECEIVE_JOIN_PHASE2MESSAGE);
+        createCluster(1, seedHost);
+        extendCluster(1, seedHost);
+        waitAndVerify(2, 15, 1000, seedHost);
     }
 
     /**
@@ -479,8 +518,14 @@ public class ClusterTest {
             staticFds.put(host, fd);
         }
         if (injectInterceptor && serverInterceptors.containsKey(host)) {
-            builder = builder.setServerInterceptors(Collections.singletonList(serverInterceptors.get(host)));
+            builder = builder.setServerInterceptors(serverInterceptors.get(host));
         }
         return builder;
+    }
+
+    // Helper that drops the first N requests at a server of a given type
+    private <T, E> void dropFirstN(final HostAndPort host, final int N, final MethodDescriptor<T, E> messageType) {
+        serverInterceptors.computeIfAbsent(host, (k) -> new ArrayList<>(1))
+                .add(new DropInterceptors.FirstN<>(N, messageType, host));
     }
 }

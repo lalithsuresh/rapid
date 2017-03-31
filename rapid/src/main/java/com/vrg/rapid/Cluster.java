@@ -43,6 +43,8 @@ import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -60,6 +62,7 @@ public final class Cluster {
     private final boolean isExternalConsensusEnabled;
     private final ExecutorService executor;
     private final HostAndPort listenAddress;
+    static int JOIN_ATTEMPT_TIMEOUT_MS = 1000;
 
     private Cluster(final RpcServer rpcServer,
                     final MembershipService membershipService,
@@ -315,9 +318,12 @@ public final class Cluster {
                 // TODO: This is only correct if we use consensus for node addition.
                 // Unsuccessful responses will be null.
                 Futures.successfulAsList(responseFutures).get();
-                return returnValue.get();
+                return returnValue.get(JOIN_ATTEMPT_TIMEOUT_MS, TimeUnit.MILLISECONDS);
             } catch (final ExecutionException e) {
                 LOG.error("JoinPhaseTwo request by {} for configuration {} threw an exception. Retrying. {}",
+                        listenAddress, joinPhaseOneResult.getConfigurationId(), e.getMessage());
+            } catch (final TimeoutException e) {
+                LOG.error("JoinPhaseTwo request by {} for configuration {} timed-out. Retrying. {}",
                         listenAddress, joinPhaseOneResult.getConfigurationId(), e.getMessage());
             }
         }

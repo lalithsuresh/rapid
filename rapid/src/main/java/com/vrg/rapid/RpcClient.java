@@ -13,6 +13,7 @@
 
 package com.vrg.rapid;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
@@ -54,8 +55,6 @@ final class RpcClient {
     private static final Logger LOG = LoggerFactory.getLogger(RpcClient.class);
     static boolean USE_IN_PROCESS_CHANNEL = false;
     private final HostAndPort address;
-    private static final int RPC_TIMEOUT_SECONDS = 1;
-    private static final int RPC_DEFAULT_RETRIES = 5;
     private final Map<HostAndPort, MembershipServiceFutureStub> channelMap = new ConcurrentHashMap<>();
 
     RpcClient(final HostAndPort address) {
@@ -75,7 +74,7 @@ final class RpcClient {
         Objects.requireNonNull(probeMessage);
 
         final MembershipServiceFutureStub stub = channelMap.computeIfAbsent(remote, this::getFutureStub);
-        return stub.withDeadlineAfter(RPC_TIMEOUT_SECONDS, TimeUnit.SECONDS).receiveProbe(probeMessage);
+        return stub.withDeadlineAfter(Conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS).receiveProbe(probeMessage);
     }
 
     /**
@@ -98,11 +97,11 @@ final class RpcClient {
                 .build();
         final Supplier<ListenableFuture<JoinResponse>> call = () -> {
             final MembershipServiceFutureStub stub = channelMap.computeIfAbsent(remote, this::getFutureStub)
-                    .withDeadlineAfter(RPC_TIMEOUT_SECONDS * 5,
-                            TimeUnit.SECONDS);
+                    .withDeadlineAfter(Conf.RPC_TIMEOUT_MS * 5,
+                            TimeUnit.MILLISECONDS);
             return stub.receiveJoinMessage(msg);
         };
-        return callWithRetries(call, RPC_DEFAULT_RETRIES);
+        return callWithRetries(call, Conf.RPC_DEFAULT_RETRIES);
     }
 
     /**
@@ -119,11 +118,11 @@ final class RpcClient {
 
         final Supplier<ListenableFuture<Response>> call = () -> {
             final MembershipServiceFutureStub stub = channelMap.computeIfAbsent(remote, this::getFutureStub)
-                    .withDeadlineAfter(RPC_TIMEOUT_SECONDS * 5,
-                            TimeUnit.SECONDS);
+                    .withDeadlineAfter(Conf.RPC_TIMEOUT_MS * 5,
+                            TimeUnit.MILLISECONDS);
             return stub.receiveJoinPhase2Message(msg);
         };
-        return callWithRetries(call, RPC_DEFAULT_RETRIES);
+        return callWithRetries(call, Conf.RPC_DEFAULT_RETRIES);
     }
 
     /**
@@ -143,11 +142,11 @@ final class RpcClient {
         final Supplier<ListenableFuture<Response>> call = () -> {
             final MembershipServiceFutureStub stub =
                     MetadataUtils.attachHeaders(channelMap.computeIfAbsent(remote, this::getFutureStub)
-                            .withDeadlineAfter(RPC_TIMEOUT_SECONDS * 5,
-                                    TimeUnit.SECONDS), exceptionHeader);
+                            .withDeadlineAfter(Conf.RPC_TIMEOUT_MS * 5,
+                                    TimeUnit.MILLISECONDS), exceptionHeader);
             return stub.receiveJoinConfirmation(msg);
         };
-        return callWithRetries(call, RPC_DEFAULT_RETRIES);
+        return callWithRetries(call, Conf.RPC_DEFAULT_RETRIES);
     }
 
     /**
@@ -163,10 +162,10 @@ final class RpcClient {
 
         final Supplier<ListenableFuture<ConsensusProposalResponse>> call = () -> {
             final MembershipServiceFutureStub stub = channelMap.computeIfAbsent(remote, this::getFutureStub)
-                    .withDeadlineAfter(RPC_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                    .withDeadlineAfter(Conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
             return stub.receiveConsensusProposal(msg);
         };
-        return callWithRetries(call, RPC_DEFAULT_RETRIES);
+        return callWithRetries(call, Conf.RPC_DEFAULT_RETRIES);
     }
 
     /**
@@ -180,10 +179,10 @@ final class RpcClient {
         Objects.requireNonNull(msg);
         final Supplier<ListenableFuture<Response>> call = () -> {
             final MembershipServiceFutureStub stub = channelMap.computeIfAbsent(remote, this::getFutureStub)
-                    .withDeadlineAfter(RPC_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                    .withDeadlineAfter(Conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
             return stub.receiveLinkUpdateMessage(msg);
         };
-        return callWithRetries(call, RPC_DEFAULT_RETRIES);
+        return callWithRetries(call, Conf.RPC_DEFAULT_RETRIES);
     }
 
     /**
@@ -294,5 +293,12 @@ final class RpcClient {
         }
 
         return MembershipServiceGrpc.newFutureStub(channel);
+    }
+
+    @VisibleForTesting
+    static class Conf {
+        static int RPC_TIMEOUT_MEDIUM_MS = 1000;
+        static int RPC_TIMEOUT_MS = RPC_TIMEOUT_MEDIUM_MS;
+        static int RPC_DEFAULT_RETRIES = 5;
     }
 }
