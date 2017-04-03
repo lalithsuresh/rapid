@@ -265,11 +265,13 @@ final class RpcClient {
             channel = InProcessChannelBuilder
                     .forName(remote.toString())
                     .usePlaintext(true)
+                    .idleTimeout(2, TimeUnit.SECONDS)
                     .build();
         } else {
             channel = NettyChannelBuilder
                     .forAddress(remote.getHost(), remote.getPort())
                     .usePlaintext(true)
+                    .idleTimeout(2, TimeUnit.SECONDS)
                     .build();
         }
 

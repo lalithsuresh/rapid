@@ -57,6 +57,7 @@ import static org.junit.Assert.fail;
 public class ClusterTest {
     @SuppressWarnings("FieldCanBeLocal")
     @Nullable private static Logger grpcLogger = null;
+    @Nullable private static Logger nettyLogger = null;
     private static final int RPC_TIMEOUT_SHORT_MS = 100;
     private final Map<HostAndPort, Cluster> instances = new ConcurrentHashMap<>();
     private final int basePort = 1234;
@@ -83,6 +84,8 @@ public class ClusterTest {
         // gRPC INFO logs clutter the test output
         grpcLogger = Logger.getLogger("io.grpc");
         grpcLogger.setLevel(Level.WARNING);
+        nettyLogger = Logger.getLogger("io.grpc.netty.NettyServerHandler");
+        nettyLogger.setLevel(Level.OFF);
     }
 
     @Before
@@ -92,8 +95,8 @@ public class ClusterTest {
         random = new Random(seed);
 
         // Tests need to opt out of the in-process channel
-        RpcServer.USE_IN_PROCESS_SERVER = true;
-        RpcClient.USE_IN_PROCESS_CHANNEL = true;
+        RpcServer.USE_IN_PROCESS_SERVER = false;
+        RpcClient.USE_IN_PROCESS_CHANNEL = false;
 
         // Tests that depend on failure detection should set intervals by themselves
         MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 100000;
@@ -172,6 +175,10 @@ public class ClusterTest {
      */
     @Test
     public void fiveHundredNodesJoinInParallel() throws IOException, InterruptedException {
+        // Tests need to opt out of the in-process channel
+        RpcServer.USE_IN_PROCESS_SERVER = true;
+        RpcClient.USE_IN_PROCESS_CHANNEL = true;
+
         final int numNodes = 500; // Includes the size of the cluster
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         createCluster(numNodes, seedHost);

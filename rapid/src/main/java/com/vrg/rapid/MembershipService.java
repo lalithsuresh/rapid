@@ -43,6 +43,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -75,7 +76,7 @@ final class MembershipService {
     private final boolean logProposals;
     private final IBroadcaster broadcaster;
     private final Map<HostAndPort, LinkedBlockingDeque<StreamObserver<JoinResponse>>> joinersToRespondTo =
-            new HashMap<>();
+            new ConcurrentHashMap<>();
     private final Map<HostAndPort, UUID> joinerUuid = new HashMap<>(); // XXX: Not being cleared.
     private final List<Set<HostAndPort>> logProposalList = new ArrayList<>();
     private final LinkFailureDetectorRunner linkFailureDetectorRunner;
@@ -502,15 +503,19 @@ final class MembershipService {
         // Send out responses to all the nodes waiting to join.
         for (final HostAndPort node: proposal) {
             if (joinersToRespondTo.containsKey(node)) {
-                joinersToRespondTo.get(node).forEach(observer -> {
-                    try {
-                        observer.onNext(response);
-                        observer.onCompleted();
-                    } catch (final StatusRuntimeException e) {
-                        LOG.warn("{} got a StatusRuntimeException {}", myAddr, e.getLocalizedMessage());
+                scheduledExecutorService.execute(
+                    () -> {
+                        joinersToRespondTo.get(node).forEach(observer -> {
+                            try {
+                                observer.onNext(response);
+                                observer.onCompleted();
+                            } catch (final StatusRuntimeException e) {
+                                LOG.warn("{} got a StatusRuntimeException {}", myAddr, e.getLocalizedMessage());
+                            }
+                        });
+                        joinersToRespondTo.remove(node);
                     }
-                });
-                joinersToRespondTo.remove(node);
+                );
             }
         }
     }
