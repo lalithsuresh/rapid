@@ -157,7 +157,8 @@ public class RapidStandalone
         cluster.registerSubscription(ClusterEvents.VIEW_CHANGE_ONE_STEP_FAILED, RapidStandalone::onViewChangeOneStepFailed);
         cluster.registerSubscription(ClusterEvents.KICKED, RapidStandalone::onKicked);
 
-        while (true) {
+        int rounds = 30;
+        while (rounds-- > 0) {
             System.out.println(cluster.getMemberlist().size());
             Thread.sleep(5000);
         }
