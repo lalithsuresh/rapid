@@ -295,6 +295,7 @@ public final class Cluster {
                             msBuilder = msBuilder.setLinkFailureDetector(linkFailureDetector);
                         }
                         final MembershipService membershipService = msBuilder.setLogProposals(logProposals)
+                                .setRpcClient(joinerClient)
                                 .setMetadata(metadata)
                                 .build();
                         server.setMembershipService(membershipService);

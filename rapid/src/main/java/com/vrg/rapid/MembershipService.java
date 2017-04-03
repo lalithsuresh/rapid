@@ -108,6 +108,7 @@ final class MembershipService {
         private boolean isExternalConsensusEnabled = false;
         private Map<String, String> metadata = Collections.emptyMap();
         @Nullable private ILinkFailureDetector linkFailureDetector = null;
+        @Nullable private RpcClient rpcClient = null;
 
         Builder(final HostAndPort myAddr,
                 final WatermarkBuffer watermarkBuffer,
@@ -132,6 +133,11 @@ final class MembershipService {
             return this;
         }
 
+        Builder setRpcClient(final RpcClient rpcClient) {
+            this.rpcClient = rpcClient;
+            return this;
+        }
+
         MembershipService build() {
             return new MembershipService(this);
         }
@@ -144,7 +150,7 @@ final class MembershipService {
         this.logProposals = builder.logProposals;
         this.metadataManager = new MetadataManager();
         this.metadataManager.setMetadata(myAddr, builder.metadata);
-        this.rpcClient = new RpcClient(myAddr);
+        this.rpcClient = builder.rpcClient != null ? builder.rpcClient : new RpcClient(myAddr);
         this.broadcaster = new UnicastToAllBroadcaster(rpcClient, scheduledExecutorService);
         this.isExternalConsensusEnabled = builder.isExternalConsensusEnabled;
         this.subscriptions = new HashMap<>(ClusterEvents.values().length); // One for each event.
