@@ -126,7 +126,7 @@ final class RpcClient {
 
         final Supplier<ListenableFuture<JoinResponse>> call = () -> {
             final MembershipServiceFutureStub stub = channelMap.computeIfAbsent(remote, this::getFutureStub)
-                    .withDeadlineAfter(Conf.RPC_TIMEOUT_MS * 5,
+                    .withDeadlineAfter(Conf.RPC_JOIN_PHASE_2_TIMEOUT,
                             TimeUnit.MILLISECONDS);
             return stub.receiveJoinPhase2Message(msg);
         };
@@ -285,5 +285,6 @@ final class RpcClient {
         static int RPC_TIMEOUT_MEDIUM_MS = 1000;
         static int RPC_TIMEOUT_MS = RPC_TIMEOUT_MEDIUM_MS;
         static int RPC_DEFAULT_RETRIES = 5;
+        static int RPC_JOIN_PHASE_2_TIMEOUT = 20000;
     }
 }

@@ -25,6 +25,7 @@ import com.vrg.rapid.pb.LinkUpdateMessage;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
 import io.grpc.ExperimentalApi;
+import io.grpc.StatusRuntimeException;
 import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -502,8 +503,12 @@ final class MembershipService {
         for (final HostAndPort node: proposal) {
             if (joinersToRespondTo.containsKey(node)) {
                 joinersToRespondTo.get(node).forEach(observer -> {
-                    observer.onNext(response);
-                    observer.onCompleted();
+                    try {
+                        observer.onNext(response);
+                        observer.onCompleted();
+                    } catch (final StatusRuntimeException e) {
+                        LOG.warn("{} got a StatusRuntimeException {}", myAddr, e.getLocalizedMessage());
+                    }
                 });
                 joinersToRespondTo.remove(node);
             }

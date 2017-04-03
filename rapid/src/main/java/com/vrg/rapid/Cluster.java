@@ -58,7 +58,6 @@ public final class Cluster {
     private final boolean isExternalConsensusEnabled;
     private final ExecutorService executor;
     private final HostAndPort listenAddress;
-    static int JOIN_ATTEMPT_TIMEOUT_MS = 1000;
 
     private Cluster(final RpcServer rpcServer,
                     final MembershipService membershipService,

@@ -98,7 +98,7 @@ public class ClusterTest {
         // Tests that depend on failure detection should set intervals by themselves
         MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 100000;
         MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 100000;
-        Cluster.JOIN_ATTEMPT_TIMEOUT_MS = RpcClient.Conf.RPC_TIMEOUT_MEDIUM_MS * 20;
+        RpcClient.Conf.RPC_JOIN_PHASE_2_TIMEOUT = RpcClient.Conf.RPC_TIMEOUT_MEDIUM_MS * 20;
         RpcClient.Conf.RPC_TIMEOUT_MS = RpcClient.Conf.RPC_TIMEOUT_MEDIUM_MS;
 
         useStaticFd = false;
@@ -339,7 +339,7 @@ public class ClusterTest {
      */
     @Test
     public void phase2MessageDropsRpcRetries() throws IOException, InterruptedException {
-        Cluster.JOIN_ATTEMPT_TIMEOUT_MS = RPC_TIMEOUT_SHORT_MS * 5;
+        RpcClient.Conf.RPC_JOIN_PHASE_2_TIMEOUT = RPC_TIMEOUT_SHORT_MS * 5;
         RpcClient.Conf.RPC_TIMEOUT_MS = RPC_TIMEOUT_SHORT_MS; // use short retry delays to run tests faster.
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         // Drop join-phase-2 attempts by nextNode, but only enough that the RPC retries make it past
@@ -357,7 +357,7 @@ public class ClusterTest {
      */
     @Test
     public void phase2JoinAttemptRetry() throws IOException, InterruptedException {
-        Cluster.JOIN_ATTEMPT_TIMEOUT_MS = RPC_TIMEOUT_SHORT_MS * 5;
+        RpcClient.Conf.RPC_JOIN_PHASE_2_TIMEOUT = RPC_TIMEOUT_SHORT_MS * 5;
         RpcClient.Conf.RPC_TIMEOUT_MS = RPC_TIMEOUT_SHORT_MS; // use short retry delays to run tests faster.
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         // Drop join-phase-2 attempts by nextNode such that it re-attempts a join under a new configuration
@@ -374,7 +374,7 @@ public class ClusterTest {
      */
     @Test
     public void phase2JoinAttemptRetryWithConfigChange() throws IOException, InterruptedException {
-        Cluster.JOIN_ATTEMPT_TIMEOUT_MS = RPC_TIMEOUT_SHORT_MS * 5;
+        RpcClient.Conf.RPC_JOIN_PHASE_2_TIMEOUT = RPC_TIMEOUT_SHORT_MS * 5;
         RpcClient.Conf.RPC_TIMEOUT_MS = RPC_TIMEOUT_SHORT_MS; // use short retry delays to run tests faster.
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         final HostAndPort joinerHost = HostAndPort.fromParts("127.0.0.1", basePort + 1);
@@ -398,7 +398,7 @@ public class ClusterTest {
      * TODO: Disabled.
      */
     public void phase2JoinAttemptRetryWithHostInConfiguration() throws IOException, InterruptedException {
-        Cluster.JOIN_ATTEMPT_TIMEOUT_MS = RPC_TIMEOUT_SHORT_MS * 10;
+        RpcClient.Conf.RPC_JOIN_PHASE_2_TIMEOUT = RPC_TIMEOUT_SHORT_MS * 10;
         RpcClient.Conf.RPC_TIMEOUT_MS = RPC_TIMEOUT_SHORT_MS; // use short retry delays to run tests faster.
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         final HostAndPort joinerHost = HostAndPort.fromParts("127.0.0.1", basePort + 1);

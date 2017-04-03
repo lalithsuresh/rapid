@@ -84,7 +84,9 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     public void receiveLinkUpdateMessage(final BatchedLinkUpdateMessage request,
                                          final StreamObserver<Response> responseObserver) {
         assert membershipService != null;
-        membershipService.processLinkUpdateMessage(request);
+        executor.execute(
+                () -> membershipService.processLinkUpdateMessage(request)
+        );
         responseObserver.onNext(Response.getDefaultInstance());
         responseObserver.onCompleted();
     }
@@ -96,7 +98,9 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     public void receiveConsensusProposal(final ConsensusProposal request,
                                          final StreamObserver<ConsensusProposalResponse> responseObserver) {
         assert membershipService != null;
-        membershipService.processConsensusProposal(request);
+        executor.execute(
+                () -> membershipService.processConsensusProposal(request)
+        );
         responseObserver.onNext(ConsensusProposalResponse.getDefaultInstance());
         responseObserver.onCompleted();
     }
@@ -108,7 +112,9 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     public void receiveJoinMessage(final JoinMessage joinMessage,
                                    final StreamObserver<JoinResponse> responseObserver) {
         assert membershipService != null;
-        membershipService.processJoinMessage(joinMessage, responseObserver);
+        executor.execute(
+                () -> membershipService.processJoinMessage(joinMessage, responseObserver)
+        );
     }
 
     /**
@@ -118,7 +124,9 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     public void receiveJoinPhase2Message(final JoinMessage joinMessage,
                                          final StreamObserver<JoinResponse> responseObserver) {
         assert membershipService != null;
-        membershipService.processJoinPhaseTwoMessage(joinMessage, responseObserver);
+        executor.execute(
+                () -> membershipService.processJoinPhaseTwoMessage(joinMessage, responseObserver)
+        );
     }
 
     /**
@@ -128,7 +136,9 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     public void receiveProbe(final ProbeMessage probeMessage,
                              final StreamObserver<ProbeResponse> probeResponseObserver) {
         assert membershipService != null;
-        membershipService.processProbeMessage(probeMessage, probeResponseObserver);
+        executor.execute(
+                () -> membershipService.processProbeMessage(probeMessage, probeResponseObserver)
+        );
     }
 
     /**
@@ -165,7 +175,6 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
             final ServerBuilder builder = InProcessServerBuilder.forName(address.toString());
             server = builder.addService(ServerInterceptors
                     .intercept(this, interceptorList))
-                    .executor(executor)
                     .build()
                     .start();
         } else {
@@ -173,7 +182,6 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
                                                                                               address.getPort()));
             server = builder.addService(ServerInterceptors
                     .intercept(this, interceptorList))
-                    .executor(executor)
                     .build()
                     .start();
         }
