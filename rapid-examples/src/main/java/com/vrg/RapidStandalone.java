@@ -162,5 +162,6 @@ public class RapidStandalone
             System.out.println(cluster.getMemberlist().size());
             Thread.sleep(5000);
         }
+        System.exit(0);
     }
 }

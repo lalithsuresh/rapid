@@ -95,8 +95,8 @@ public class ClusterTest {
         random = new Random(seed);
 
         // Tests need to opt out of the in-process channel
-        RpcServer.USE_IN_PROCESS_SERVER = false;
-        RpcClient.USE_IN_PROCESS_CHANNEL = false;
+        RpcServer.USE_IN_PROCESS_SERVER = true;
+        RpcClient.USE_IN_PROCESS_CHANNEL = true;
 
         // Tests that depend on failure detection should set intervals by themselves
         MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 100000;
