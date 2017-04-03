@@ -24,7 +24,6 @@ import com.vrg.rapid.pb.LinkStatus;
 import com.vrg.rapid.pb.LinkUpdateMessage;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
-import com.vrg.rapid.pb.Response;
 import io.grpc.ExperimentalApi;
 import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
@@ -44,6 +43,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -73,7 +73,8 @@ final class MembershipService {
     private final HostAndPort myAddr;
     private final boolean logProposals;
     private final IBroadcaster broadcaster;
-    private final Set<HostAndPort> joinersToRespondTo = new HashSet<>();
+    private final Map<HostAndPort, LinkedBlockingDeque<StreamObserver<JoinResponse>>> joinersToRespondTo =
+            new HashMap<>();
     private final Map<HostAndPort, UUID> joinerUuid = new HashMap<>(); // XXX: Not being cleared.
     private final List<Set<HostAndPort>> logProposalList = new ArrayList<>();
     private final LinkFailureDetectorRunner linkFailureDetectorRunner;
@@ -203,7 +204,7 @@ final class MembershipService {
      * is now a part of.
      */
     void processJoinPhaseTwoMessage(final JoinMessage joinMessage,
-                                    final StreamObserver<Response> responseObserver) {
+                                    final StreamObserver<JoinResponse> responseObserver) {
         final long currentConfiguration = membershipView.getCurrentConfigurationId();
         if (currentConfiguration == joinMessage.getConfigurationId()) {
             LOG.trace("Enqueuing SAFE_TO_JOIN for {sender:{}, monitor:{}, config:{}, size:{}}",
@@ -220,10 +221,9 @@ final class MembershipService {
                     .putAllMetadata(joinMessage.getMetadataMap())
                     .build();
 
-            joinersToRespondTo.add(HostAndPort.fromString(joinMessage.getSender()));
+            joinersToRespondTo.computeIfAbsent(HostAndPort.fromString(joinMessage.getSender()),
+                    (k) -> new LinkedBlockingDeque<>()).add(responseObserver);
             enqueueLinkUpdateMessage(msg);
-            responseObserver.onNext(Response.getDefaultInstance()); // new config
-            responseObserver.onCompleted();
         } else {
             // This handles the corner case where the configuration changed between phase 1 and phase 2
             // of the joining node's bootstrap. It should attempt to rejoin the network.
@@ -257,11 +257,7 @@ final class MembershipService {
                         joinMessage.getSender(), myAddr,
                         configuration.getConfigurationId(), configuration.hostAndPorts.size());
             }
-            final JoinResponse response = responseBuilder.build();
-            scheduledExecutorService.execute(() -> {
-                rpcClient.sendJoinConfirmation(HostAndPort.fromString(joinMessage.getSender()), response);
-            });
-            responseObserver.onNext(Response.getDefaultInstance()); // new config
+            responseObserver.onNext(responseBuilder.build()); // new config
             responseObserver.onCompleted();
         }
     }
@@ -498,8 +494,12 @@ final class MembershipService {
 
         // Send out responses to all the nodes waiting to join.
         for (final HostAndPort node: proposal) {
-            if (joinersToRespondTo.contains(node)) {
-                scheduledExecutorService.execute(() -> rpcClient.sendJoinConfirmation(node, response));
+            if (joinersToRespondTo.containsKey(node)) {
+                joinersToRespondTo.get(node).forEach(observer -> {
+                    observer.onNext(response);
+                    observer.onCompleted();
+                });
+                joinersToRespondTo.remove(node);
             }
         }
     }

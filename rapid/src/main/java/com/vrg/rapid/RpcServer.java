@@ -15,7 +15,6 @@ package com.vrg.rapid;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
-import com.google.common.util.concurrent.SettableFuture;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
 import com.vrg.rapid.pb.ConsensusProposalResponse;
@@ -40,9 +39,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
@@ -56,7 +53,6 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     private final HostAndPort address;
     @Nullable private MembershipService membershipService;
     @Nullable private Server server;
-    private Map<HostAndPort, SettableFuture<JoinResponse>> joinResponseListener = new ConcurrentHashMap<>();
     private final ExecutorService executor;
 
 
@@ -120,34 +116,9 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
      */
     @Override
     public void receiveJoinPhase2Message(final JoinMessage joinMessage,
-                                         final StreamObserver<Response> responseObserver) {
+                                         final StreamObserver<JoinResponse> responseObserver) {
         assert membershipService != null;
         membershipService.processJoinPhaseTwoMessage(joinMessage, responseObserver);
-    }
-
-    /**
-     * Defined in rapid.proto.
-     */
-    @Override
-    public void receiveJoinConfirmation(final JoinResponse response,
-                                        final StreamObserver<Response> responseObserver) {
-        final HostAndPort hostAndPort = HostAndPort.fromString(response.getSender());
-        if (membershipService == null && joinResponseListener.containsKey(hostAndPort)) {
-            joinResponseListener.get(hostAndPort).set(response);
-        }
-        responseObserver.onNext(Response.getDefaultInstance());
-        responseObserver.onCompleted();
-    }
-
-    /**
-     * Used by Cluster.join() to register a callback which is invoked when monitors send a join confirmation.
-     *
-     * @param monitor the monitor node from whom to expect a confirmation
-     * @param listener the listener to invoke when a confirmation arrives
-     */
-    void setJoinResponseListener(final HostAndPort monitor,
-                                 final SettableFuture<JoinResponse> listener) {
-        joinResponseListener.put(monitor, listener);
     }
 
     /**

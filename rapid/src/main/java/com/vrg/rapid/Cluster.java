@@ -16,16 +16,13 @@ package com.vrg.rapid;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.net.HostAndPort;
-import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
-import com.google.common.util.concurrent.SettableFuture;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.vrg.rapid.monitoring.ILinkFailureDetector;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
-import com.vrg.rapid.pb.Response;
 import io.grpc.ClientInterceptor;
 import io.grpc.ExperimentalApi;
 import io.grpc.Internal;
@@ -44,8 +41,6 @@ import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -194,7 +189,6 @@ public final class Cluster {
         final RpcServer server = new RpcServer(listenAddress, executor);
         final RpcClient joinerClient = new RpcClient(listenAddress, clientInterceptors);
         server.startServer(serverInterceptors);
-        final SettableFuture<Cluster> returnValue = SettableFuture.create();
         boolean didPreviousJoinSucceed = false;
         for (int attempt = 0; attempt < RETRIES; attempt++) {
             joinerClient.createLongLivedConnections(ImmutableSet.of(seedAddress));
@@ -252,20 +246,30 @@ public final class Cluster {
                                                         .setUuid(currentIdentifier.toString())
                                                         .putAllMetadata(metadata)
                                                         .setConfigurationId(configurationToJoin);
-            final List<ListenableFuture<Response>> responseFutures = new ArrayList<>();
-            final FutureCallback<JoinResponse> callback = new FutureCallback<JoinResponse>() {
-                private boolean completed = false;
-                private final Object lock = new Object();
+            final List<ListenableFuture<JoinResponse>> responseFutures = new ArrayList<>();
 
-                @Override
-                public void onSuccess(@Nullable final JoinResponse response) {
+            for (final HostAndPort monitor : monitorList) {
+                final JoinMessage msg = joinMsgBuilder.setRingNumber(ringNumber).build();
+                final ListenableFuture<JoinResponse> call = joinerClient.sendJoinPhase2Message(monitor, msg);
+                responseFutures.add(call);
+                ringNumber++;
+            }
+
+            // The returned list of responses must contain the full configuration (hosts and identifiers) we just
+            // joined. Else, there's an error and we throw an exception.
+            try {
+                // TODO: This is only correct if we use consensus for node addition.
+                // Unsuccessful responses will be null.
+                final List<JoinResponse> responses = Futures.successfulAsList(responseFutures).get();
+
+                for (final JoinResponse response: responses) {
                     if (response == null) {
                         LOG.info("Received a null response.");
-                        return;
+                        continue;
                     }
                     if (response.getStatusCode() == JoinStatusCode.MEMBERSHIP_REJECTED) {
                         LOG.info("Membership rejected by {}. Quitting.", response.getSender());
-                        return;
+                        continue;
                     }
 
                     if (response.getStatusCode() == JoinStatusCode.SAFE_TO_JOIN
@@ -282,63 +286,30 @@ public final class Cluster {
                         assert identifiersSeen.size() > 0;
                         assert allHosts.size() > 0;
 
-                        synchronized (lock) {
-                            if (completed) {
-                                return;
-                            }
-                            completed = true;
-                            final MembershipView membershipViewFinal =
-                                    new MembershipView(K, identifiersSeen, allHosts);
-                            final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
-                            MembershipService.Builder msBuilder =
-                                    new MembershipService.Builder(listenAddress, watermarkBuffer, membershipViewFinal);
-                            if (linkFailureDetector != null) {
-                                msBuilder = msBuilder.setLinkFailureDetector(linkFailureDetector);
-                            }
-                            final MembershipService membershipService = msBuilder.setLogProposals(logProposals)
-                                                                                .setMetadata(metadata)
-                                                                                .build();
-                            server.setMembershipService(membershipService);
-                            if (LOG.isTraceEnabled()) {
-                                LOG.trace("{} has monitors {}", listenAddress,
-                                        membershipViewFinal.getMonitorsOf(listenAddress));
-                                LOG.trace("{} has monitorees {}", listenAddress,
-                                        membershipViewFinal.getMonitorsOf(listenAddress));
-                            }
-                            returnValue.set(new Cluster(server, membershipService,
-                                    isExternalConsensusEnabled, executor, listenAddress));
+                        final MembershipView membershipViewFinal =
+                                new MembershipView(K, identifiersSeen, allHosts);
+                        final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
+                        MembershipService.Builder msBuilder =
+                                new MembershipService.Builder(listenAddress, watermarkBuffer, membershipViewFinal);
+                        if (linkFailureDetector != null) {
+                            msBuilder = msBuilder.setLinkFailureDetector(linkFailureDetector);
                         }
+                        final MembershipService membershipService = msBuilder.setLogProposals(logProposals)
+                                .setMetadata(metadata)
+                                .build();
+                        server.setMembershipService(membershipService);
+                        if (LOG.isTraceEnabled()) {
+                            LOG.trace("{} has monitors {}", listenAddress,
+                                    membershipViewFinal.getMonitorsOf(listenAddress));
+                            LOG.trace("{} has monitorees {}", listenAddress,
+                                    membershipViewFinal.getMonitorsOf(listenAddress));
+                        }
+                        return new Cluster(server, membershipService,
+                                           isExternalConsensusEnabled, executor, listenAddress);
                     }
                 }
-
-                @Override
-                public void onFailure(final Throwable throwable) {
-                    throwable.printStackTrace();
-                }
-            };
-
-            for (final HostAndPort monitor : monitorList) {
-                final JoinMessage msg = joinMsgBuilder.setRingNumber(ringNumber).build();
-                final SettableFuture<JoinResponse> joinListener = SettableFuture.create();
-                Futures.addCallback(joinListener, callback);
-                server.setJoinResponseListener(monitor, joinListener);
-                final ListenableFuture<Response> call = joinerClient.sendJoinPhase2Message(monitor, msg);
-                responseFutures.add(call);
-                ringNumber++;
-            }
-
-            // The returned list of responses must contain the full configuration (hosts and identifiers) we just
-            // joined. Else, there's an error and we throw an exception.
-            try {
-                // TODO: This is only correct if we use consensus for node addition.
-                // Unsuccessful responses will be null.
-                Futures.successfulAsList(responseFutures).get();
-                return returnValue.get(JOIN_ATTEMPT_TIMEOUT_MS, TimeUnit.MILLISECONDS);
             } catch (final ExecutionException e) {
                 LOG.error("JoinPhaseTwo request by {} for configuration {} threw an exception. Retrying. {}",
-                        listenAddress, configurationToJoin, e.getMessage());
-            } catch (final TimeoutException e) {
-                LOG.error("JoinPhaseTwo request by {} for configuration {} timed-out. Retrying. {}",
                         listenAddress, configurationToJoin, e.getMessage());
             }
         }

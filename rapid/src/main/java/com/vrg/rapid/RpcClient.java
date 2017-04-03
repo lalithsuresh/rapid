@@ -32,11 +32,9 @@ import com.vrg.rapid.pb.Response;
 import io.grpc.Channel;
 import io.grpc.ClientInterceptor;
 import io.grpc.ClientInterceptors;
-import io.grpc.Metadata;
 import io.grpc.StatusRuntimeException;
 import io.grpc.inprocess.InProcessChannelBuilder;
 import io.grpc.netty.NettyChannelBuilder;
-import io.grpc.stub.MetadataUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -121,40 +119,16 @@ final class RpcClient {
      * @param msg The JoinMessage for phase two.
      * @return A future that returns a JoinResponse if the call was successful.
      */
-    ListenableFuture<Response> sendJoinPhase2Message(final HostAndPort remote,
+    ListenableFuture<JoinResponse> sendJoinPhase2Message(final HostAndPort remote,
                                                          final JoinMessage msg) {
         Objects.requireNonNull(remote);
         Objects.requireNonNull(msg);
 
-        final Supplier<ListenableFuture<Response>> call = () -> {
+        final Supplier<ListenableFuture<JoinResponse>> call = () -> {
             final MembershipServiceFutureStub stub = channelMap.computeIfAbsent(remote, this::getFutureStub)
                     .withDeadlineAfter(Conf.RPC_TIMEOUT_MS * 5,
                             TimeUnit.MILLISECONDS);
             return stub.receiveJoinPhase2Message(msg);
-        };
-        return callWithRetries(call, Conf.RPC_DEFAULT_RETRIES);
-    }
-
-    /**
-     * Create and send a protobuf JoinPhase2Message to a remote host.
-     *
-     * @param remote Remote host to send the message to. This node is expected to initiate LinkUpdate-UP messages.
-     * @param msg The JoinMessage for phase two.
-     * @return A future that returns a JoinResponse if the call was successful.
-     */
-    ListenableFuture<Response> sendJoinConfirmation(final HostAndPort remote,
-                                                        final JoinResponse msg) {
-        Objects.requireNonNull(remote);
-        Objects.requireNonNull(msg);
-
-        final Metadata exceptionHeader = new Metadata();
-        exceptionHeader.put(DeferredReceiveInterceptor.CONFIRMATION_MSG, "");
-        final Supplier<ListenableFuture<Response>> call = () -> {
-            final MembershipServiceFutureStub stub =
-                    MetadataUtils.attachHeaders(channelMap.computeIfAbsent(remote, this::getFutureStub)
-                            .withDeadlineAfter(Conf.RPC_TIMEOUT_MS * 5,
-                                    TimeUnit.MILLISECONDS), exceptionHeader);
-            return stub.receiveJoinConfirmation(msg);
         };
         return callWithRetries(call, Conf.RPC_DEFAULT_RETRIES);
     }
@@ -202,8 +176,6 @@ final class RpcClient {
      */
     void updateLongLivedConnections(final Set<HostAndPort> nodeSet) {
         //  TODO: We need smarter policies to clear out channels we don't need.
-        channelMap.clear();
-        createLongLivedConnections(nodeSet);
     }
 
     /**
@@ -212,7 +184,6 @@ final class RpcClient {
      * @param nodeSet set of nodes to prepare a long lived connection for
      */
     void createLongLivedConnections(final Set<HostAndPort> nodeSet) {
-        nodeSet.forEach(e -> channelMap.computeIfAbsent(e, this::getFutureStub));
     }
 
     /**
