@@ -134,7 +134,7 @@ public class RapidStandalone
             cluster.subscribe(localActor, akka.cluster.ClusterEvent.ClusterDomainEvent.class);
             cluster.join(AddressFromURIString.parse("akka.tcp://" + APPLICATION + "@" + seedAddress.getHost() + ":" + seedAddress.getPort()));
 
-            int tries = 240;
+            int tries = 400;
             while (tries-- > 0) {
                 System.out.println(System.currentTimeMillis() + " Cluster size " + ImmutableList.copyOf(cluster.state().getMembers())
                         .stream().filter(member -> member.status().equals(MemberStatus.up()))
@@ -162,7 +162,7 @@ public class RapidStandalone
             cluster.registerSubscription(com.vrg.rapid.ClusterEvents.KICKED,
                                             RapidStandalone::onKicked);
 
-            int tries = 240;
+            int tries = 400;
             while (tries-- > 0) {
                 System.out.println(System.currentTimeMillis() + " Cluster size " + cluster.getMemberlist().size() + " " + tries);
                 Thread.sleep(1000);

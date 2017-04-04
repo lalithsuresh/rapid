@@ -17,6 +17,7 @@ import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
+import com.vrg.rapid.pb.NodeStatus;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
 import io.grpc.ServerInterceptor;
@@ -236,6 +237,39 @@ public class MessagingTest {
         final ProbeResponse probeResponse = joinerRpcClient.sendProbeMessage(serverAddr,
                                                                              ProbeMessage.getDefaultInstance()).get();
         assertNotNull(probeResponse);
+        assertEquals(NodeStatus.OK, probeResponse.getStatus());
+    }
+
+
+    /**
+     * When a joining node has not yet received the join-confirmation and has not bootstrapped its membership-service,
+     * other nodes in the cluster may try to probe it (because they already took part in the consensus decision).
+     * This test sets up such a case where there is only an RpcServer running that nodes are attempting to probe.
+     */
+    @Test
+    public void probeBeforeBootstrapTest()
+            throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException, ExecutionException {
+        final HostAndPort serverAddr1 = HostAndPort.fromParts(localhostIp, serverPortBase);
+        final HostAndPort serverAddr2 = HostAndPort.fromParts(localhostIp, serverPortBase + 1);
+        final UUID nodeIdentifier1 = UUID.randomUUID();
+        final UUID nodeIdentifier2 = UUID.randomUUID();
+        final RpcServer rpcServer = new RpcServer(serverAddr2, executorService);
+        rpcServer.startServer();
+        final MembershipView membershipView = new MembershipView(K);
+        membershipView.ringAdd(serverAddr1, nodeIdentifier1);
+        membershipView.ringAdd(serverAddr2, nodeIdentifier2); // This causes server1 to monitor server2
+        createAndStartMembershipService(serverAddr1,
+                new ArrayList<>(), membershipView);
+
+        // While the above drives our failure detector logic, we explicitly test with a probe call
+        // to make sure we get a BOOTSTRAPPING response from the RpcServer listening on serverAddr2.
+        final RpcClient joinerRpcClient = new RpcClient(serverAddr2);
+        final ProbeResponse probeResponse1 = joinerRpcClient.sendProbeMessage(serverAddr1,
+                                                                             ProbeMessage.getDefaultInstance()).get();
+        assertEquals(NodeStatus.OK, probeResponse1.getStatus());
+        final ProbeResponse probeResponse2 = joinerRpcClient.sendProbeMessage(serverAddr2,
+                ProbeMessage.getDefaultInstance()).get();
+        assertEquals(NodeStatus.BOOTSTRAPPING, probeResponse2.getStatus());
     }
 
 

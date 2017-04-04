@@ -19,6 +19,7 @@ import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
 import com.vrg.rapid.monitoring.ILinkFailureDetector;
+import com.vrg.rapid.pb.NodeStatus;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
 import io.grpc.stub.StreamObserver;
@@ -35,16 +36,22 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Represents a simple ping-pong failure detector.
+ * Represents a simple ping-pong failure detector. It is also aware of nodes that are added to the cluster
+ * but are still bootstrapping.
  */
 @NotThreadSafe
 public class PingPongFailureDetector implements ILinkFailureDetector {
     private static final Logger LOG = LoggerFactory.getLogger(PingPongFailureDetector.class);
+    private static final Executor BACKGROUND_EXECUTOR = Executors.newSingleThreadScheduledExecutor();
     private static final int FAILURE_THRESHOLD = 3;
+
+    // Number of BOOTSTRAPPING status responses a node is allowed to return before we begin
+    // treating that as a failure condition.
+    private static final int BOOTSTRAP_COUNT_THRESHOLD = 30;
     private final HostAndPort address;
     private final ConcurrentHashMap<HostAndPort, AtomicInteger> failureCount;
+    private final ConcurrentHashMap<HostAndPort, AtomicInteger> bootstrapResponseCount;
     private final RpcClient rpcClient;
-    private static final Executor BACKGROUND_EXECUTOR = Executors.newSingleThreadScheduledExecutor();
 
     // A cache for probe messages. Avoids creating an unnecessary copy of a probe message each time.
     private final HashMap<HostAndPort, ProbeMessage> messageHashMap;
@@ -53,6 +60,7 @@ public class PingPongFailureDetector implements ILinkFailureDetector {
                                    final RpcClient rpcClient) {
         this.address = address;
         this.failureCount = new ConcurrentHashMap<>();
+        this.bootstrapResponseCount = new ConcurrentHashMap<>();
         this.messageHashMap = new HashMap<>();
         this.rpcClient = rpcClient;
     }
@@ -63,19 +71,8 @@ public class PingPongFailureDetector implements ILinkFailureDetector {
         LOG.trace("{} sending probe to {}", address, monitoree);
         final ProbeMessage probeMessage = messageHashMap.get(monitoree);
         final SettableFuture<Void> completionEvent = SettableFuture.create();
-        Futures.addCallback(rpcClient.sendProbeMessage(monitoree, probeMessage), new FutureCallback<ProbeResponse>() {
-            @Override
-            public void onSuccess(@Nullable final ProbeResponse probeResponse) {
-                handleProbeOnSuccess(monitoree);
-                completionEvent.set(null);
-            }
-
-            @Override
-            public void onFailure(final Throwable throwable) {
-                handleProbeOnFailure(throwable, monitoree);
-                completionEvent.set(null);
-            }
-        }, BACKGROUND_EXECUTOR);
+        Futures.addCallback(rpcClient.sendProbeMessage(monitoree, probeMessage),
+                            new ProbeCallback(monitoree, completionEvent), BACKGROUND_EXECUTOR);
         return completionEvent;
     }
 
@@ -94,7 +91,7 @@ public class PingPongFailureDetector implements ILinkFailureDetector {
             LOG.trace("handleProbeOnSuccess at {} heard from a node we are not assigned to ({})", address, monitoree);
         }
         failureCount.get(monitoree).incrementAndGet();
-        LOG.trace("handleProbeOnFailure at {} from {}", address, monitoree);
+        LOG.trace("handleProbeOnFailure at {} from {}: {}", address, monitoree, throwable.getLocalizedMessage());
     }
 
     // Executed at monitor
@@ -126,5 +123,45 @@ public class PingPongFailureDetector implements ILinkFailureDetector {
         LOG.trace("handleProbeMessage at {} from {}", address, probeMessage.getSender());
         probeResponseStreamObserver.onNext(ProbeResponse.getDefaultInstance());
         probeResponseStreamObserver.onCompleted();
+    }
+
+    private class ProbeCallback implements FutureCallback<ProbeResponse> {
+        final HostAndPort monitoree;
+        final SettableFuture<Void> completionEvent;
+
+        ProbeCallback(final HostAndPort monitoree, final SettableFuture<Void> completionEvent) {
+            this.monitoree = monitoree;
+            this.completionEvent = completionEvent;
+        }
+
+        @Override
+        public void onSuccess(@Nullable final ProbeResponse probeResponse) {
+            try {
+                if (probeResponse == null) {
+                    handleProbeOnFailure(new RuntimeException("null probe response received"), monitoree);
+                    return;
+                }
+                if (probeResponse.getStatus().equals(NodeStatus.BOOTSTRAPPING)) {
+                    final int numBootstrapResponses = bootstrapResponseCount.computeIfAbsent(monitoree,
+                            (k) -> new AtomicInteger(0)).incrementAndGet();
+                    if (numBootstrapResponses > BOOTSTRAP_COUNT_THRESHOLD) {
+                        handleProbeOnFailure(new RuntimeException("BOOTSTRAP_COUNT_THRESHOLD exceeded"), monitoree);
+                        return;
+                    }
+                }
+                handleProbeOnSuccess(monitoree);
+            } finally {
+                completionEvent.set(null);
+            }
+        }
+
+        @Override
+        public void onFailure(final Throwable throwable) {
+            try {
+                handleProbeOnFailure(throwable, monitoree);
+            } finally {
+                completionEvent.set(null);
+            }
+        }
     }
 }

@@ -13,10 +13,13 @@
 
 package com.vrg.rapid;
 
+import com.vrg.rapid.pb.MembershipServiceGrpc;
 import io.grpc.Metadata;
+import io.grpc.MethodDescriptor;
 import io.grpc.ServerCall;
 import io.grpc.ServerCallHandler;
 import io.grpc.ServerInterceptor;
+
 
 /**
  * An interceptor that blocks server calls from being invoked until requested.
@@ -25,13 +28,18 @@ import io.grpc.ServerInterceptor;
  */
 final class DeferredReceiveInterceptor implements ServerInterceptor {
     private boolean isReady = false;
-    static final Metadata.Key<String> CONFIRMATION_MSG = Metadata.Key.of("CONF", Metadata.ASCII_STRING_MARSHALLER);
+    private final MethodDescriptor probeDescriptor = MembershipServiceGrpc.METHOD_RECEIVE_PROBE;
 
     @Override
     public <ReqT, RespT> ServerCall.Listener<ReqT> interceptCall(final ServerCall<ReqT, RespT> serverCall,
                                                                  final Metadata metadata,
                                                                  final ServerCallHandler<ReqT, RespT> next) {
-        if (isReady || metadata.containsKey(CONFIRMATION_MSG)) {
+        if (isReady) {
+            return next.startCall(serverCall, metadata);
+        }
+        // We allow probe messages to go through so that we can let the node inform its monitor that
+        // it is still bootstrapping. Note, non-Rapid failure detectors do not yet have access to this information.
+        if (serverCall.getMethodDescriptor().getFullMethodName().equals(probeDescriptor.getFullMethodName())) {
             return next.startCall(serverCall, metadata);
         }
         return new ServerCall.Listener<ReqT>() { }; // Forces remote to retry

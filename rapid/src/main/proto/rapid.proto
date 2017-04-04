@@ -105,8 +105,15 @@ message GossipResponse
 message ProbeMessage
 {
     string sender = 1;
-    repeated bytes payload = 2;
+    repeated bytes payload = 3;
 }
 
 message ProbeResponse
-{}
+{
+    NodeStatus status = 1;
+}
+
+enum NodeStatus {
+    OK = 0;             // this is the default value
+    BOOTSTRAPPING = 1;
+};

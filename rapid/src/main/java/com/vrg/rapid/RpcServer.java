@@ -13,6 +13,7 @@
 
 package com.vrg.rapid;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
@@ -23,6 +24,7 @@ import com.vrg.rapid.pb.GossipResponse;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.MembershipServiceGrpc;
+import com.vrg.rapid.pb.NodeStatus;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
 import com.vrg.rapid.pb.Response;
@@ -50,12 +52,14 @@ import java.util.concurrent.TimeUnit;
  * host a MembershipService object.
  */
 final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
-    static boolean USE_IN_PROCESS_SERVER = false;
+    @VisibleForTesting static boolean USE_IN_PROCESS_SERVER = false;
+    private static final ExecutorService GRPC_EXECUTORS = Executors.newFixedThreadPool(5);
+    private static final ProbeResponse BOOTSTRAPPING_MESSAGE =
+            ProbeResponse.newBuilder().setStatus(NodeStatus.BOOTSTRAPPING).build();
     private final HostAndPort address;
     @Nullable private MembershipService membershipService;
     @Nullable private Server server;
     private final ExecutorService executor;
-    private static final ExecutorService GRPC_EXECUTORS = Executors.newFixedThreadPool(5);
 
     // Used to queue messages in the RPC layer until we are ready with
     // a MembershipService object
@@ -128,8 +132,22 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     @Override
     public void receiveProbe(final ProbeMessage probeMessage,
                              final StreamObserver<ProbeResponse> probeResponseObserver) {
-        assert membershipService != null;
-        executor.execute(() -> membershipService.processProbeMessage(probeMessage, probeResponseObserver));
+        if (membershipService != null) {
+            executor.execute(() -> membershipService.processProbeMessage(probeMessage, probeResponseObserver));
+        }
+        else {
+            /*
+             * This is a special case which indicates that:
+             *  1) the system is configured to use a failure detector that relies on Rapid's probe messages
+             *  2) the node receiving the probe message has been added to the cluster but has not yet completed
+             *     its bootstrap process (has not received its join-confirmation yet).
+             *  3) By virtue of 2), the node is "about to be up" and therefore informs the monitor that it is
+             *     still bootstrapping. This extra information may or may not be respected by the failure detector,
+             *     but is useful in large deployments.
+             */
+            probeResponseObserver.onNext(BOOTSTRAPPING_MESSAGE);
+            probeResponseObserver.onCompleted();
+        }
     }
 
     /**
