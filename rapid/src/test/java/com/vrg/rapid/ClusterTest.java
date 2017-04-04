@@ -312,7 +312,7 @@ public class ClusterTest {
         // Fail the first 3 nodes.
         final Set<HostAndPort> failingNodes = getRandomHosts(numFailingNodes);
         staticFds.values().forEach(e -> e.addFailedNodes(failingNodes));
-        waitAndVerifyAgreement(numNodes - numFailingNodes, 20, 1000, seedHost);
+        waitAndVerifyAgreement(numNodes - failingNodes.size(), 20, 1000, seedHost);
         // Nodes do not actually shutdown(), but are detected faulty. The faulty nodes have active
         // cluster instances and identify themselves as kicked out.
         verifyNumClusterInstances(numNodes);
