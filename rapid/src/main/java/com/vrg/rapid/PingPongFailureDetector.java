@@ -30,6 +30,8 @@ import javax.annotation.concurrent.NotThreadSafe;
 import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -42,6 +44,7 @@ public class PingPongFailureDetector implements ILinkFailureDetector {
     private final HostAndPort address;
     private final ConcurrentHashMap<HostAndPort, AtomicInteger> failureCount;
     private final RpcClient rpcClient;
+    private static final Executor BACKGROUND_EXECUTOR = Executors.newSingleThreadScheduledExecutor();
 
     // A cache for probe messages. Avoids creating an unnecessary copy of a probe message each time.
     private final HashMap<HostAndPort, ProbeMessage> messageHashMap;
@@ -72,7 +75,7 @@ public class PingPongFailureDetector implements ILinkFailureDetector {
                 handleProbeOnFailure(throwable, monitoree);
                 completionEvent.set(null);
             }
-        });
+        }, BACKGROUND_EXECUTOR);
         return completionEvent;
     }
 

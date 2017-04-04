@@ -50,7 +50,7 @@ enum JoinStatusCode {
 message BatchedLinkUpdateMessage
 {
     string sender = 1;
-    repeated LinkUpdateMessage messages = 2;
+    repeated LinkUpdateMessage messages = 3;
 }
 
 message LinkUpdateMessage

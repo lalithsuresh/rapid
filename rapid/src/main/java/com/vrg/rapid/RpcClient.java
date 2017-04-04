@@ -46,6 +46,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
@@ -58,7 +60,9 @@ final class RpcClient {
     static boolean USE_IN_PROCESS_CHANNEL = false;
     private final HostAndPort address;
     private final List<ClientInterceptor> interceptors;
-    private final Map<HostAndPort, MembershipServiceFutureStub> channelMap = new ConcurrentHashMap<>();
+    private final Map<HostAndPort, MembershipServiceFutureStub> stubMap = new ConcurrentHashMap<>();
+    private static final ExecutorService GRPC_EXECUTORS = Executors.newFixedThreadPool(5);
+    private static final ExecutorService BACKGROUND_EXECUTOR = Executors.newFixedThreadPool(5);
 
     RpcClient(final HostAndPort address) {
         this(address, Collections.emptyList());
@@ -81,8 +85,8 @@ final class RpcClient {
         Objects.requireNonNull(remote);
         Objects.requireNonNull(probeMessage);
 
-        final MembershipServiceFutureStub stub = channelMap.computeIfAbsent(remote, this::getFutureStub);
-        return stub.withDeadlineAfter(Conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS).receiveProbe(probeMessage);
+        final MembershipServiceFutureStub stub = stubMap.computeIfAbsent(remote, this::getFutureStub);
+        return stub.withDeadlineAfter(Conf.RPC_PROBE_TIMEOUT, TimeUnit.MILLISECONDS).receiveProbe(probeMessage);
     }
 
     /**
@@ -104,7 +108,7 @@ final class RpcClient {
                 .setUuid(uuid.toString())
                 .build();
         final Supplier<ListenableFuture<JoinResponse>> call = () -> {
-            final MembershipServiceFutureStub stub = channelMap.computeIfAbsent(remote, this::getFutureStub)
+            final MembershipServiceFutureStub stub = stubMap.computeIfAbsent(remote, this::getFutureStub)
                     .withDeadlineAfter(Conf.RPC_TIMEOUT_MS * 5,
                             TimeUnit.MILLISECONDS);
             return stub.receiveJoinMessage(msg);
@@ -125,7 +129,7 @@ final class RpcClient {
         Objects.requireNonNull(msg);
 
         final Supplier<ListenableFuture<JoinResponse>> call = () -> {
-            final MembershipServiceFutureStub stub = channelMap.computeIfAbsent(remote, this::getFutureStub)
+            final MembershipServiceFutureStub stub = stubMap.computeIfAbsent(remote, this::getFutureStub)
                     .withDeadlineAfter(Conf.RPC_JOIN_PHASE_2_TIMEOUT,
                             TimeUnit.MILLISECONDS);
             return stub.receiveJoinPhase2Message(msg);
@@ -145,7 +149,7 @@ final class RpcClient {
         Objects.requireNonNull(msg);
 
         final Supplier<ListenableFuture<ConsensusProposalResponse>> call = () -> {
-            final MembershipServiceFutureStub stub = channelMap.computeIfAbsent(remote, this::getFutureStub)
+            final MembershipServiceFutureStub stub = stubMap.computeIfAbsent(remote, this::getFutureStub)
                     .withDeadlineAfter(Conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
             return stub.receiveConsensusProposal(msg);
         };
@@ -162,7 +166,7 @@ final class RpcClient {
     ListenableFuture<Response> sendLinkUpdateMessage(final HostAndPort remote, final BatchedLinkUpdateMessage msg) {
         Objects.requireNonNull(msg);
         final Supplier<ListenableFuture<Response>> call = () -> {
-            final MembershipServiceFutureStub stub = channelMap.computeIfAbsent(remote, this::getFutureStub)
+            final MembershipServiceFutureStub stub = stubMap.computeIfAbsent(remote, this::getFutureStub)
                     .withDeadlineAfter(Conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
             return stub.receiveLinkUpdateMessage(msg);
         };
@@ -187,7 +191,7 @@ final class RpcClient {
     }
 
     /**
-     * Recover resources. For future use in case we provide custom executors for the ManagedChannels.
+     * Recover resources. For future use in case we provide custom GRPC_EXECUTORS for the ManagedChannels.
      */
     void shutdown() {
     }
@@ -235,7 +239,7 @@ final class RpcClient {
                 LOG.trace("Retrying call {}");
                 handleFailure(call, signal, retries, throwable);
             }
-        });
+        }, BACKGROUND_EXECUTOR);
     }
 
     /**
@@ -257,21 +261,23 @@ final class RpcClient {
         Channel channel;
         LOG.debug("Creating channel from {} to {}", address, remote);
 
-        if (channelMap.containsKey(remote)) {
-            return channelMap.get(remote);
+        if (stubMap.containsKey(remote)) {
+            return stubMap.get(remote);
         }
 
         if (USE_IN_PROCESS_CHANNEL) {
             channel = InProcessChannelBuilder
                     .forName(remote.toString())
+                    .executor(GRPC_EXECUTORS)
                     .usePlaintext(true)
-                    .idleTimeout(2, TimeUnit.SECONDS)
+                    .idleTimeout(10, TimeUnit.SECONDS)
                     .build();
         } else {
             channel = NettyChannelBuilder
                     .forAddress(remote.getHost(), remote.getPort())
+                    .executor(GRPC_EXECUTORS)
                     .usePlaintext(true)
-                    .idleTimeout(2, TimeUnit.SECONDS)
+                    .idleTimeout(10, TimeUnit.SECONDS)
                     .build();
         }
 
@@ -284,9 +290,10 @@ final class RpcClient {
 
     @VisibleForTesting
     static class Conf {
-        static int RPC_TIMEOUT_MEDIUM_MS = 1000;
+        static int RPC_TIMEOUT_MEDIUM_MS = 5000;
         static int RPC_TIMEOUT_MS = RPC_TIMEOUT_MEDIUM_MS;
         static int RPC_DEFAULT_RETRIES = 5;
         static int RPC_JOIN_PHASE_2_TIMEOUT = 20000;
+        static int RPC_PROBE_TIMEOUT = 5000;
     }
 }

@@ -44,6 +44,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -94,6 +95,7 @@ final class MembershipService {
     private final LinkedBlockingQueue<LinkUpdateMessage> sendQueue = new LinkedBlockingQueue<>();
     private final Lock batchSchedulerLock = new ReentrantLock();
     private final ScheduledExecutorService scheduledExecutorService = Executors.newSingleThreadScheduledExecutor();
+    private final ExecutorService broadcastExecutor = Executors.newSingleThreadExecutor();
     private final ScheduledFuture<?> linkUpdateBatcherJob;
     private final ScheduledFuture<?> failureDetectorJob;
 
@@ -153,7 +155,7 @@ final class MembershipService {
         this.metadataManager = new MetadataManager();
         this.metadataManager.setMetadata(myAddr, builder.metadata);
         this.rpcClient = builder.rpcClient != null ? builder.rpcClient : new RpcClient(myAddr);
-        this.broadcaster = new UnicastToAllBroadcaster(rpcClient, scheduledExecutorService);
+        this.broadcaster = new UnicastToAllBroadcaster(rpcClient, broadcastExecutor);
         this.isExternalConsensusEnabled = builder.isExternalConsensusEnabled;
         this.subscriptions = new HashMap<>(ClusterEvents.values().length); // One for each event.
         Arrays.stream(ClusterEvents.values()).forEach(event -> this.subscriptions.put(event, new ArrayList<>(1)));
@@ -386,7 +388,7 @@ final class MembershipService {
     void processConsensusProposal(final ConsensusProposal proposalMessage) {
         assert !isExternalConsensusEnabled;
         final long currentConfigurationId = membershipView.getCurrentConfigurationId();
-        final long membershipSize = membershipView.getRing(0).size();
+        final long membershipSize = membershipView.getMembershipSize();
 
         if (proposalMessage.getConfigurationId() != currentConfigurationId) {
             LOG.trace("Configuration ID mismatch for proposal: current_config:{} proposal:{}", proposalMessage);
@@ -596,6 +598,7 @@ final class MembershipService {
         failureDetectorJob.cancel(true);
         scheduledExecutorService.shutdownNow();
         rpcClient.shutdown();
+        broadcastExecutor.shutdown();
     }
 
     /**
@@ -620,7 +623,7 @@ final class MembershipService {
     private List<NodeStatusChange> createNodeStatusChangeList(final Set<HostAndPort> proposal) {
         final List<NodeStatusChange> list = new ArrayList<>(proposal.size());
         for (final HostAndPort node: proposal) {
-            final LinkStatus status = membershipView.isHostPresent(node) ? LinkStatus.UP : LinkStatus.DOWN;
+            final LinkStatus status = membershipView.isHostPresent(node) ? LinkStatus.DOWN : LinkStatus.UP;
             list.add(new NodeStatusChange(node, status, metadataManager.get(node)));
         }
         return list;

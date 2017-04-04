@@ -41,6 +41,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 
@@ -54,7 +55,7 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     @Nullable private MembershipService membershipService;
     @Nullable private Server server;
     private final ExecutorService executor;
-
+    private static final ExecutorService GRPC_EXECUTORS = Executors.newFixedThreadPool(5);
 
     // Used to queue messages in the RPC layer until we are ready with
     // a MembershipService object
@@ -172,16 +173,20 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
                                                                    .addAll(interceptors) // called first by grpc
                                                                    .build();
         if (USE_IN_PROCESS_SERVER) {
-            final ServerBuilder builder = InProcessServerBuilder.forName(address.toString());
+            final ServerBuilder builder = InProcessServerBuilder.forName(address.toString()).executor(GRPC_EXECUTORS)
+                    ;
             server = builder.addService(ServerInterceptors
                     .intercept(this, interceptorList))
+                    .executor(GRPC_EXECUTORS)
                     .build()
                     .start();
         } else {
             final ServerBuilder builder = NettyServerBuilder.forAddress(new InetSocketAddress(address.getHost(),
-                                                                                              address.getPort()));
+                                                                                              address.getPort()))
+                                                                            .executor(GRPC_EXECUTORS);
             server = builder.addService(ServerInterceptors
                     .intercept(this, interceptorList))
+                    .executor(GRPC_EXECUTORS)
                     .build()
                     .start();
         }

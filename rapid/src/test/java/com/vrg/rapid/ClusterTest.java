@@ -103,6 +103,7 @@ public class ClusterTest {
         MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 100000;
         RpcClient.Conf.RPC_JOIN_PHASE_2_TIMEOUT = RpcClient.Conf.RPC_TIMEOUT_MEDIUM_MS * 20;
         RpcClient.Conf.RPC_TIMEOUT_MS = RpcClient.Conf.RPC_TIMEOUT_MEDIUM_MS;
+        RpcClient.Conf.RPC_PROBE_TIMEOUT = 5000;
 
         useStaticFd = false;
         staticFds.clear();
@@ -328,6 +329,7 @@ public class ClusterTest {
     public void injectAsymmetricDrops() throws IOException, InterruptedException {
         MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 3000;
         MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
+        RpcClient.Conf.RPC_PROBE_TIMEOUT = 1000;
         final int numNodes = 50;
         final int numFailingNodes = 10;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
