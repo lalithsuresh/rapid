@@ -192,6 +192,9 @@ public class ClusterTest {
      */
     @Test(timeout=30000)
     public void hundredNodesJoinFiftyNodeCluster() throws IOException, InterruptedException {
+        RpcServer.USE_IN_PROCESS_SERVER = false;
+        RpcClient.USE_IN_PROCESS_CHANNEL = false;
+
         final int numNodesPhase1 = 50;
         final int numNodesPhase2 = 100;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
