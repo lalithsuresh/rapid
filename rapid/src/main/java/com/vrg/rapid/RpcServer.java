@@ -85,9 +85,7 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     public void receiveLinkUpdateMessage(final BatchedLinkUpdateMessage request,
                                          final StreamObserver<Response> responseObserver) {
         assert membershipService != null;
-        executor.execute(
-                () -> membershipService.processLinkUpdateMessage(request)
-        );
+        executor.execute(() -> membershipService.processLinkUpdateMessage(request));
         responseObserver.onNext(Response.getDefaultInstance());
         responseObserver.onCompleted();
     }
@@ -99,9 +97,7 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     public void receiveConsensusProposal(final ConsensusProposal request,
                                          final StreamObserver<ConsensusProposalResponse> responseObserver) {
         assert membershipService != null;
-        executor.execute(
-                () -> membershipService.processConsensusProposal(request)
-        );
+        executor.execute(() -> membershipService.processConsensusProposal(request));
         responseObserver.onNext(ConsensusProposalResponse.getDefaultInstance());
         responseObserver.onCompleted();
     }
@@ -113,9 +109,7 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     public void receiveJoinMessage(final JoinMessage joinMessage,
                                    final StreamObserver<JoinResponse> responseObserver) {
         assert membershipService != null;
-        executor.execute(
-                () -> membershipService.processJoinMessage(joinMessage, responseObserver)
-        );
+        executor.execute(() -> membershipService.processJoinMessage(joinMessage, responseObserver));
     }
 
     /**
@@ -125,9 +119,7 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     public void receiveJoinPhase2Message(final JoinMessage joinMessage,
                                          final StreamObserver<JoinResponse> responseObserver) {
         assert membershipService != null;
-        executor.execute(
-                () -> membershipService.processJoinPhaseTwoMessage(joinMessage, responseObserver)
-        );
+        executor.execute(() -> membershipService.processJoinPhaseTwoMessage(joinMessage, responseObserver));
     }
 
     /**
@@ -137,9 +129,7 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     public void receiveProbe(final ProbeMessage probeMessage,
                              final StreamObserver<ProbeResponse> probeResponseObserver) {
         assert membershipService != null;
-        executor.execute(
-                () -> membershipService.processProbeMessage(probeMessage, probeResponseObserver)
-        );
+        executor.execute(() -> membershipService.processProbeMessage(probeMessage, probeResponseObserver));
     }
 
     /**
@@ -173,7 +163,7 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
                                                                    .addAll(interceptors) // called first by grpc
                                                                    .build();
         if (USE_IN_PROCESS_SERVER) {
-            final ServerBuilder builder = InProcessServerBuilder.forName(address.toString()).executor(GRPC_EXECUTORS)
+            final ServerBuilder builder = InProcessServerBuilder.forName(address.toString());
                     ;
             server = builder.addService(ServerInterceptors
                     .intercept(this, interceptorList))
@@ -182,8 +172,7 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
                     .start();
         } else {
             final ServerBuilder builder = NettyServerBuilder.forAddress(new InetSocketAddress(address.getHost(),
-                                                                                              address.getPort()))
-                                                                            .executor(GRPC_EXECUTORS);
+                                                                                              address.getPort()));
             server = builder.addService(ServerInterceptors
                     .intercept(this, interceptorList))
                     .executor(GRPC_EXECUTORS)

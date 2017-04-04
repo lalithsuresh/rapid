@@ -174,12 +174,8 @@ public class ClusterTest {
      * The test starts with a single seed and all N - 1 subsequent nodes initiate their join protocol at the same
      * time. This tests a single seed's ability to bootstrap a large cluster in one step.
      */
-    @Test(timeout=30000)
+    @Test(timeout=150000)
     public void fiveHundredNodesJoinInParallel() throws IOException, InterruptedException {
-        // Tests need to opt out of the in-process channel
-        RpcServer.USE_IN_PROCESS_SERVER = true;
-        RpcClient.USE_IN_PROCESS_CHANNEL = true;
-
         final int numNodes = 500; // Includes the size of the cluster
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         createCluster(numNodes, seedHost);
@@ -191,10 +187,10 @@ public class ClusterTest {
      * This test starts with a single seed, and a wave where 50 subsequent nodes initiate their join protocol
      * concurrently. Following this, a subsequent wave begins where 100 nodes then start together.
      */
-    @Test(timeout=30000)
+    @Test(timeout=150000)
     public void hundredNodesJoinFiftyNodeCluster() throws IOException, InterruptedException {
-        RpcServer.USE_IN_PROCESS_SERVER = false;
-        RpcClient.USE_IN_PROCESS_CHANNEL = false;
+        RpcServer.USE_IN_PROCESS_SERVER = true;
+        RpcClient.USE_IN_PROCESS_CHANNEL = true;
 
         final int numNodesPhase1 = 50;
         final int numNodesPhase2 = 100;
