@@ -23,7 +23,7 @@ message JoinMessage
 {
    string sender = 1;
    string uuid = 2;
-   int32 ringNumber = 3;
+   repeated int32 ringNumber = 3;
    int64 configurationId = 4;
    map<string, string> metadata = 5;
 }

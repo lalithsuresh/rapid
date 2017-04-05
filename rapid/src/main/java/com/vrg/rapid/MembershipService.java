@@ -221,19 +221,22 @@ final class MembershipService {
                     joinMessage.getSender(), myAddr,
                     currentConfiguration, membershipView.getRing(0).size());
 
-            final LinkUpdateMessage msg = LinkUpdateMessage.newBuilder()
-                    .setLinkSrc(this.myAddr.toString())
-                    .setLinkDst(joinMessage.getSender())
-                    .setLinkStatus(LinkStatus.UP)
-                    .setConfigurationId(currentConfiguration)
-                    .setUuid(joinMessage.getUuid())
-                    .setRingNumber(joinMessage.getRingNumber())
-                    .putAllMetadata(joinMessage.getMetadataMap())
-                    .build();
-
             joinersToRespondTo.computeIfAbsent(HostAndPort.fromString(joinMessage.getSender()),
                     (k) -> new LinkedBlockingDeque<>()).add(responseObserver);
-            enqueueLinkUpdateMessage(msg);
+
+            joinMessage.getRingNumberList().forEach(ringNumber -> {
+                    final LinkUpdateMessage msg = LinkUpdateMessage.newBuilder()
+                            .setLinkSrc(this.myAddr.toString())
+                            .setLinkDst(joinMessage.getSender())
+                            .setLinkStatus(LinkStatus.UP)
+                            .setConfigurationId(currentConfiguration)
+                            .setUuid(joinMessage.getUuid())
+                            .setRingNumber(ringNumber)
+                            .putAllMetadata(joinMessage.getMetadataMap())
+                            .build();
+                    enqueueLinkUpdateMessage(msg);
+                }
+            );
         } else {
             // This handles the corner case where the configuration changed between phase 1 and phase 2
             // of the joining node's bootstrap. It should attempt to rejoin the network.

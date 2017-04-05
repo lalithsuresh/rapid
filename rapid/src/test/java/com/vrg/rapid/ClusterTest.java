@@ -351,7 +351,7 @@ public class ClusterTest {
         RpcClient.Conf.RPC_TIMEOUT_MS = RPC_TIMEOUT_SHORT_MS; // use short retry delays to run tests faster.
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         // Drop join-phase-2 attempts by nextNode, but only enough that the RPC retries make it past
-        dropFirstNAtServer(seedHost, (10 * RpcClient.Conf.RPC_DEFAULT_RETRIES) - 1,
+        dropFirstNAtServer(seedHost, (RpcClient.Conf.RPC_DEFAULT_RETRIES) - 1,
                    MembershipServiceGrpc.METHOD_RECEIVE_JOIN_PHASE2MESSAGE);
         createCluster(1, seedHost);
         extendCluster(1, seedHost);
@@ -369,7 +369,7 @@ public class ClusterTest {
         RpcClient.Conf.RPC_TIMEOUT_MS = RPC_TIMEOUT_SHORT_MS; // use short retry delays to run tests faster.
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         // Drop join-phase-2 attempts by nextNode such that it re-attempts a join under a new configuration
-        dropFirstNAtServer(seedHost, (10 * RpcClient.Conf.RPC_DEFAULT_RETRIES) + 1,
+        dropFirstNAtServer(seedHost, (RpcClient.Conf.RPC_DEFAULT_RETRIES) + 1,
                    MembershipServiceGrpc.METHOD_RECEIVE_JOIN_PHASE2MESSAGE);
         createCluster(1, seedHost);
         extendCluster(1, seedHost);

@@ -34,6 +34,7 @@ import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -238,18 +239,24 @@ public final class Cluster {
             final List<HostAndPort> monitorList = joinPhaseOneResult.getHostsList().stream()
                     .map(HostAndPort::fromString)
                     .collect(Collectors.toList());
+            final Map<HostAndPort, List<Integer>> ringNumbersPerMonitor = new HashMap<>(K);
 
+            // Batch together requests to the same node.
             int ringNumber = 0;
-            final JoinMessage.Builder joinMsgBuilder = JoinMessage.newBuilder()
-                                                        .setSender(listenAddress.toString())
-                                                        .setUuid(currentIdentifier.toString())
-                                                        .putAllMetadata(metadata)
-                                                        .setConfigurationId(configurationToJoin);
-            final List<ListenableFuture<JoinResponse>> responseFutures = new ArrayList<>();
+            for (final HostAndPort monitor: monitorList) {
+                ringNumbersPerMonitor.computeIfAbsent(monitor, (k) -> new ArrayList<>()).add(ringNumber);
+                ringNumber++;
+            }
 
-            for (final HostAndPort monitor : monitorList) {
-                final JoinMessage msg = joinMsgBuilder.setRingNumber(ringNumber).build();
-                final ListenableFuture<JoinResponse> call = joinerClient.sendJoinPhase2Message(monitor, msg);
+            final List<ListenableFuture<JoinResponse>> responseFutures = new ArrayList<>();
+            for (final Map.Entry<HostAndPort, List<Integer>> entry: ringNumbersPerMonitor.entrySet()) {
+                final JoinMessage msg = JoinMessage.newBuilder()
+                                                   .setSender(listenAddress.toString())
+                                                   .setUuid(currentIdentifier.toString())
+                                                   .putAllMetadata(metadata)
+                                                   .setConfigurationId(configurationToJoin)
+                                                   .addAllRingNumber(entry.getValue()).build();
+                final ListenableFuture<JoinResponse> call = joinerClient.sendJoinPhase2Message(entry.getKey(), msg);
                 responseFutures.add(call);
                 ringNumber++;
             }
