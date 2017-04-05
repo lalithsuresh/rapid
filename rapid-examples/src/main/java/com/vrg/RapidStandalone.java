@@ -14,6 +14,7 @@ import com.vrg.rapid.NodeStatusChange;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.DefaultParser;
+import org.apache.commons.cli.Option;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 import scala.concurrent.Await;
@@ -21,8 +22,11 @@ import scala.concurrent.duration.Duration;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -83,7 +87,7 @@ public class RapidStandalone
             final String hostname = statusChange.getHostAndPort().getHost();    // Rapid host
             final String port = statusChange.getMetadata().get("akkaPort");     // Port for actor system
             return Await.result(actorSystem.actorSelection(
-                "akka.tcp://" + APPLICATION + "@" + hostname + ":" + port + "/user/Printer").resolveOne(timeout),
+                "akka.tcp://" + APPLICATION + "1@" + hostname + ":" + port + "/user/Printer").resolveOne(timeout),
                 timeout.duration());
         } catch (Exception e) {
             e.printStackTrace();
@@ -91,10 +95,14 @@ public class RapidStandalone
         return null;
     }
 
+    private static String seedUri(final HostAndPort seedAddress) {
+        return "akka.tcp://" + APPLICATION + "@" + seedAddress.getHost() + ":" + seedAddress.getPort();
+    }
+
     public static void main( String[] args ) throws ParseException, IOException, InterruptedException {
         final Options options = new Options();
         options.addRequiredOption("cluster", "cluster", true, "Cluster tool to use");
-        options.addRequiredOption("l", "listenAddress", true, "The listening address for the Rapid Cluster");
+        options.addRequiredOption("l", "listenAddresses", true, "The listening addresses Rapid Cluster instances");
         options.addRequiredOption("s", "seedAddress", true, "The seed node's address for the bootstrap protocol");
         options.addRequiredOption("r", "role", true, "The node's role for the cluster");
         final CommandLineParser parser = new DefaultParser();
@@ -102,14 +110,23 @@ public class RapidStandalone
 
         // Get CLI options
         final String clusterTool = cmd.getOptionValue("cluster");
-        final HostAndPort listenAddress = HostAndPort.fromString(cmd.getOptionValue("listenAddress"));
+        String addresses = cmd.getOptionValue("listenAddresses");
+        addresses = addresses.replaceAll("\\s","");
+        final List<HostAndPort> listenAddresses = Arrays.stream(addresses.split(",")).map(HostAndPort::fromString)
+                                                      .collect(Collectors.toList());
         final HostAndPort seedAddress = HostAndPort.fromString(cmd.getOptionValue("seedAddress"));
         final String role = cmd.getOptionValue("role");
+        final Executor executor = Executors.newWorkStealingPool(listenAddresses.size());
 
         if (clusterTool.equals("AkkaCluster")) {
+            if (!listenAddresses.contains(seedAddress)) {
+                Thread.sleep(10000);
+            }
             // Initialize Actor system
-            final Config config = ConfigFactory.parseString(
-                    "akka {\n" +
+            listenAddresses.forEach(listenAddress -> {
+                try {
+                    final Config config = ConfigFactory.parseString(
+                        "akka {\n" +
                             " stdout-loglevel = \"OFF\"\n" +
                             " loglevel = \"OFF\"\n" +
                             " actor {\n" +
@@ -126,48 +143,72 @@ public class RapidStandalone
                             "   }\n" +
                             " }\n" +
                             "}");
-            actorSystem = ActorSystem.create(APPLICATION, config);
-            assert actorSystem != null;
-            localActor = actorSystem.actorOf(Props.create(AkkaListener.class), "Printer");
+                    actorSystem = ActorSystem.create(APPLICATION, config);
+                    assert actorSystem != null;
+                    localActor = actorSystem.actorOf(Props.create(AkkaListener.class), "Actor:" + listenAddress);
+                    final akka.cluster.Cluster cluster = akka.cluster.Cluster.get(actorSystem);
+                    cluster.subscribe(localActor, akka.cluster.ClusterEvent.ClusterDomainEvent.class);
+                    cluster.join(AddressFromURIString.parse(seedUri(seedAddress)));
 
-            final akka.cluster.Cluster cluster = akka.cluster.Cluster.get(actorSystem);
-            cluster.subscribe(localActor, akka.cluster.ClusterEvent.ClusterDomainEvent.class);
-            cluster.join(AddressFromURIString.parse("akka.tcp://" + APPLICATION + "@" + seedAddress.getHost() + ":" + seedAddress.getPort()));
-
-            int tries = 400;
-            while (tries-- > 0) {
-                System.out.println(System.currentTimeMillis() + " Cluster size " + ImmutableList.copyOf(cluster.state().getMembers())
-                        .stream().filter(member -> member.status().equals(MemberStatus.up()))
-                        .collect(Collectors.toList()).size() + " " + tries);
-                Thread.sleep(1000);
-            }
+                    executor.execute(() -> {
+                        int tries = 400;
+                        while (tries-- > 0) {
+                            System.out.println(System.currentTimeMillis() + " " + listenAddress +
+                                    " Cluster size " + ImmutableList.copyOf(cluster.state().getMembers())
+                                    .stream().filter(member -> member.status().equals(MemberStatus.up()))
+                                    .collect(Collectors.toList()).size() + " " + tries);
+                            try {
+                                Thread.sleep(1000);
+                            } catch (Exception e) {
+                                e.printStackTrace();
+                            }
+                        }
+                        System.exit(0);
+                    });
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            });
         }
         else if (clusterTool.equals("Rapid")) {
-            // Setup Rapid cluster
-            final com.vrg.rapid.Cluster cluster;
-            if (listenAddress.equals(seedAddress)) {
-                cluster = new com.vrg.rapid.Cluster.Builder(listenAddress)
-                                     .start();
-            }
-            else {
-                cluster = new com.vrg.rapid.Cluster.Builder(listenAddress)
-                                     .join(seedAddress);
-            }
-            cluster.registerSubscription(com.vrg.rapid.ClusterEvents.VIEW_CHANGE_PROPOSAL,
-                                            RapidStandalone::onViewChangeProposal);
-            cluster.registerSubscription(com.vrg.rapid.ClusterEvents.VIEW_CHANGE,
-                                            RapidStandalone::onViewChange);
-            cluster.registerSubscription(com.vrg.rapid.ClusterEvents.VIEW_CHANGE_ONE_STEP_FAILED,
-                                            RapidStandalone::onViewChangeOneStepFailed);
-            cluster.registerSubscription(com.vrg.rapid.ClusterEvents.KICKED,
-                                            RapidStandalone::onKicked);
+            listenAddresses.forEach(listenAddress -> executor.execute(() -> {
+                // Setup Rapid cluster
+                try {
+                    System.out.println(listenAddress);
+                    final com.vrg.rapid.Cluster cluster;
+                    if (listenAddress.equals(seedAddress)) {
+                            cluster = new com.vrg.rapid.Cluster.Builder(listenAddress)
+                                    .start();
 
-            int tries = 400;
-            while (tries-- > 0) {
-                System.out.println(System.currentTimeMillis() + " Cluster size " + cluster.getMemberlist().size() + " " + tries);
-                Thread.sleep(1000);
-            }
-            System.exit(0);
+                    } else {
+                        Thread.sleep(10000);
+                        cluster = new com.vrg.rapid.Cluster.Builder(listenAddress)
+                                .join(seedAddress);
+                    }
+
+                    cluster.registerSubscription(com.vrg.rapid.ClusterEvents.VIEW_CHANGE_PROPOSAL,
+                            RapidStandalone::onViewChangeProposal);
+                    cluster.registerSubscription(com.vrg.rapid.ClusterEvents.VIEW_CHANGE,
+                            RapidStandalone::onViewChange);
+                    cluster.registerSubscription(com.vrg.rapid.ClusterEvents.VIEW_CHANGE_ONE_STEP_FAILED,
+                            RapidStandalone::onViewChangeOneStepFailed);
+                    cluster.registerSubscription(com.vrg.rapid.ClusterEvents.KICKED,
+                            RapidStandalone::onKicked);
+
+                    int tries = 400;
+                    while (tries-- > 0) {
+                        System.out.println(System.currentTimeMillis() + " " + listenAddress +
+                                " Cluster size " + cluster.getMemberlist().size() + " " + tries);
+                        Thread.sleep(1000);
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+
+                System.exit(0);
+            }));
         }
+
+        Thread.currentThread().join();
     }
 }
