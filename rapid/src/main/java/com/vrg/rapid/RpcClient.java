@@ -293,7 +293,7 @@ final class RpcClient {
         static int RPC_TIMEOUT_MEDIUM_MS = 5000;
         static int RPC_TIMEOUT_MS = RPC_TIMEOUT_MEDIUM_MS;
         static int RPC_DEFAULT_RETRIES = 5;
-        static int RPC_JOIN_PHASE_2_TIMEOUT = 20000;
+        static int RPC_JOIN_PHASE_2_TIMEOUT = 5000;
         static int RPC_PROBE_TIMEOUT = 5000;
     }
 }
