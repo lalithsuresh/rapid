@@ -103,6 +103,7 @@ final class MembershipService {
     private final Map<List<String>, AtomicInteger> votesPerProposal = new HashMap<>();
     private final Set<String> votesReceived = new HashSet<>(); // Should be a bitset
     private boolean announcedProposal = false;
+    private final Object membershipUpdateLock = new Object();
 
     static class Builder {
         private final MembershipView membershipView;
@@ -444,20 +445,22 @@ final class MembershipService {
     @ExperimentalApi
     void decideViewChange(final List<HostAndPort> proposal) {
         final List<NodeStatusChange> statusChanges = new ArrayList<>(proposal.size());
-        for (final HostAndPort node : proposal) {
-            final boolean isPresent = membershipView.isHostPresent(node);
-            // If the node is already in the ring, remove it. Else, add it.
-            // XXX: Maybe there's a cleaner way to do this in the future because
-            // this ties us to just two states a node can be in.
-            if (isPresent) {
-                membershipView.ringDelete(node);
-                statusChanges.add(new NodeStatusChange(node, LinkStatus.DOWN, metadataManager.get(node)));
-                metadataManager.removeNode(node);
-            }
-            else {
-                assert joinerUuid.containsKey(node);
-                membershipView.ringAdd(node, joinerUuid.get(node));
-                statusChanges.add(new NodeStatusChange(node, LinkStatus.UP, metadataManager.get(node)));
+        synchronized (membershipUpdateLock) {
+            for (final HostAndPort node : proposal) {
+                final boolean isPresent = membershipView.isHostPresent(node);
+                // If the node is already in the ring, remove it. Else, add it.
+                // XXX: Maybe there's a cleaner way to do this in the future because
+                // this ties us to just two states a node can be in.
+                if (isPresent) {
+                    membershipView.ringDelete(node);
+                    statusChanges.add(new NodeStatusChange(node, LinkStatus.DOWN, metadataManager.get(node)));
+                    metadataManager.removeNode(node);
+                }
+                else {
+                    assert joinerUuid.containsKey(node);
+                    membershipView.ringAdd(node, joinerUuid.get(node));
+                    statusChanges.add(new NodeStatusChange(node, LinkStatus.UP, metadataManager.get(node)));
+                }
             }
         }
 
@@ -579,7 +582,9 @@ final class MembershipService {
      * @return list of hosts in the membership view
      */
     List<HostAndPort> getMembershipView() {
-        return membershipView.getRing(0);
+        synchronized (membershipUpdateLock) {
+            return membershipView.getRing(0);
+        }
     }
 
 
