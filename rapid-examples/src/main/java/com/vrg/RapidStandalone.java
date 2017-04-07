@@ -153,10 +153,12 @@ public class RapidStandalone
                     executor.execute(() -> {
                         int tries = 400;
                         while (tries-- > 0) {
-                            System.out.println(System.currentTimeMillis() + " " + listenAddress +
-                                    " Cluster size " + ImmutableList.copyOf(cluster.state().getMembers())
+                            final int up = ImmutableList.copyOf(cluster.state().getMembers())
                                     .stream().filter(member -> member.status().equals(MemberStatus.up()))
-                                    .collect(Collectors.toList()).size() + " " + tries);
+                                    .collect(Collectors.toList()).size();
+                            final int unreachable = cluster.state().getUnreachable().size();
+                            System.out.println(System.currentTimeMillis() + " " + listenAddress +
+                                    " Cluster size " + (up - unreachable) + " " + tries);
                             try {
                                 Thread.sleep(1000);
                             } catch (Exception e) {

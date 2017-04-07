@@ -43,7 +43,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class PingPongFailureDetector implements ILinkFailureDetector {
     private static final Logger LOG = LoggerFactory.getLogger(PingPongFailureDetector.class);
     private static final Executor BACKGROUND_EXECUTOR = Executors.newSingleThreadScheduledExecutor();
-    private static final int FAILURE_THRESHOLD = 3;
+    private static final int FAILURE_THRESHOLD = 10;
 
     // Number of BOOTSTRAPPING status responses a node is allowed to return before we begin
     // treating that as a failure condition.

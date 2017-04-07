@@ -208,7 +208,7 @@ public class ClusterTest {
     @Test
     public void oneFailureOutOfFourNodes() throws IOException, InterruptedException {
         MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 1000;
-        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
+        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 100;
 
         final int numNodes = 4;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);

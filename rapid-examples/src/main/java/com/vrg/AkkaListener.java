@@ -28,7 +28,6 @@ public class AkkaListener extends UntypedActor {
     //re-subscribe when restart
     @Override
     public void postStop() {
-        System.out.println("Uhm, no");
         cluster.unsubscribe(getSelf());
     }
 
@@ -39,6 +38,7 @@ public class AkkaListener extends UntypedActor {
 
         } else if (message instanceof UnreachableMember) {
             UnreachableMember mUnreachable = (UnreachableMember) message;
+            System.out.println(mUnreachable);
 
         } else if (message instanceof MemberRemoved) {
             MemberRemoved mRemoved = (MemberRemoved) message;
