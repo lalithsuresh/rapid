@@ -61,8 +61,8 @@ final class RpcClient {
     private final HostAndPort address;
     private final List<ClientInterceptor> interceptors;
     private final Map<HostAndPort, MembershipServiceFutureStub> stubMap = new ConcurrentHashMap<>();
-    private static final ExecutorService GRPC_EXECUTORS = Executors.newFixedThreadPool(5);
-    private static final ExecutorService BACKGROUND_EXECUTOR = Executors.newFixedThreadPool(5);
+    private static final ExecutorService GRPC_EXECUTORS = Executors.newFixedThreadPool(20);
+    private static final ExecutorService BACKGROUND_EXECUTOR = Executors.newFixedThreadPool(20);
 
     RpcClient(final HostAndPort address) {
         this(address, Collections.emptyList());

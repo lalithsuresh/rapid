@@ -53,7 +53,7 @@ import java.util.concurrent.TimeUnit;
  */
 final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     @VisibleForTesting static boolean USE_IN_PROCESS_SERVER = false;
-    private static final ExecutorService GRPC_EXECUTORS = Executors.newFixedThreadPool(5);
+    private static final ExecutorService GRPC_EXECUTORS = Executors.newFixedThreadPool(20);
     private static final ProbeResponse BOOTSTRAPPING_MESSAGE =
             ProbeResponse.newBuilder().setStatus(NodeStatus.BOOTSTRAPPING).build();
     private final HostAndPort address;
