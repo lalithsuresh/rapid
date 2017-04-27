@@ -182,7 +182,6 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
                                                                    .build();
         if (USE_IN_PROCESS_SERVER) {
             final ServerBuilder builder = InProcessServerBuilder.forName(address.toString());
-                    ;
             server = builder.addService(ServerInterceptors
                     .intercept(this, interceptorList))
                     .executor(GRPC_EXECUTORS)
