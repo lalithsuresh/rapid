@@ -208,7 +208,7 @@ public class ClusterTest {
     @Test
     public void oneFailureOutOfFourNodes() throws IOException, InterruptedException {
         MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 1000;
-        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 100;
+        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 500;
 
         final int numNodes = 4;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
@@ -279,12 +279,12 @@ public class ClusterTest {
      *
      */
     @Test
-    public void sixteenFailuresOutOfFiftyNodes() throws IOException, InterruptedException {
+    public void twelveFailuresOutOfFiftyNodes() throws IOException, InterruptedException {
         MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 1000;
         MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 500;
 
         final int numNodes = 50;
-        final int failingNodes = 16;
+        final int failingNodes = 12;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         createCluster(numNodes, seedHost);
         verifyCluster(numNodes, seedHost);

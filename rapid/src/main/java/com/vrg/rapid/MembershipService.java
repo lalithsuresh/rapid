@@ -358,7 +358,7 @@ final class MembershipService {
                 logProposalList.add(proposal);
             }
 
-            LOG.trace("Node {} has a proposal of size {}: {}", myAddr, proposal.size(), proposal);
+            LOG.debug("Node {} has a proposal of size {}: {}", myAddr, proposal.size(), proposal);
             announcedProposal = true;
 
             if (subscriptions.containsKey(ClusterEvents.VIEW_CHANGE_PROPOSAL)) {
@@ -406,9 +406,9 @@ final class MembershipService {
         final AtomicInteger proposalsReceived = votesPerProposal.computeIfAbsent(proposalMessage.getHostsList(),
                                                                             (k) -> new AtomicInteger(0));
         final int count = proposalsReceived.incrementAndGet();
-        final double F = ((double) membershipSize) / 3.0; // Fast Paxos resiliency.
-
-        if (votesReceived.size() >= (membershipSize - F)) {
+        final int F = (int) Math.ceil(((double) membershipSize - 1) / 4.0); // Fast Paxos resiliency.
+        final boolean bootstrapping = membershipSize < 5;
+        if (votesReceived.size() >= (membershipSize - F) || bootstrapping) {
             if (count >= (membershipSize - F)) {
                 LOG.trace("{} has decided on a view change: {}", myAddr, proposalMessage.getHostsList());
                 // We have a successful proposal. Consume it.

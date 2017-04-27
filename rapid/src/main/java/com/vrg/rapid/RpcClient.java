@@ -32,8 +32,10 @@ import com.vrg.rapid.pb.Response;
 import io.grpc.Channel;
 import io.grpc.ClientInterceptor;
 import io.grpc.ClientInterceptors;
+import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import io.grpc.inprocess.InProcessChannelBuilder;
+import io.grpc.internal.ManagedChannelImpl;
 import io.grpc.netty.NettyChannelBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -60,7 +62,7 @@ final class RpcClient {
     static boolean USE_IN_PROCESS_CHANNEL = false;
     private final HostAndPort address;
     private final List<ClientInterceptor> interceptors;
-    private final Map<HostAndPort, MembershipServiceFutureStub> stubMap = new ConcurrentHashMap<>();
+    private final Map<HostAndPort, Channel> channelMap = new ConcurrentHashMap<>();
     private static final ExecutorService GRPC_EXECUTORS = Executors.newFixedThreadPool(20);
     private static final ExecutorService BACKGROUND_EXECUTOR = Executors.newFixedThreadPool(20);
 
@@ -85,7 +87,7 @@ final class RpcClient {
         Objects.requireNonNull(remote);
         Objects.requireNonNull(probeMessage);
 
-        final MembershipServiceFutureStub stub = stubMap.computeIfAbsent(remote, this::getFutureStub);
+        final MembershipServiceFutureStub stub = getFutureStub(remote);
         return stub.withDeadlineAfter(Conf.RPC_PROBE_TIMEOUT, TimeUnit.MILLISECONDS).receiveProbe(probeMessage);
     }
 
@@ -108,12 +110,12 @@ final class RpcClient {
                 .setUuid(uuid.toString())
                 .build();
         final Supplier<ListenableFuture<JoinResponse>> call = () -> {
-            final MembershipServiceFutureStub stub = stubMap.computeIfAbsent(remote, this::getFutureStub)
+            final MembershipServiceFutureStub stub = getFutureStub(remote)
                     .withDeadlineAfter(Conf.RPC_TIMEOUT_MS * 5,
                             TimeUnit.MILLISECONDS);
             return stub.receiveJoinMessage(msg);
         };
-        return callWithRetries(call, Conf.RPC_DEFAULT_RETRIES);
+        return callWithRetries(call, remote, Conf.RPC_DEFAULT_RETRIES);
     }
 
     /**
@@ -129,12 +131,12 @@ final class RpcClient {
         Objects.requireNonNull(msg);
 
         final Supplier<ListenableFuture<JoinResponse>> call = () -> {
-            final MembershipServiceFutureStub stub = stubMap.computeIfAbsent(remote, this::getFutureStub)
+            final MembershipServiceFutureStub stub = getFutureStub(remote)
                     .withDeadlineAfter(Conf.RPC_JOIN_PHASE_2_TIMEOUT,
                             TimeUnit.MILLISECONDS);
             return stub.receiveJoinPhase2Message(msg);
         };
-        return callWithRetries(call, Conf.RPC_DEFAULT_RETRIES);
+        return callWithRetries(call, remote, Conf.RPC_DEFAULT_RETRIES);
     }
 
     /**
@@ -149,11 +151,11 @@ final class RpcClient {
         Objects.requireNonNull(msg);
 
         final Supplier<ListenableFuture<ConsensusProposalResponse>> call = () -> {
-            final MembershipServiceFutureStub stub = stubMap.computeIfAbsent(remote, this::getFutureStub)
+            final MembershipServiceFutureStub stub = getFutureStub(remote)
                     .withDeadlineAfter(Conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
             return stub.receiveConsensusProposal(msg);
         };
-        return callWithRetries(call, Conf.RPC_DEFAULT_RETRIES);
+        return callWithRetries(call, remote, Conf.RPC_DEFAULT_RETRIES);
     }
 
     /**
@@ -166,11 +168,11 @@ final class RpcClient {
     ListenableFuture<Response> sendLinkUpdateMessage(final HostAndPort remote, final BatchedLinkUpdateMessage msg) {
         Objects.requireNonNull(msg);
         final Supplier<ListenableFuture<Response>> call = () -> {
-            final MembershipServiceFutureStub stub = stubMap.computeIfAbsent(remote, this::getFutureStub)
+            final MembershipServiceFutureStub stub = getFutureStub(remote)
                     .withDeadlineAfter(Conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
             return stub.receiveLinkUpdateMessage(msg);
         };
-        return callWithRetries(call, Conf.RPC_DEFAULT_RETRIES);
+        return callWithRetries(call, remote, Conf.RPC_DEFAULT_RETRIES);
     }
 
     /**
@@ -207,24 +209,29 @@ final class RpcClient {
      * @param <T> The type of the response.
      * @return Returns a ListenableFuture of type T, that hosts the result of the supplied {@code call}.
      */
-    private static <T> ListenableFuture<T> callWithRetries(final Supplier<ListenableFuture<T>> call,
-                                                           final int retries) {
+    private <T> ListenableFuture<T> callWithRetries(final Supplier<ListenableFuture<T>> call,
+                                                    final HostAndPort remote,
+                                                    final int retries) {
         final SettableFuture<T> settable = SettableFuture.create();
-        startCallWithRetry(call, settable, retries);
+        startCallWithRetry(call, remote, settable, retries);
         return settable;
     }
 
     /**
      * Adapted from https://github.com/spotify/futures-extra/.../AsyncRetrier.java
      */
-    private static <T> void startCallWithRetry(final Supplier<ListenableFuture<T>> call,
-                                               final SettableFuture<T> signal,
-                                               final int retries) {
+    private <T> void startCallWithRetry(final Supplier<ListenableFuture<T>> call,
+                                        final HostAndPort remote,
+                                        final SettableFuture<T> signal,
+                                        final int retries) {
         ListenableFuture<T> callFuture;
+        // StatusRuntimeException is thrown by gRPC commands failing. NPEs are thrown by gRPC when we
+        // shutdown a channel on which another RPC is already about to be made. A retry in the latter case
+        // attempts to re-establish the channel.
         try {
             callFuture = call.get();
-        } catch (final StatusRuntimeException e) {
-            handleFailure(call, signal, retries, e);
+        } catch (final StatusRuntimeException | NullPointerException e) {
+            handleFailure(call, remote, signal, retries, e);
             return;
         }
 
@@ -237,7 +244,7 @@ final class RpcClient {
             @Override
             public void onFailure(final Throwable throwable) {
                 LOG.trace("Retrying call {}");
-                handleFailure(call, signal, retries, throwable);
+                handleFailure(call, remote, signal, retries, throwable);
             }
         }, BACKGROUND_EXECUTOR);
     }
@@ -245,12 +252,24 @@ final class RpcClient {
     /**
      * Adapted from https://github.com/spotify/futures-extra/.../AsyncRetrier.java
      */
-    private static <T> void handleFailure(final Supplier<ListenableFuture<T>> code,
-                                          final SettableFuture<T> future,
-                                          final int retries,
-                                          final Throwable t) {
+    private <T> void handleFailure(final Supplier<ListenableFuture<T>> code,
+                                   final HostAndPort remote,
+                                   final SettableFuture<T> future,
+                                   final int retries,
+                                   final Throwable t) {
+        // GRPC returns an UNAVAILABLE error when the TCP connection breaks and there is no way to recover
+        // from it . We therefore shutdown the channel, and subsequent calls will try to re-establish it.
+        if (t instanceof StatusRuntimeException) {
+            if (((StatusRuntimeException) t).getStatus().getCode().equals(Status.Code.UNAVAILABLE)) {
+                final ManagedChannelImpl channel = (ManagedChannelImpl) channelMap.remove(remote);
+                if (channel != null) {
+                    channel.shutdownNow();
+                }
+            }
+        }
+
         if (retries > 0) {
-            startCallWithRetry(code, future, retries - 1);
+            startCallWithRetry(code, remote, future, retries - 1);
         } else {
             future.setException(t);
         }
@@ -258,12 +277,19 @@ final class RpcClient {
 
     private MembershipServiceFutureStub getFutureStub(final HostAndPort remote) {
         // TODO: allow configuring SSL/TLS
+        Channel channel = channelMap.computeIfAbsent(remote, this::getChannel);
+
+        if (interceptors.size() > 0) {
+            channel = ClientInterceptors.intercept(channel, interceptors);
+        }
+
+        return MembershipServiceGrpc.newFutureStub(channel);
+    }
+
+    private Channel getChannel(final HostAndPort remote) {
+        // TODO: allow configuring SSL/TLS
         Channel channel;
         LOG.debug("Creating channel from {} to {}", address, remote);
-
-        if (stubMap.containsKey(remote)) {
-            return stubMap.get(remote);
-        }
 
         if (USE_IN_PROCESS_CHANNEL) {
             channel = InProcessChannelBuilder
@@ -281,11 +307,7 @@ final class RpcClient {
                     .build();
         }
 
-        if (interceptors.size() > 0) {
-            channel = ClientInterceptors.intercept(channel, interceptors);
-        }
-
-        return MembershipServiceGrpc.newFutureStub(channel);
+        return channel;
     }
 
     @VisibleForTesting
