@@ -72,9 +72,7 @@ public final class Cluster {
     public static class Builder {
         private final HostAndPort listenAddress;
         @Nullable private ILinkFailureDetector linkFailureDetector = null;
-        private boolean logProposals = false;
         private Map<String, String> metadata = Collections.emptyMap();
-        private boolean isExternalConsensusEnabled = false;
         private List<ServerInterceptor> serverInterceptors = Collections.emptyList();
         private List<ClientInterceptor> clientInterceptors = Collections.emptyList();
 
@@ -85,17 +83,6 @@ public final class Cluster {
          */
         public Builder(final HostAndPort listenAddress) {
             this.listenAddress = listenAddress;
-        }
-
-        /**
-         * Maintain a log of proposals inside Rapid.
-         *
-         * @param logProposals Will log proposals if true.
-         */
-        @ExperimentalApi
-        public Builder setLogProposals(final boolean logProposals) {
-            this.logProposals = logProposals;
-            return this;
         }
 
         /**
@@ -147,8 +134,7 @@ public final class Cluster {
          * @throws IOException Thrown if we cannot successfully start a server
          */
         public Cluster join(final HostAndPort seedAddress) throws IOException, InterruptedException {
-            return joinCluster(seedAddress, this.listenAddress, this.logProposals,
-                               this.linkFailureDetector, this.metadata, this.isExternalConsensusEnabled,
+            return joinCluster(seedAddress, this.listenAddress, this.linkFailureDetector, this.metadata,
                                this.serverInterceptors, this.clientInterceptors);
         }
 
@@ -158,14 +144,12 @@ public final class Cluster {
          * @throws IOException Thrown if we cannot successfully start a server
          */
         public Cluster start() throws IOException {
-            return startCluster(this.listenAddress, this.logProposals, this.linkFailureDetector,
-                                this.metadata, this.isExternalConsensusEnabled, this.serverInterceptors);
+            return startCluster(this.listenAddress, this.linkFailureDetector, this.metadata, this.serverInterceptors);
         }
     }
 
     static Cluster joinCluster(final HostAndPort seedAddress, final HostAndPort listenAddress,
-               final boolean logProposals, @Nullable final ILinkFailureDetector linkFailureDetector,
-               final Map<String, String> metadata, final boolean isExternalConsensusEnabled,
+               @Nullable final ILinkFailureDetector linkFailureDetector, final Map<String, String> metadata,
                final List<ServerInterceptor> serverInterceptors, final List<ClientInterceptor> clientInterceptors)
                                                                             throws IOException, InterruptedException {
         UUID currentIdentifier = UUID.randomUUID();
@@ -289,10 +273,9 @@ public final class Cluster {
                         if (linkFailureDetector != null) {
                             msBuilder = msBuilder.setLinkFailureDetector(linkFailureDetector);
                         }
-                        final MembershipService membershipService = msBuilder.setLogProposals(logProposals)
-                                .setRpcClient(joinerClient)
-                                .setMetadata(metadata)
-                                .build();
+                        final MembershipService membershipService = msBuilder.setRpcClient(joinerClient)
+                                                                             .setMetadata(metadata)
+                                                                             .build();
                         server.setMembershipService(membershipService);
                         if (LOG.isTraceEnabled()) {
                             LOG.trace("{} has monitors {}", listenAddress,
@@ -316,16 +299,13 @@ public final class Cluster {
      * Start a cluster without joining. Required to bootstrap a seed node.
      *
      * @param listenAddress Address to bind to after successful bootstrap
-     * @param logProposals maintain a log of announced view change proposals
      * @param linkFailureDetector a list of checks to perform before a monitor processes a join phase two message
      * @throws IOException Thrown if we cannot successfully start a server
      */
     @VisibleForTesting
     static Cluster startCluster(final HostAndPort listenAddress,
-                                final boolean logProposals,
                                 @Nullable final ILinkFailureDetector linkFailureDetector,
                                 final Map<String, String> metadata,
-                                final boolean isExternalConsensusEnabled,
                                 final List<ServerInterceptor> interceptors) throws IOException {
         Objects.requireNonNull(listenAddress);
         final ExecutorService executor = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder()
@@ -342,8 +322,7 @@ public final class Cluster {
         if (linkFailureDetector != null) {
             builder = builder.setLinkFailureDetector(linkFailureDetector);
         }
-        final MembershipService membershipService = builder.setLogProposals(logProposals)
-                                                           .setMetadata(metadata).build();
+        final MembershipService membershipService = builder.setMetadata(metadata).build();
         rpcServer.setMembershipService(membershipService);
         rpcServer.startServer(interceptors);
         return new Cluster(rpcServer, membershipService, executor, listenAddress);

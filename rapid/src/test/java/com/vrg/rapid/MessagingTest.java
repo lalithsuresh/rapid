@@ -306,7 +306,6 @@ public class MessagingTest {
         membershipView.ringAdd(serverAddr, UUID.randomUUID());
         final MembershipService service =
                 new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView)
-                                    .setLogProposals(true)
                                     .build();
         final RpcServer rpcServer = new RpcServer(serverAddr, executorService);
         rpcServer.setMembershipService(service);
@@ -326,7 +325,6 @@ public class MessagingTest {
         membershipView.ringAdd(serverAddr, UUID.randomUUID());
         final MembershipService service =
                 new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView)
-                        .setLogProposals(true)
                         .build();
         final RpcServer rpcServer = new RpcServer(serverAddr, executorService);
         rpcServer.setMembershipService(service);
@@ -345,7 +343,6 @@ public class MessagingTest {
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
         final MembershipService service =
                 new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView)
-                        .setLogProposals(true)
                         .build();
         final RpcServer rpcServer = new RpcServer(serverAddr, executorService);
         rpcServer.setMembershipService(service);

@@ -72,12 +72,10 @@ final class MembershipService {
     private final MembershipView membershipView;
     private final WatermarkBuffer watermarkBuffer;
     private final HostAndPort myAddr;
-    private final boolean logProposals;
     private final IBroadcaster broadcaster;
     private final Map<HostAndPort, LinkedBlockingDeque<StreamObserver<JoinResponse>>> joinersToRespondTo =
             new ConcurrentHashMap<>();
     private final Map<HostAndPort, UUID> joinerUuid = new HashMap<>(); // XXX: Not being cleared.
-    private final List<Set<HostAndPort>> logProposalList = new ArrayList<>();
     private final LinkFailureDetectorRunner linkFailureDetectorRunner;
     private final RpcClient rpcClient;
     private final MetadataManager metadataManager;
@@ -105,7 +103,6 @@ final class MembershipService {
         private final MembershipView membershipView;
         private final WatermarkBuffer watermarkBuffer;
         private final HostAndPort myAddr;
-        private boolean logProposals;
         private Map<String, String> metadata = Collections.emptyMap();
         @Nullable private ILinkFailureDetector linkFailureDetector = null;
         @Nullable private RpcClient rpcClient = null;
@@ -116,11 +113,6 @@ final class MembershipService {
             this.myAddr = Objects.requireNonNull(myAddr);
             this.watermarkBuffer = Objects.requireNonNull(watermarkBuffer);
             this.membershipView = Objects.requireNonNull(membershipView);
-        }
-
-        Builder setLogProposals(final boolean logProposals) {
-            this.logProposals = logProposals;
-            return this;
         }
 
         Builder setMetadata(final Map<String, String> metadata) {
@@ -147,7 +139,6 @@ final class MembershipService {
         this.myAddr = builder.myAddr;
         this.membershipView = builder.membershipView;
         this.watermarkBuffer = builder.watermarkBuffer;
-        this.logProposals = builder.logProposals;
         this.metadataManager = new MetadataManager();
         this.metadataManager.setMetadata(myAddr, builder.metadata);
         this.rpcClient = builder.rpcClient != null ? builder.rpcClient : new RpcClient(myAddr);
@@ -302,10 +293,6 @@ final class MembershipService {
 
         // If we have a proposal for this stage, start an instance of consensus on it.
         if (proposal.size() != 0) {
-            if (logProposals) {
-                logProposalList.add(proposal);
-            }
-
             LOG.debug("Node {} has a proposal of size {}: {}", myAddr, proposal.size(), proposal);
             announcedProposal = true;
 
@@ -531,17 +518,6 @@ final class MembershipService {
             return membershipView.getRing(0);
         }
     }
-
-
-    /**
-     * If proposal logging is enabled, return the log of proposals made by a node
-     *
-     * @return Ordered log of view change proposals made by this service
-     */
-    List<Set<HostAndPort>> getProposalLog() {
-        return Collections.unmodifiableList(logProposalList);
-    }
-
 
     /**
      * Shuts down all the executors.
