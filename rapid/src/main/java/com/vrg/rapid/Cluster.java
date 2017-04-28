@@ -56,18 +56,15 @@ public final class Cluster {
     private static final int RETRIES = 5;
     private final MembershipService membershipService;
     private final RpcServer rpcServer;
-    private final boolean isExternalConsensusEnabled;
     private final ExecutorService executor;
     private final HostAndPort listenAddress;
 
     private Cluster(final RpcServer rpcServer,
                     final MembershipService membershipService,
-                    final boolean isExternalConsensusEnabled,
                     final ExecutorService executorService,
                     final HostAndPort listenAddress) {
         this.membershipService = membershipService;
         this.rpcServer = rpcServer;
-        this.isExternalConsensusEnabled = isExternalConsensusEnabled;
         this.executor = executorService;
         this.listenAddress = listenAddress;
     }
@@ -122,15 +119,6 @@ public final class Cluster {
         public Builder setLinkFailureDetector(final ILinkFailureDetector linkFailureDetector) {
             Objects.requireNonNull(linkFailureDetector);
             this.linkFailureDetector = linkFailureDetector;
-            return this;
-        }
-
-        /**
-         * This enables applications to receive consensus proposals and install their decisions into Rapid.
-         */
-        @ExperimentalApi
-        public Builder enableExternalConsensus() {
-            this.isExternalConsensusEnabled = true;
             return this;
         }
 
@@ -312,8 +300,7 @@ public final class Cluster {
                             LOG.trace("{} has monitorees {}", listenAddress,
                                     membershipViewFinal.getMonitorsOf(listenAddress));
                         }
-                        return new Cluster(server, membershipService,
-                                           isExternalConsensusEnabled, executor, listenAddress);
+                        return new Cluster(server, membershipService, executor, listenAddress);
                     }
                 }
             } catch (final ExecutionException e) {
@@ -359,7 +346,7 @@ public final class Cluster {
                                                            .setMetadata(metadata).build();
         rpcServer.setMembershipService(membershipService);
         rpcServer.startServer(interceptors);
-        return new Cluster(rpcServer, membershipService, isExternalConsensusEnabled, executor, listenAddress);
+        return new Cluster(rpcServer, membershipService, executor, listenAddress);
     }
 
     /**
@@ -380,23 +367,6 @@ public final class Cluster {
     public void registerSubscription(final ClusterEvents event,
                                      final Consumer<List<NodeStatusChange>> callback) {
         membershipService.registerSubscription(event, callback);
-    }
-
-    /**
-     * If external consensus is enabled applies {@code decision} against the current view.
-     *
-     * @param decision A list of nodes to apply as a view change. Nodes in {@code decision} that are part
-     *                 of the current view will be removed, nodes in {@code decision}
-     *                 that are not in the current view will be added.
-     */
-    @ExperimentalApi
-    public void applyViewChangeDecision(final List<HostAndPort> decision) {
-        if (!isExternalConsensusEnabled) {
-            throw new RuntimeException("installNewView not supported when external consensus is disabled");
-        }
-
-        // This is the same executor being used by the rpc-server.
-        executor.execute(() -> membershipService.decideViewChange(decision));
     }
 
     /**

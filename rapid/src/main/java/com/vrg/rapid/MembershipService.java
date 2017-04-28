@@ -24,7 +24,6 @@ import com.vrg.rapid.pb.LinkStatus;
 import com.vrg.rapid.pb.LinkUpdateMessage;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
-import io.grpc.ExperimentalApi;
 import io.grpc.StatusRuntimeException;
 import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
@@ -82,7 +81,6 @@ final class MembershipService {
     private final LinkFailureDetectorRunner linkFailureDetectorRunner;
     private final RpcClient rpcClient;
     private final MetadataManager metadataManager;
-    private final boolean isExternalConsensusEnabled;
 
     // Event subscriptions
     private final Map<ClusterEvents, List<Consumer<List<NodeStatusChange>>>> subscriptions;
@@ -108,7 +106,6 @@ final class MembershipService {
         private final WatermarkBuffer watermarkBuffer;
         private final HostAndPort myAddr;
         private boolean logProposals;
-        private boolean isExternalConsensusEnabled = false;
         private Map<String, String> metadata = Collections.emptyMap();
         @Nullable private ILinkFailureDetector linkFailureDetector = null;
         @Nullable private RpcClient rpcClient = null;
@@ -155,7 +152,6 @@ final class MembershipService {
         this.metadataManager.setMetadata(myAddr, builder.metadata);
         this.rpcClient = builder.rpcClient != null ? builder.rpcClient : new RpcClient(myAddr);
         this.broadcaster = new UnicastToAllBroadcaster(rpcClient);
-        this.isExternalConsensusEnabled = builder.isExternalConsensusEnabled;
         this.subscriptions = new HashMap<>(ClusterEvents.values().length); // One for each event.
         Arrays.stream(ClusterEvents.values()).forEach(event -> this.subscriptions.put(event, new ArrayList<>(1)));
 
@@ -365,19 +361,17 @@ final class MembershipService {
                 // Inform subscribers that a proposal has been announced.
                 subscriptions.get(ClusterEvents.VIEW_CHANGE_PROPOSAL).forEach(cb -> cb.accept(result));
             }
-            if (!isExternalConsensusEnabled) {
-                // TODO: Plug different consensus implementations here
-                final ConsensusProposal proposalMessage = ConsensusProposal.newBuilder()
-                        .setConfigurationId(currentConfigurationId)
-                        .addAllHosts(proposal
-                                .stream()
-                                .map(HostAndPort::toString)
-                                .sorted()
-                                .collect(Collectors.toList()))
-                        .setSender(myAddr.toString())
-                        .build();
-                broadcaster.broadcast(proposalMessage);
-            }
+
+            final ConsensusProposal proposalMessage = ConsensusProposal.newBuilder()
+                    .setConfigurationId(currentConfigurationId)
+                    .addAllHosts(proposal
+                            .stream()
+                            .map(HostAndPort::toString)
+                            .sorted()
+                            .collect(Collectors.toList()))
+                    .setSender(myAddr.toString())
+                    .build();
+            broadcaster.broadcast(proposalMessage);
         }
     }
 
@@ -389,7 +383,6 @@ final class MembershipService {
      *
      */
     void processConsensusProposal(final ConsensusProposal proposalMessage) {
-        assert !isExternalConsensusEnabled;
         final long currentConfigurationId = membershipView.getCurrentConfigurationId();
         final long membershipSize = membershipView.getMembershipSize();
 
@@ -441,8 +434,7 @@ final class MembershipService {
      * Any node that is not in the membership list will be added to the cluster,
      * and any node that is currently in the membership list will be removed from it.
      */
-    @ExperimentalApi
-    void decideViewChange(final List<HostAndPort> proposal) {
+    private void decideViewChange(final List<HostAndPort> proposal) {
         final List<NodeStatusChange> statusChanges = new ArrayList<>(proposal.size());
         synchronized (membershipUpdateLock) {
             for (final HostAndPort node : proposal) {
