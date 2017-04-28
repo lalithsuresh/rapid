@@ -157,6 +157,10 @@ public class ClusterTest {
      */
     @Test
     public void twentyNodesJoinSequentially() throws IOException, InterruptedException {
+        // Explicitly test netty
+        RpcServer.USE_IN_PROCESS_SERVER = false;
+        RpcClient.USE_IN_PROCESS_CHANNEL = false;
+
         final int numNodes = 20;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         createCluster(1, seedHost); // Only bootstrap a seed.

@@ -287,64 +287,17 @@ final class MembershipService {
         if (announcedProposal) {
             return;
         }
-
-        // We proceed in three parts. First, we collect the messages from the batch that
-        // are valid and do not violate conditions of the ring. These are packed in to
-        // validMessages and processed later.
-        final List<LinkUpdateMessage> validMessages = new ArrayList<>(messageBatch.getMessagesList().size());
         final long currentConfigurationId = membershipView.getCurrentConfigurationId();
         final int membershipSize = membershipView.getRing(0).size();
+        final Set<HostAndPort> proposal = messageBatch.getMessagesList().stream()
+                // First, we filter out invalid messages that violate membership invariants.
+                .filter(msg -> filterLinkUpdateMessages(messageBatch, msg, membershipSize, currentConfigurationId))
+                // We then apply all the valid messages into our condition detector to obtain a view change proposal
+                .map(watermarkBuffer::aggregateForProposal)
+                .flatMap(List::stream)
+                .collect(Collectors.toSet());
 
-        for (final LinkUpdateMessage request: messageBatch.getMessagesList()) {
-            final HostAndPort destination = HostAndPort.fromString(request.getLinkDst());
-            LOG.trace("LinkUpdateMessage received {sender:{}, receiver:{}, config:{}, size:{}, status:{}}",
-                    messageBatch.getSender(), myAddr,
-                    request.getConfigurationId(),
-                    membershipSize,
-                    request.getLinkStatus());
-
-            if (currentConfigurationId != request.getConfigurationId()) {
-                LOG.trace("LinkUpdateMessage for configuration {} received during configuration {}",
-                        request.getConfigurationId(), currentConfigurationId);
-                continue;
-            }
-
-            // The invariant we want to maintain is that a node can only go into the
-            // membership set once and leave it once.
-            if (request.getLinkStatus().equals(LinkStatus.UP)
-                    && membershipView.isHostPresent(destination)) {
-                LOG.trace("LinkUpdateMessage with status UP received for node {} already in configuration {} ",
-                        request.getLinkDst(), currentConfigurationId);
-                continue;
-            }
-            if (request.getLinkStatus().equals(LinkStatus.DOWN)
-                    && !membershipView.isHostPresent(destination)) {
-                LOG.trace("LinkUpdateMessage with status DOWN received for node {} already in configuration {} ",
-                        request.getLinkDst(), currentConfigurationId);
-                continue;
-            }
-
-            if (request.getLinkStatus() == LinkStatus.UP) {
-                joinerUuid.put(destination, UUID.fromString(request.getUuid()));
-
-                // TODO: Ideally, we'd set the role only after the node has successfully joined.
-                metadataManager.setMetadata(destination, request.getMetadataMap());
-            }
-            validMessages.add(request);
-        }
-
-        if (validMessages.size() == 0) {
-            LOG.trace("All BatchLinkUpdateMessages received at node {} where invalid!", myAddr);
-            return;
-        }
-
-        // We now batch apply all the valid messages into the watermark buffer, obtaining
-        // a single aggregate membership change proposal to apply against the view.
-        final Set<HostAndPort> proposal = new HashSet<>();
-        for (final LinkUpdateMessage msg : validMessages) {
-            proposal.addAll(watermarkBuffer.aggregateForProposal(msg));
-        }
-
+        // Lastly, we apply implicit detections
         proposal.addAll(watermarkBuffer.invalidateFailingLinks(membershipView));
 
         // If we have a proposal for this stage, start an instance of consensus on it.
@@ -656,5 +609,51 @@ final class MembershipService {
                 batchSchedulerLock.unlock();
             }
         }
+    }
+
+    /**
+     * A filter for removing invalid link update messages. These include messages that were for a
+     * configuration that the current node is not a part of, and messages that violate the semantics
+     * of a node being a part of a configuration.
+     */
+    private boolean filterLinkUpdateMessages(final BatchedLinkUpdateMessage batchedLinkUpdateMessage,
+                                             final LinkUpdateMessage linkUpdateMessage,
+                                             final int membershipSize,
+                                             final long currentConfigurationId) {
+        final HostAndPort destination = HostAndPort.fromString(linkUpdateMessage.getLinkDst());
+        LOG.trace("LinkUpdateMessage received {sender:{}, receiver:{}, config:{}, size:{}, status:{}}",
+                batchedLinkUpdateMessage.getSender(), myAddr,
+                linkUpdateMessage.getConfigurationId(),
+                membershipSize,
+                linkUpdateMessage.getLinkStatus());
+
+        if (currentConfigurationId != linkUpdateMessage.getConfigurationId()) {
+            LOG.trace("LinkUpdateMessage for configuration {} received during configuration {}",
+                    linkUpdateMessage.getConfigurationId(), currentConfigurationId);
+            return false;
+        }
+
+        // The invariant we want to maintain is that a node can only go into the
+        // membership set once and leave it once.
+        if (linkUpdateMessage.getLinkStatus().equals(LinkStatus.UP)
+                && membershipView.isHostPresent(destination)) {
+            LOG.trace("LinkUpdateMessage with status UP received for node {} already in configuration {} ",
+                    linkUpdateMessage.getLinkDst(), currentConfigurationId);
+            return false;
+        }
+        if (linkUpdateMessage.getLinkStatus().equals(LinkStatus.DOWN)
+                && !membershipView.isHostPresent(destination)) {
+            LOG.trace("LinkUpdateMessage with status DOWN received for node {} already in configuration {} ",
+                    linkUpdateMessage.getLinkDst(), currentConfigurationId);
+            return false;
+        }
+
+        if (linkUpdateMessage.getLinkStatus() == LinkStatus.UP) {
+            joinerUuid.put(destination, UUID.fromString(linkUpdateMessage.getUuid()));
+
+            // TODO: Ideally, we'd set the role only after the node has successfully joined.
+            metadataManager.setMetadata(destination, linkUpdateMessage.getMetadataMap());
+        }
+        return true;
     }
 }
