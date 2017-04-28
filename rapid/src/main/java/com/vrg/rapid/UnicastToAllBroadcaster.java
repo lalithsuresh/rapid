@@ -19,8 +19,10 @@ import com.vrg.rapid.pb.ConsensusProposal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ThreadLocalRandom;
 
 
 /**
@@ -28,34 +30,32 @@ import java.util.concurrent.ExecutorService;
  */
 final class UnicastToAllBroadcaster implements IBroadcaster {
     private static final Logger LOG = LoggerFactory.getLogger(UnicastToAllBroadcaster.class);
-
     private final RpcClient rpcClient;
-    private final ExecutorService executorService;
+    private List<HostAndPort> recipients = Collections.emptyList();
 
-    public UnicastToAllBroadcaster(final RpcClient rpcClient, final ExecutorService executorService) {
+    public UnicastToAllBroadcaster(final RpcClient rpcClient) {
         this.rpcClient = rpcClient;
-        this.executorService = executorService;
     }
 
     @Override
-    public void broadcast(final List<HostAndPort> recipients, final BatchedLinkUpdateMessage msg) {
-        executorService.execute(
-            () -> {
-                for (final HostAndPort recipient: recipients) {
-                    rpcClient.sendLinkUpdateMessage(recipient, msg);
-                }
-            }
-        );
+    public synchronized void broadcast(final BatchedLinkUpdateMessage msg) {
+        for (final HostAndPort recipient: recipients) {
+            rpcClient.sendLinkUpdateMessage(recipient, msg);
+        }
     }
 
     @Override
-    public void broadcast(final List<HostAndPort> recipients, final ConsensusProposal msg) {
-        executorService.execute(
-            () -> {
-                for (final HostAndPort recipient: recipients) {
-                    rpcClient.sendConsensusProposal(recipient, msg);
-                }
-            }
-        );
+    public synchronized void broadcast(final ConsensusProposal msg) {
+        for (final HostAndPort recipient: recipients) {
+            rpcClient.sendConsensusProposal(recipient, msg);
+        }
+    }
+
+    @Override
+    public synchronized void setMembership(final List<HostAndPort> recipients) {
+        // Randomize the sequence of nodes that will receive a broadcast from this node for each configuration
+        final List<HostAndPort> arr = new ArrayList<>(recipients);
+        Collections.shuffle(arr, ThreadLocalRandom.current());
+        this.recipients = arr;
     }
 }

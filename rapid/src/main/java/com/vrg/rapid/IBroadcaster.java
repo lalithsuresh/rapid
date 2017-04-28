@@ -23,7 +23,9 @@ import java.util.List;
  * Supports different broadcast implementations (eager flooding, gossip, etc.).
  */
 interface IBroadcaster {
-    void broadcast(List<HostAndPort> recipients, BatchedLinkUpdateMessage msg);
+    void broadcast(BatchedLinkUpdateMessage msg);
 
-    void broadcast(List<HostAndPort> recipients, ConsensusProposal msg);
+    void broadcast(ConsensusProposal msg);
+
+    void setMembership(List<HostAndPort> recipients);
 }

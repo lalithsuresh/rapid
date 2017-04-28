@@ -256,6 +256,8 @@ public final class Cluster {
                                                    .putAllMetadata(metadata)
                                                    .setConfigurationId(configurationToJoin)
                                                    .addAllRingNumber(entry.getValue()).build();
+                LOG.trace("{} is sending a join-p2 to {} for configuration {}",
+                        listenAddress, entry.getKey(), configurationToJoin);
                 final ListenableFuture<JoinResponse> call = joinerClient.sendJoinPhase2Message(entry.getKey(), msg);
                 responseFutures.add(call);
                 ringNumber++;
@@ -264,7 +266,6 @@ public final class Cluster {
             // The returned list of responses must contain the full configuration (hosts and identifiers) we just
             // joined. Else, there's an error and we throw an exception.
             try {
-                // TODO: This is only correct if we use consensus for node addition.
                 // Unsuccessful responses will be null.
                 final List<JoinResponse> responses = Futures.successfulAsList(responseFutures).get();
 

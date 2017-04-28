@@ -289,7 +289,7 @@ public class MessagingTest {
         final RpcClient client = new RpcClient(clientAddr);
         boolean exceptionCaught = false;
         try {
-            client.sendLinkUpdateMessage(serverAddr, BatchedLinkUpdateMessage.getDefaultInstance()).get();
+            client.sendProbeMessage(serverAddr, ProbeMessage.getDefaultInstance()).get();
         } catch (final ExecutionException e) {
             exceptionCaught = true;
         }

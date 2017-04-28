@@ -44,7 +44,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -95,7 +94,6 @@ final class MembershipService {
     private final LinkedBlockingQueue<LinkUpdateMessage> sendQueue = new LinkedBlockingQueue<>();
     private final Lock batchSchedulerLock = new ReentrantLock();
     private final ScheduledExecutorService scheduledExecutorService = Executors.newSingleThreadScheduledExecutor();
-    private final ExecutorService broadcastExecutor = Executors.newSingleThreadExecutor();
     private final ScheduledFuture<?> linkUpdateBatcherJob;
     private final ScheduledFuture<?> failureDetectorJob;
 
@@ -156,7 +154,7 @@ final class MembershipService {
         this.metadataManager = new MetadataManager();
         this.metadataManager.setMetadata(myAddr, builder.metadata);
         this.rpcClient = builder.rpcClient != null ? builder.rpcClient : new RpcClient(myAddr);
-        this.broadcaster = new UnicastToAllBroadcaster(rpcClient, broadcastExecutor);
+        this.broadcaster = new UnicastToAllBroadcaster(rpcClient);
         this.isExternalConsensusEnabled = builder.isExternalConsensusEnabled;
         this.subscriptions = new HashMap<>(ClusterEvents.values().length); // One for each event.
         Arrays.stream(ClusterEvents.values()).forEach(event -> this.subscriptions.put(event, new ArrayList<>(1)));
@@ -165,6 +163,7 @@ final class MembershipService {
         linkUpdateBatcherJob = this.scheduledExecutorService.scheduleAtFixedRate(new LinkUpdateBatcher(),
                 0, BATCHING_WINDOW_IN_MS, TimeUnit.MILLISECONDS);
 
+        this.broadcaster.setMembership(membershipView.getRing(0));
         // this::linkFailureNotification is invoked by the failure detector whenever an edge
         // to a monitor is marked faulty.
         final ILinkFailureDetector fd  = builder.linkFailureDetector != null
@@ -377,7 +376,7 @@ final class MembershipService {
                                 .collect(Collectors.toList()))
                         .setSender(myAddr.toString())
                         .build();
-                broadcaster.broadcast(membershipView.getRing(0), proposalMessage);
+                broadcaster.broadcast(proposalMessage);
             }
         }
     }
@@ -474,6 +473,7 @@ final class MembershipService {
         votesReceived.clear();
         announcedProposal = false;
 
+        broadcaster.setMembership(membershipView.getRing(0));
         // Inform LinkFailureDetector about membership change
         if (membershipView.isHostPresent(myAddr)) {
             final List<HostAndPort> newMonitorees = membershipView.getMonitoreesOf(myAddr);
@@ -606,7 +606,6 @@ final class MembershipService {
         failureDetectorJob.cancel(true);
         scheduledExecutorService.shutdownNow();
         rpcClient.shutdown();
-        broadcastExecutor.shutdown();
     }
 
     /**
@@ -658,7 +657,7 @@ final class MembershipService {
                             .addAllMessages(messages)
                             .build();
                     // TODO: for the time being, we perform an all-to-all broadcast. Will be replaced with gossip.
-                    broadcaster.broadcast(membershipView.getRing(0), batched);
+                    broadcaster.broadcast(batched);
                 }
             }
             finally {

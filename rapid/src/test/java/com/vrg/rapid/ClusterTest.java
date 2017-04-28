@@ -260,7 +260,7 @@ public class ClusterTest {
         final Random r = new Random();
 
         for (int i = 0; i < phaseOneJoiners/2; i++) {
-            final List<HostAndPort> keysAsArray = new ArrayList<HostAndPort>(instances.keySet());
+            final List<HostAndPort> keysAsArray = new ArrayList<>(instances.keySet());
             extendCluster(2, keysAsArray.get(r.nextInt(instances.size())));
             Thread.sleep(50);
         }
@@ -324,8 +324,8 @@ public class ClusterTest {
     @Test
     public void injectAsymmetricDrops() throws IOException, InterruptedException {
         MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 3000;
-        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
-        RpcClient.Conf.RPC_PROBE_TIMEOUT = 1000;
+        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 500;
+        RpcClient.Conf.RPC_PROBE_TIMEOUT = 500;
         final int numNodes = 50;
         final int numFailingNodes = 10;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);

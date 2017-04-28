@@ -18,6 +18,7 @@ import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.RateLimiter;
 import com.google.common.util.concurrent.SettableFuture;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
@@ -65,6 +66,7 @@ final class RpcClient {
     private final Map<HostAndPort, Channel> channelMap = new ConcurrentHashMap<>();
     private static final ExecutorService GRPC_EXECUTORS = Executors.newFixedThreadPool(20);
     private static final ExecutorService BACKGROUND_EXECUTOR = Executors.newFixedThreadPool(20);
+    private final RateLimiter broadcastRateLimiter = RateLimiter.create(100);
 
     RpcClient(final HostAndPort address) {
         this(address, Collections.emptyList());
@@ -146,16 +148,17 @@ final class RpcClient {
      * @param msg Consensus proposal message
      * @return A future that returns ConsensusProposalResponse if the message was successful.
      */
-    ListenableFuture<ConsensusProposalResponse> sendConsensusProposal(final HostAndPort remote,
-                                                                      final ConsensusProposal msg) {
+    void sendConsensusProposal(final HostAndPort remote, final ConsensusProposal msg) {
         Objects.requireNonNull(msg);
-
-        final Supplier<ListenableFuture<ConsensusProposalResponse>> call = () -> {
-            final MembershipServiceFutureStub stub = getFutureStub(remote)
-                    .withDeadlineAfter(Conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-            return stub.receiveConsensusProposal(msg);
-        };
-        return callWithRetries(call, remote, Conf.RPC_DEFAULT_RETRIES);
+        BACKGROUND_EXECUTOR.execute(() -> {
+            final Supplier<ListenableFuture<ConsensusProposalResponse>> call = () -> {
+                broadcastRateLimiter.acquire();
+                final MembershipServiceFutureStub stub = getFutureStub(remote)
+                        .withDeadlineAfter(Conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                return stub.receiveConsensusProposal(msg);
+            };
+            callWithRetries(call, remote, Conf.RPC_DEFAULT_RETRIES);
+        });
     }
 
     /**
@@ -165,14 +168,18 @@ final class RpcClient {
      * @param msg A BatchedLinkUpdateMessage that contains one or more LinkUpdateMessages
      * @return A future that returns Response if the message was successful.
      */
-    ListenableFuture<Response> sendLinkUpdateMessage(final HostAndPort remote, final BatchedLinkUpdateMessage msg) {
+    void sendLinkUpdateMessage(final HostAndPort remote, final BatchedLinkUpdateMessage msg) {
         Objects.requireNonNull(msg);
-        final Supplier<ListenableFuture<Response>> call = () -> {
-            final MembershipServiceFutureStub stub = getFutureStub(remote)
-                    .withDeadlineAfter(Conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-            return stub.receiveLinkUpdateMessage(msg);
-        };
-        return callWithRetries(call, remote, Conf.RPC_DEFAULT_RETRIES);
+        BACKGROUND_EXECUTOR.execute(() -> {
+            final Supplier<ListenableFuture<Response>> call = () -> {
+                broadcastRateLimiter.acquire();
+                final MembershipServiceFutureStub stub = getFutureStub(remote)
+                        .withDeadlineAfter(Conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                return stub.receiveLinkUpdateMessage(msg);
+            };
+
+            callWithRetries(call, remote, Conf.RPC_DEFAULT_RETRIES);
+        });
     }
 
     /**
