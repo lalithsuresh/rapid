@@ -404,24 +404,6 @@ public class ClusterTest {
     }
 
     /**
-     * We lose join-confirmation messages from the seed to the joiner, thereby triggering a host-configuration-changed
-     * error that the client must recover from.
-     *
-     * TODO: Disabled.
-     */
-    public void phase2JoinAttemptRetryWithHostInConfiguration() throws IOException, InterruptedException {
-        RpcClient.Conf.RPC_JOIN_PHASE_2_TIMEOUT = RPC_TIMEOUT_SHORT_MS * 10;
-        RpcClient.Conf.RPC_TIMEOUT_MS = RPC_TIMEOUT_SHORT_MS; // use short retry delays to run tests faster.
-        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
-        final HostAndPort joinerHost = HostAndPort.fromParts("127.0.0.1", basePort + 1);
-        createCluster(1, seedHost);
-        // The next host to join will have its join-phase2-message blocked.
-        extendCluster(1, seedHost);
-        waitAndVerifyAgreement(2, 15, 1000, seedHost);
-        verifyNumClusterInstances(2);
-    }
-
-    /**
      * Creates a cluster of size {@code numNodes} with a seed {@code seedHost}.
      *
      * @param numNodes cluster size

@@ -265,7 +265,7 @@ final class MembershipService {
 
     /**
      * This method receives link update events and delivers them to
-     * the watermark buffer to checkMonitoree if it will return a valid
+     * the watermark buffer to check if it will return a valid
      * proposal.
      *
      * Link update messages that do not affect an ongoing proposal
