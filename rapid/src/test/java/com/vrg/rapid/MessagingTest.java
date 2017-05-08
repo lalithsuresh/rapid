@@ -14,7 +14,6 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
-import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
 import com.vrg.rapid.pb.NodeStatus;
@@ -48,9 +47,10 @@ public class MessagingTest {
     private static final int H = 8;
     private static final int L = 3;
 
-    private final int serverPortBase = 1234;
+    private final int serverPortBase = 1134;
     private static final String localhostIp = "127.0.0.1";
-    private final List<RpcServer> services = new ArrayList<>();
+    private final List<RpcServer> rpcServers = new ArrayList<>();
+    private final List<MembershipService> services = new ArrayList<>();
     private final ExecutorService executorService = Executors.newSingleThreadScheduledExecutor();
 
     static {
@@ -60,8 +60,10 @@ public class MessagingTest {
 
     @After
     public void cleanup() throws InterruptedException {
-        for (final RpcServer rpcServer: services) {
-            rpcServer.stopServer();
+        rpcServers.forEach(RpcServer::stopServer);
+        rpcServers.clear();
+        for (final MembershipService service: services) {
+            service.shutdown();
         }
         services.clear();
     }
@@ -310,7 +312,8 @@ public class MessagingTest {
         final RpcServer rpcServer = new RpcServer(serverAddr, executorService);
         rpcServer.setMembershipService(service);
         rpcServer.startServer();
-        services.add(rpcServer);
+        rpcServers.add(rpcServer);
+        services.add(service);
         return rpcServer;
     }
 
@@ -329,7 +332,8 @@ public class MessagingTest {
         final RpcServer rpcServer = new RpcServer(serverAddr, executorService);
         rpcServer.setMembershipService(service);
         rpcServer.startServer(interceptors);
-        services.add(rpcServer);
+        rpcServers.add(rpcServer);
+        services.add(service);
         return rpcServer;
     }
 
@@ -347,7 +351,8 @@ public class MessagingTest {
         final RpcServer rpcServer = new RpcServer(serverAddr, executorService);
         rpcServer.setMembershipService(service);
         rpcServer.startServer(interceptors);
-        services.add(rpcServer);
+        rpcServers.add(rpcServer);
+        services.add(service);
         return rpcServer;
     }
 }
