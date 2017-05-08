@@ -229,8 +229,8 @@ public class ClusterTest {
      */
     @Test(timeout=30000)
     public void concurrentNodeJoinsAndFails() throws IOException, InterruptedException {
-        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 3000;
-        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
+        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 100;
+        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 200;
 
         final int numNodes = 30;
         final int failingNodes = 5;
@@ -284,8 +284,9 @@ public class ClusterTest {
      */
     @Test
     public void twelveFailuresOutOfFiftyNodes() throws IOException, InterruptedException {
-        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 1000;
+        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 100;
         MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 500;
+        RpcClient.Conf.RPC_PROBE_TIMEOUT = 100;
 
         final int numNodes = 50;
         final int failingNodes = 12;
@@ -305,8 +306,8 @@ public class ClusterTest {
      */
     @Test
     public void failTenRandomNodes() throws IOException, InterruptedException {
-        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 3000;
-        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
+        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 100;
+        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 200;
         useStaticFd = true;
         final int numNodes = 50;
         final int numFailingNodes = 10;
@@ -327,9 +328,9 @@ public class ClusterTest {
      */
     @Test
     public void injectAsymmetricDrops() throws IOException, InterruptedException {
-        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 3000;
-        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 500;
-        RpcClient.Conf.RPC_PROBE_TIMEOUT = 500;
+        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 100;
+        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 200;
+        RpcClient.Conf.RPC_PROBE_TIMEOUT = 200;
         final int numNodes = 50;
         final int numFailingNodes = 10;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
@@ -341,7 +342,7 @@ public class ClusterTest {
         // we may have less than numFailedNodes entries in the set
         failedNodes.forEach(host -> dropFirstNAtServer(host, 100, MembershipServiceGrpc.METHOD_RECEIVE_PROBE));
         createCluster(numNodes, seedHost);
-        waitAndVerifyAgreement(numNodes - failedNodes.size(), 15, 1000, seedHost);
+        waitAndVerifyAgreement(numNodes - failedNodes.size(), 10, 1000, seedHost);
         verifyNumClusterInstances(numNodes);
     }
 
@@ -442,7 +443,7 @@ public class ClusterTest {
 
         final ExecutorService executor = Executors.newWorkStealingPool(failNodes);
         final CountDownLatch latch = new CountDownLatch(failNodes);
-        for (int j = 0; j < 5; j++) {
+        for (int j = 0; j < failNodes; j++) {
             final int inc = j;
             executor.execute(() -> {
                 // Shutdown and rejoin five times
