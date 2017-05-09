@@ -181,8 +181,8 @@ public class ClusterTest {
      * time. This tests a single seed's ability to bootstrap a large cluster in one step.
      */
     @Test(timeout=150000)
-    public void fiveHundredNodesJoinInParallel() throws IOException, InterruptedException {
-        final int numNodes = 500; // Includes the size of the cluster
+    public void threeHundredNodesJoinInParallel() throws IOException, InterruptedException {
+        final int numNodes = 300; // Includes the size of the cluster
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         createCluster(numNodes, seedHost);
         verifyCluster(numNodes, seedHost);
