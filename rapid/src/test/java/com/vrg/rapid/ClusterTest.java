@@ -60,14 +60,14 @@ public class ClusterTest {
     @Nullable private static Logger nettyLogger = null;
     private static final int RPC_TIMEOUT_SHORT_MS = 100;
     private final Map<HostAndPort, Cluster> instances = new ConcurrentHashMap<>();
-    private final int basePort = 1234;
-    private final AtomicInteger portCounter = new AtomicInteger(basePort);
     private final Map<HostAndPort, StaticFailureDetector> staticFds = new ConcurrentHashMap<>();
     private final Map<HostAndPort, List<ServerInterceptor>> serverInterceptors = new ConcurrentHashMap<>();
     private final Map<HostAndPort, List<ClientInterceptor>> clientInterceptors = new ConcurrentHashMap<>();
     private boolean useStaticFd = false;
     @Nullable private Random random = null;
     private long seed;
+    private int basePort;
+    @Nullable private AtomicInteger portCounter = null;
 
     @Rule
     public final TestWatcher testWatcher = new TestWatcher() {
@@ -90,6 +90,8 @@ public class ClusterTest {
 
     @Before
     public void beforeTest() {
+        basePort =  1234;
+        portCounter = new AtomicInteger(basePort);
         instances.clear();
         seed = ThreadLocalRandom.current().nextLong();
         random = new Random(seed);
