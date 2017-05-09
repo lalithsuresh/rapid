@@ -227,6 +227,7 @@ final class RpcClient {
     /**
      * Adapted from https://github.com/spotify/futures-extra/.../AsyncRetrier.java
      */
+    @SuppressWarnings("checkstyle:illegalcatch")
     private <T> void startCallWithRetry(final Supplier<ListenableFuture<T>> call,
                                         final HostAndPort remote,
                                         final SettableFuture<T> signal,
@@ -237,7 +238,7 @@ final class RpcClient {
         // attempts to re-establish the channel.
         try {
             callFuture = call.get();
-        } catch (final StatusRuntimeException | NullPointerException e) {
+        } catch (final Exception e) {
             handleFailure(call, remote, signal, retries, e);
             return;
         }
@@ -270,7 +271,7 @@ final class RpcClient {
             if (((StatusRuntimeException) t).getStatus().getCode().equals(Status.Code.UNAVAILABLE)) {
                 final ManagedChannelImpl channel = (ManagedChannelImpl) channelMap.remove(remote);
                 if (channel != null) {
-                    channel.shutdownNow();
+                    channel.shutdown();
                 }
             }
         }
