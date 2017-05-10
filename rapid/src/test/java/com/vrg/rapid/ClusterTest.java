@@ -455,9 +455,9 @@ public class ClusterTest {
                         final Cluster cluster = instances.remove(leavingHost);
                         try {
                             cluster.shutdown();
-                            waitAndVerifyAgreement(numNodes - failNodes, 15, 250, seedHost);
+                            waitAndVerifyAgreement(numNodes - failNodes, 20, 500, seedHost);
                             extendCluster(leavingHost, seedHost);
-                            waitAndVerifyAgreement(numNodes, 15, 250, seedHost);
+                            waitAndVerifyAgreement(numNodes, 20, 500, seedHost);
                         } catch (InterruptedException e) {
                             fail();
                         }
