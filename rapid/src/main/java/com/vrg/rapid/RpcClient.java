@@ -67,6 +67,7 @@ final class RpcClient {
     private static final ExecutorService GRPC_EXECUTORS = Executors.newFixedThreadPool(20);
     private static final ExecutorService BACKGROUND_EXECUTOR = Executors.newFixedThreadPool(20);
     private final RateLimiter broadcastRateLimiter = RateLimiter.create(100);
+    private boolean shuttingDown = false;
 
     RpcClient(final HostAndPort address) {
         this(address, Collections.emptyList());
@@ -203,6 +204,7 @@ final class RpcClient {
      * Recover resources. For future use in case we provide custom GRPC_EXECUTORS for the ManagedChannels.
      */
     void shutdown() {
+        shuttingDown = true;
     }
 
     /**
@@ -236,6 +238,9 @@ final class RpcClient {
         // StatusRuntimeException is thrown by gRPC commands failing. NPEs are thrown by gRPC when we
         // shutdown a channel on which another RPC is already about to be made. A retry in the latter case
         // attempts to re-establish the channel.
+        if (shuttingDown) {
+            return;
+        }
         try {
             callFuture = call.get();
         } catch (final Exception e) {
@@ -269,10 +274,7 @@ final class RpcClient {
         // from it . We therefore shutdown the channel, and subsequent calls will try to re-establish it.
         if (t instanceof StatusRuntimeException) {
             if (((StatusRuntimeException) t).getStatus().getCode().equals(Status.Code.UNAVAILABLE)) {
-                final ManagedChannelImpl channel = (ManagedChannelImpl) channelMap.remove(remote);
-                if (channel != null) {
-                    channel.shutdown();
-                }
+                shutdownChannel(remote);
             }
         }
 
@@ -292,6 +294,13 @@ final class RpcClient {
         }
 
         return MembershipServiceGrpc.newFutureStub(channel);
+    }
+
+    private void shutdownChannel(final HostAndPort remote) {
+        final ManagedChannelImpl channel = (ManagedChannelImpl) channelMap.remove(remote);
+        if (channel != null) {
+            channel.shutdown();
+        }
     }
 
     private Channel getChannel(final HostAndPort remote) {
