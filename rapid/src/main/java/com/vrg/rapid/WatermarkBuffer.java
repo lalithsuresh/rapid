@@ -109,13 +109,6 @@ final class WatermarkBuffer {
                     // No outstanding updates, so all nodes that have crossed the H threshold of reports are
                     // now part of a single proposal.
                     this.proposalCount.incrementAndGet();
-                    for (final HostAndPort n : proposal) {
-                        // The counter below should never be null.
-                        final Map<Integer, HostAndPort> reportsSet = reportsPerHost.get(n);
-                        if (reportsSet == null) {
-                            throw new RuntimeException("Host for proposal not in UpdateCounters map: " + n);
-                        }
-                    }
                     final List<HostAndPort> ret = ImmutableList.copyOf(proposal);
                     proposal.clear();
                     return ret;
