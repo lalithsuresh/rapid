@@ -495,8 +495,6 @@ public class ClusterTest {
      * @param numNodes cluster size
      * @param seedHost HostAndPort that represents the seed node to initialize and be used as the contact point
      *                 for subsequent joiners.
-     * @throws IOException Thrown if the Cluster.start() or join() methods throw an IOException when trying
-     *                     to register an RpcServer.
      */
     private void extendCluster(final int numNodes, final HostAndPort seedHost) {
         final ExecutorService executor = Executors.newWorkStealingPool(numNodes);
@@ -532,8 +530,6 @@ public class ClusterTest {
      * @param joiningNode HostAndPort that represents the node joining.
      * @param seedHost HostAndPort that represents the seed node to initialize and be used as the contact point
      *                 for subsequent joiners.
-     * @throws IOException Thrown if the Cluster.start() or join() methods throw an IOException when trying
-     *                     to register an RpcServer.
      */
     private void extendCluster(final HostAndPort joiningNode, final HostAndPort seedHost) {
         final ExecutorService executor = Executors.newWorkStealingPool(1);
@@ -566,8 +562,6 @@ public class ClusterTest {
      * @param numNodes cluster size
      * @param seedHost HostAndPort that represents the seed node to initialize and be used as the contact point
      *                 for subsequent joiners.
-     * @throws IOException Thrown if the Cluster.start() or join() methods throw an IOException when trying
-     *                     to register an RpcServer.
      */
     private void extendClusterNonBlocking(final int numNodes, final HostAndPort seedHost) {
         final ExecutorService executor = Executors.newWorkStealingPool(numNodes);
