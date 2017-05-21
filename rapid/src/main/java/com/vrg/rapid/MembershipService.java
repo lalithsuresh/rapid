@@ -181,7 +181,7 @@ final class MembershipService {
                 .setStatusCode(statusCode);
         LOG.trace("Join at seed for {seed:{}, sender:{}, config:{}, size:{}}",
                 myAddr, joinMessage.getSender(),
-                membershipView.getCurrentConfigurationId(), membershipView.getRing(0).size());
+                membershipView.getCurrentConfigurationId(), membershipView.getMembershipSize());
         if (statusCode.equals(JoinStatusCode.SAFE_TO_JOIN)
                 || statusCode.equals(JoinStatusCode.HOSTNAME_ALREADY_IN_RING)) {
             // Return a list of monitors for the joiner to contact for phase 2 of the protocol
@@ -206,7 +206,7 @@ final class MembershipService {
         if (currentConfiguration == joinMessage.getConfigurationId()) {
             LOG.trace("Enqueuing SAFE_TO_JOIN for {sender:{}, monitor:{}, config:{}, size:{}}",
                     joinMessage.getSender(), myAddr,
-                    currentConfiguration, membershipView.getRing(0).size());
+                    currentConfiguration, membershipView.getMembershipSize());
 
             joinersToRespondTo.computeIfAbsent(HostAndPort.fromString(joinMessage.getSender()),
                     (k) -> new LinkedBlockingDeque<>()).add(responseObserver);
@@ -230,7 +230,7 @@ final class MembershipService {
             final MembershipView.Configuration configuration = membershipView.getConfiguration();
             LOG.info("Wrong configuration for {sender:{}, monitor:{}, config:{}, size:{}}",
                     joinMessage.getSender(), myAddr,
-                    currentConfiguration, membershipView.getRing(0).size());
+                    currentConfiguration, membershipView.getMembershipSize());
             JoinResponse.Builder responseBuilder = JoinResponse.newBuilder()
                     .setSender(this.myAddr.toString())
                     .setConfigurationId(configuration.getConfigurationId());
@@ -279,7 +279,7 @@ final class MembershipService {
             return;
         }
         final long currentConfigurationId = membershipView.getCurrentConfigurationId();
-        final int membershipSize = membershipView.getRing(0).size();
+        final int membershipSize = membershipView.getMembershipSize();
         final Set<HostAndPort> proposal = messageBatch.getMessagesList().stream()
                 // First, we filter out invalid messages that violate membership invariants.
                 .filter(msg -> filterLinkUpdateMessages(messageBatch, msg, membershipSize, currentConfigurationId))
@@ -491,7 +491,7 @@ final class MembershipService {
         scheduledExecutorService.execute(() -> {
                 final long configurationId = membershipView.getCurrentConfigurationId();
                 if (LOG.isDebugEnabled()) {
-                    final int size = membershipView.getRing(0).size();
+                    final int size = membershipView.getMembershipSize();
                     LOG.debug("Announcing LinkFail event {monitoree:{}, monitor:{}, config:{}, size:{}}",
                             monitoree, myAddr, configurationId, size);
                 }
