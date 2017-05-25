@@ -119,7 +119,7 @@
                 <configuration>
                     <protocArtifact>com.google.protobuf:protoc:3.2.0:exe:${os.detected.classifier}</protocArtifact>
                     <pluginId>grpc-java</pluginId>
-                    <pluginArtifact>io.grpc:protoc-gen-grpc-java:1.0.3:exe:${os.detected.classifier}</pluginArtifact>
+                    <pluginArtifact>io.grpc:protoc-gen-grpc-java:1.3.0:exe:${os.detected.classifier}</pluginArtifact>
                     <checkStaleness>true</checkStaleness>
                 </configuration>
                 <executions>
