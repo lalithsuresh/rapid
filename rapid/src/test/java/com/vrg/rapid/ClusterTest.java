@@ -58,7 +58,8 @@ public class ClusterTest {
     @SuppressWarnings("FieldCanBeLocal")
     @Nullable private static Logger grpcLogger = null;
     @Nullable private static Logger nettyLogger = null;
-    private static final int RPC_TIMEOUT_SHORT_MS = 100;
+    private static final int RPC_TIMEOUT_SHORT_MS = 500;
+    private static final int RPC_TIMEOUT_VERY_SHORT_MS = 100;
     private final Map<HostAndPort, Cluster> instances = new ConcurrentHashMap<>();
     private final Map<HostAndPort, StaticFailureDetector> staticFds = new ConcurrentHashMap<>();
     private final Map<HostAndPort, List<ServerInterceptor>> serverInterceptors = new ConcurrentHashMap<>();
@@ -372,8 +373,8 @@ public class ClusterTest {
      */
     @Test
     public void phase2JoinAttemptRetry() throws IOException, InterruptedException {
-        RpcClient.Conf.RPC_JOIN_PHASE_2_TIMEOUT = RPC_TIMEOUT_SHORT_MS * 5;
-        RpcClient.Conf.RPC_TIMEOUT_MS = RPC_TIMEOUT_SHORT_MS; // use short retry delays to run tests faster.
+        RpcClient.Conf.RPC_JOIN_PHASE_2_TIMEOUT = RPC_TIMEOUT_VERY_SHORT_MS * 5;
+        RpcClient.Conf.RPC_TIMEOUT_MS = RPC_TIMEOUT_VERY_SHORT_MS; // use short retry delays to run tests faster.
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         // Drop join-phase-2 attempts by nextNode such that it re-attempts a join under a new configuration
         dropFirstNAtServer(seedHost, (RpcClient.Conf.RPC_DEFAULT_RETRIES) + 1,
