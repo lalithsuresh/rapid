@@ -1,4 +1,4 @@
-package com.vrg;
+package com.vrg.standalone;
 
 import com.google.common.net.HostAndPort;
 import org.apache.commons.cli.CommandLine;

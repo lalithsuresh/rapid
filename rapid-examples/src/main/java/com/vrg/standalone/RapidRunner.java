@@ -1,4 +1,4 @@
-package com.vrg;
+package com.vrg.standalone;
 
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.Cluster;

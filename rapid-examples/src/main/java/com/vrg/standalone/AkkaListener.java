@@ -1,4 +1,4 @@
-package com.vrg;
+package com.vrg.standalone;
 
 
 import akka.actor.UntypedActor;

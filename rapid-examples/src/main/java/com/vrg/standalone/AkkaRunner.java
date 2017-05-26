@@ -1,4 +1,4 @@
-package com.vrg;
+package com.vrg.standalone;
 
 import akka.actor.ActorRef;
 import akka.actor.ActorSystem;
@@ -15,7 +15,6 @@ import com.vrg.rapid.NodeStatusChange;
 import scala.concurrent.Await;
 import scala.concurrent.duration.Duration;
 
-import java.io.IOException;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
