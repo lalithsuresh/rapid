@@ -14,10 +14,10 @@ import java.util.Set;
 /**
  * Used for testing.
  */
-public class StaticFailureDetector implements ILinkFailureDetector {
-    final Set<HostAndPort> failedNodes;
+class StaticFailureDetector implements ILinkFailureDetector {
+    private final Set<HostAndPort> failedNodes;
 
-    public StaticFailureDetector(final Set<HostAndPort> blackList) {
+    StaticFailureDetector(final Set<HostAndPort> blackList) {
         this.failedNodes = blackList;
     }
 

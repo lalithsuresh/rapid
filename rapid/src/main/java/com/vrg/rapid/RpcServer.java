@@ -65,8 +65,8 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     // a MembershipService object
     private final DeferredReceiveInterceptor deferringInterceptor = new DeferredReceiveInterceptor();
 
-    public RpcServer(final HostAndPort address,
-                     final ExecutorService executorService) {
+    RpcServer(final HostAndPort address,
+              final ExecutorService executorService) {
         this.address = address;
         this.executor = executorService;
     }

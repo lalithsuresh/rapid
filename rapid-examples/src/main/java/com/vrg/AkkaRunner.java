@@ -23,17 +23,15 @@ import java.util.stream.Collectors;
 /**
  * Created by lsuresh on 5/25/17.
  */
-public class AkkaRunner {
+class AkkaRunner {
     private final HostAndPort listenAddress;
     private static final String APPLICATION = "rapid-akka";
     private static final Timeout timeout = new Timeout(Duration.create(1000, "milliseconds"));
     private final ActorSystem actorSystem;
-    private final ActorRef localActor;
     private final Cluster cluster;
 
-    public AkkaRunner(final HostAndPort listenAddress, final HostAndPort seedAddress,
-                final int sleepDelayMsForNonSeed)
-            throws IOException, InterruptedException {
+    AkkaRunner(final HostAndPort listenAddress, final HostAndPort seedAddress,
+               final int sleepDelayMsForNonSeed) {
         this.listenAddress = listenAddress;
         final Config config = ConfigFactory.parseString(
                 "akka {\n" +
@@ -55,7 +53,7 @@ public class AkkaRunner {
                         "}");
         actorSystem = ActorSystem.create(APPLICATION, config);
         assert actorSystem != null;
-        localActor = actorSystem.actorOf(Props.create(AkkaListener.class), "Actor:" + listenAddress);
+        final ActorRef localActor = actorSystem.actorOf(Props.create(AkkaListener.class), "Actor:" + listenAddress);
         cluster = akka.cluster.Cluster.get(actorSystem);
         cluster.subscribe(localActor, akka.cluster.ClusterEvent.ClusterDomainEvent.class);
         cluster.join(AddressFromURIString.parse(seedUri(seedAddress)));

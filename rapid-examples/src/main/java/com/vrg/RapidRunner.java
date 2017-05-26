@@ -14,8 +14,8 @@ import java.util.logging.Logger;
  * Created by lsuresh on 5/25/17.
  */
 class RapidRunner {
-    @Nullable private static Logger nettyLogger;
-    @Nullable private static Logger grpcLogger;
+    @Nullable private final static Logger nettyLogger;
+    @Nullable private final static Logger grpcLogger;
     private final Cluster cluster;
     private final HostAndPort listenAddress;
 

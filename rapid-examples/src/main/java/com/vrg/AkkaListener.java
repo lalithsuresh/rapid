@@ -14,7 +14,7 @@ import akka.cluster.ClusterEvent.UnreachableMember;
  * Created by lsuresh on 3/31/17.
  */
 public class AkkaListener extends UntypedActor {
-    Cluster cluster = Cluster.get(getContext().system());
+    private final Cluster cluster = Cluster.get(getContext().system());
 
     //subscribe to cluster changes
     @Override

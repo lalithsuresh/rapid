@@ -285,7 +285,7 @@ public class MessagingTest {
         final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, serverPort);
         final List<ServerInterceptor> interceptors = new ArrayList<>();
         interceptors.add(new ServerDropInterceptors.FixedProbability(1.0));
-        final RpcServer rpcServer = createAndStartMembershipService(serverAddr, interceptors);
+        createAndStartMembershipService(serverAddr, interceptors);
 
         final HostAndPort clientAddr = HostAndPort.fromParts(localhostIp, serverPort);
         final RpcClient client = new RpcClient(clientAddr);

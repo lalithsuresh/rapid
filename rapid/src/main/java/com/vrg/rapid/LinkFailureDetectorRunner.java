@@ -25,7 +25,7 @@ import java.util.function.Consumer;
  * A runnable that periodically executes a failure detector. In the future, the frequency of invoking this
  * function may be left to the LinkFailureDetector object itself.
  */
-public class LinkFailureDetectorRunner implements Runnable {
+class LinkFailureDetectorRunner implements Runnable {
     private static final Logger LOG = LoggerFactory.getLogger(LinkFailureDetectorRunner.class);
     @GuardedBy("this") private Set<HostAndPort> monitorees = Collections.emptySet();
     private final ILinkFailureDetector linkFailureDetector;

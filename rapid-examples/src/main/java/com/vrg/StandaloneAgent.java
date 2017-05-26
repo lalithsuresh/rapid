@@ -17,8 +17,7 @@ import java.util.stream.Collectors;
 /**
  * Rapid Cluster example.
  */
-public class StandaloneAgent
-{
+public class StandaloneAgent {
     private static final int WAIT_DELAY_NON_SEED_MS = 10000;
     private static final int SLEEP_INTERVAL_MS = 1000;
     private static final int MAX_TRIES = 400;
@@ -44,15 +43,11 @@ public class StandaloneAgent
 
         if (clusterTool.equals("AkkaCluster")) {
             listenAddresses.forEach(listenAddress -> {
-                try {
-                    final AkkaRunner runner = new AkkaRunner(listenAddress, seedAddress, WAIT_DELAY_NON_SEED_MS);
-                    executor.execute(() -> {
-                        runner.run(MAX_TRIES, SLEEP_INTERVAL_MS);
-                        System.exit(0);
-                    });
-                } catch (final InterruptedException | IOException e) {
-                    e.printStackTrace();
-                }
+                final AkkaRunner runner = new AkkaRunner(listenAddress, seedAddress, WAIT_DELAY_NON_SEED_MS);
+                executor.execute(() -> {
+                    runner.run(MAX_TRIES, SLEEP_INTERVAL_MS);
+                    System.exit(0);
+                });
             });
         }
         else if (clusterTool.equals("Rapid")) {

@@ -147,7 +147,6 @@ final class RpcClient {
      *
      * @param remote Remote host to send the message to.
      * @param msg Consensus proposal message
-     * @return A future that returns ConsensusProposalResponse if the message was successful.
      */
     void sendConsensusProposal(final HostAndPort remote, final ConsensusProposal msg) {
         Objects.requireNonNull(msg);
@@ -167,7 +166,6 @@ final class RpcClient {
      *
      * @param remote Remote host to send the message to.
      * @param msg A BatchedLinkUpdateMessage that contains one or more LinkUpdateMessages
-     * @return A future that returns Response if the message was successful.
      */
     void sendLinkUpdateMessage(final HostAndPort remote, final BatchedLinkUpdateMessage msg) {
         Objects.requireNonNull(msg);

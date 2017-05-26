@@ -14,7 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @ExperimentalApi
 final class MetadataManager {
-    private Map<HostAndPort, Map<String, String>> roleMap = new ConcurrentHashMap<>();
+    private final Map<HostAndPort, Map<String, String>> roleMap = new ConcurrentHashMap<>();
 
     /**
      * Get the list of roles for a node.

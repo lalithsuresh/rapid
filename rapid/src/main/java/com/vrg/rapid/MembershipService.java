@@ -527,7 +527,7 @@ final class MembershipService {
     /**
      * Shuts down all the executors.
      */
-    void shutdown() throws InterruptedException {
+    void shutdown() {
         linkUpdateBatcherJob.cancel(true);
         failureDetectorJob.cancel(true);
         scheduledExecutorService.shutdownNow();

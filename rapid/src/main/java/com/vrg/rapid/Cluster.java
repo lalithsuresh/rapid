@@ -148,7 +148,7 @@ public final class Cluster {
         }
     }
 
-    static Cluster joinCluster(final HostAndPort seedAddress, final HostAndPort listenAddress,
+    private static Cluster joinCluster(final HostAndPort seedAddress, final HostAndPort listenAddress,
                @Nullable final ILinkFailureDetector linkFailureDetector, final Map<String, String> metadata,
                final List<ServerInterceptor> serverInterceptors, final List<ClientInterceptor> clientInterceptors)
                                                                             throws IOException, InterruptedException {
