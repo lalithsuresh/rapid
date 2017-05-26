@@ -55,9 +55,8 @@ import static org.junit.Assert.fail;
  * Test public API
  */
 public class ClusterTest {
-    @SuppressWarnings("FieldCanBeLocal")
-    @Nullable private static Logger grpcLogger = null;
-    @Nullable private static Logger nettyLogger = null;
+    @SuppressWarnings("FieldCanBeLocal") @Nullable private static Logger grpcLogger = null;
+    @SuppressWarnings("FieldCanBeLocal") @Nullable private static Logger nettyLogger = null;
     private static final int RPC_TIMEOUT_SHORT_MS = 500;
     private static final int RPC_TIMEOUT_VERY_SHORT_MS = 100;
     private final Map<HostAndPort, Cluster> instances = new ConcurrentHashMap<>();

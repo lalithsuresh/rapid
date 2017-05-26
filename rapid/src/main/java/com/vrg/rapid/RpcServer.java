@@ -19,8 +19,6 @@ import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
 import com.vrg.rapid.pb.ConsensusProposalResponse;
-import com.vrg.rapid.pb.GossipMessage;
-import com.vrg.rapid.pb.GossipResponse;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.MembershipServiceGrpc;
@@ -69,17 +67,6 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
               final ExecutorService executorService) {
         this.address = address;
         this.executor = executorService;
-    }
-
-    /**
-     * Defined in rapid.proto.
-     */
-    @Override
-    public void gossip(final GossipMessage request,
-                       final StreamObserver<GossipResponse> responseObserver) {
-        // TODO: unused
-        responseObserver.onNext(GossipResponse.getDefaultInstance());
-        responseObserver.onCompleted();
     }
 
     /**

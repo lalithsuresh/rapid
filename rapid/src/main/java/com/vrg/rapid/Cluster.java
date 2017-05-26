@@ -23,6 +23,7 @@ import com.vrg.rapid.monitoring.ILinkFailureDetector;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
+import com.vrg.rapid.pb.Metadata;
 import io.grpc.ClientInterceptor;
 import io.grpc.ExperimentalApi;
 import io.grpc.Internal;
@@ -56,7 +57,7 @@ public final class Cluster {
     private static final int RETRIES = 5;
     private final MembershipService membershipService;
     private final RpcServer rpcServer;
-    private final ExecutorService executor;
+    private final ExecutorService protocolExecutor;
     private final HostAndPort listenAddress;
 
     private Cluster(final RpcServer rpcServer,
@@ -65,14 +66,14 @@ public final class Cluster {
                     final HostAndPort listenAddress) {
         this.membershipService = membershipService;
         this.rpcServer = rpcServer;
-        this.executor = executorService;
+        this.protocolExecutor = executorService;
         this.listenAddress = listenAddress;
     }
 
     public static class Builder {
         private final HostAndPort listenAddress;
         @Nullable private ILinkFailureDetector linkFailureDetector = null;
-        private Map<String, String> metadata = Collections.emptyMap();
+        private Metadata metadata = Metadata.getDefaultInstance();
         private List<ServerInterceptor> serverInterceptors = Collections.emptyList();
         private List<ClientInterceptor> clientInterceptors = Collections.emptyList();
 
@@ -93,7 +94,7 @@ public final class Cluster {
          */
         public Builder setMetadata(final Map<String, String> metadata) {
             Objects.requireNonNull(metadata);
-            this.metadata = metadata;
+            this.metadata = Metadata.newBuilder().putAllMetadata(metadata).build();
             return this;
         }
 
@@ -149,16 +150,16 @@ public final class Cluster {
     }
 
     private static Cluster joinCluster(final HostAndPort seedAddress, final HostAndPort listenAddress,
-               @Nullable final ILinkFailureDetector linkFailureDetector, final Map<String, String> metadata,
+               @Nullable final ILinkFailureDetector linkFailureDetector, final Metadata metadata,
                final List<ServerInterceptor> serverInterceptors, final List<ClientInterceptor> clientInterceptors)
                                                                             throws IOException, InterruptedException {
         UUID currentIdentifier = UUID.randomUUID();
 
-        // This is the single-threaded executor that handles all the protocol messaging.
+        // This is the single-threaded protocolExecutor that handles all the protocol messaging.
         final ExecutorService protocolExecutor = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder()
-                .setUncaughtExceptionHandler(
-                        (t, e) -> System.err.println(String.format("Server executor caught exception: %s %s", t, t))
-                ).build());
+            .setUncaughtExceptionHandler(
+                    (t, e) -> System.err.println(String.format("Server protocolExecutor caught exception: %s %s", t, t))
+            ).build());
 
         final RpcServer server = new RpcServer(listenAddress, protocolExecutor);
         final RpcClient joinerClient = new RpcClient(listenAddress, clientInterceptors);
@@ -227,7 +228,7 @@ public final class Cluster {
                 final JoinMessage msg = JoinMessage.newBuilder()
                                                    .setSender(listenAddress.toString())
                                                    .setUuid(currentIdentifier.toString())
-                                                   .putAllMetadata(metadata)
+                                                   .setMetadata(metadata)
                                                    .setConfigurationId(configurationToJoin)
                                                    .addAllRingNumber(entry.getValue()).build();
                 LOG.trace("{} is sending a join-p2 to {} for configuration {}",
@@ -264,6 +265,8 @@ public final class Cluster {
                                 .map(UUID::fromString)
                                 .collect(Collectors.toList());
 
+                        final Map<String, Metadata> allMetadata = response.getClusterMetadataMap();
+
                         assert identifiersSeen.size() > 0;
                         assert allHosts.size() > 0;
 
@@ -277,7 +280,7 @@ public final class Cluster {
                             msBuilder = msBuilder.setLinkFailureDetector(linkFailureDetector);
                         }
                         final MembershipService membershipService = msBuilder.setRpcClient(joinerClient)
-                                                                             .setMetadata(metadata)
+                                                                             .setMetadata(allMetadata)
                                                                              .build();
                         server.setMembershipService(membershipService);
                         if (LOG.isTraceEnabled()) {
@@ -308,15 +311,15 @@ public final class Cluster {
     @VisibleForTesting
     static Cluster startCluster(final HostAndPort listenAddress,
                                 @Nullable final ILinkFailureDetector linkFailureDetector,
-                                final Map<String, String> metadata,
+                                final Metadata metadata,
                                 final List<ServerInterceptor> interceptors) throws IOException {
         Objects.requireNonNull(listenAddress);
 
-        // This is the single-threaded executor that handles all the protocol messaging.
+        // This is the single-threaded protocolExecutor that handles all the protocol messaging.
         final ExecutorService protocolExecutor = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder()
-                .setUncaughtExceptionHandler(
-                        (t, e) -> System.err.println(String.format("Server executor caught exception: %s %s", t, t))
-                ).build());
+            .setUncaughtExceptionHandler(
+                    (t, e) -> System.err.println(String.format("Server protocolExecutor caught exception: %s %s", t, t))
+            ).build());
         final RpcServer rpcServer = new RpcServer(listenAddress, protocolExecutor);
         final UUID currentIdentifier = UUID.randomUUID();
         final MembershipView membershipView = new MembershipView(K, Collections.singletonList(currentIdentifier),
@@ -327,7 +330,8 @@ public final class Cluster {
         if (linkFailureDetector != null) {
             builder = builder.setLinkFailureDetector(linkFailureDetector);
         }
-        final MembershipService membershipService = builder.setMetadata(metadata).build();
+        final MembershipService membershipService = builder.setMetadata(
+                Collections.singletonMap(listenAddress.toString(), metadata)).build();
         rpcServer.setMembershipService(membershipService);
         rpcServer.startServer(interceptors);
         return new Cluster(rpcServer, membershipService, protocolExecutor, listenAddress);
@@ -360,7 +364,7 @@ public final class Cluster {
         // TODO: this should probably be a "leave" method
         LOG.debug("Shutting down RpcServer and MembershipService");
         rpcServer.stopServer();
-        executor.shutdownNow();
+        protocolExecutor.shutdownNow();
         membershipService.shutdown();
     }
 

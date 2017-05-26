@@ -11,7 +11,6 @@ service MembershipService {
   rpc receiveJoinPhase2Message (JoinMessage) returns (JoinResponse) {}
   rpc receiveLinkUpdateMessage (BatchedLinkUpdateMessage) returns (Response) {}
   rpc receiveConsensusProposal (ConsensusProposal) returns (ConsensusProposalResponse) {}
-  rpc gossip (GossipMessage) returns (GossipResponse) {}
   rpc receiveProbe (ProbeMessage) returns (ProbeResponse) {}
 }
 
@@ -25,7 +24,7 @@ message JoinMessage
    string uuid = 2;
    repeated int32 ringNumber = 3;
    int64 configurationId = 4;
-   map<string, string> metadata = 5;
+   Metadata metadata = 5;
 }
 
 message JoinResponse
@@ -35,6 +34,7 @@ message JoinResponse
    int64 configurationId = 3;
    repeated string hosts = 4;
    repeated string identifiers = 5;
+   map<string, Metadata> clusterMetadata = 6;
 }
 
 enum JoinStatusCode {
@@ -61,7 +61,7 @@ message LinkUpdateMessage
     int64 configurationId = 4;
     int32 ringNumber = 5;
     string uuid = 6;                      // Required only for join protocol
-    map<string, string> metadata = 7;     // Required only for join protocol
+    Metadata metadata = 7;     // Required only for join protocol
 }
 
 enum LinkStatus {
@@ -87,18 +87,12 @@ message ConsensusProposalResponse
 {
 }
 
-// ******* Gossip messages *******
-
-message GossipMessage
+// ******* Node Metadata *********
+message Metadata
 {
-    string messageId = 1;
-    int32 ttl = 2;
-    BatchedLinkUpdateMessage batchedMessages = 3;
+    map<string, string> metadata = 1;
 }
 
-message GossipResponse
-{
-}
 
 // ******* Used by simple probing failure detector *******
 

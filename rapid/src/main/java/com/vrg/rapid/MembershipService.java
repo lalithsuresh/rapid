@@ -22,6 +22,7 @@ import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
 import com.vrg.rapid.pb.LinkStatus;
 import com.vrg.rapid.pb.LinkUpdateMessage;
+import com.vrg.rapid.pb.Metadata;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
 import io.grpc.StatusRuntimeException;
@@ -76,7 +77,8 @@ final class MembershipService {
     private final IBroadcaster broadcaster;
     private final Map<HostAndPort, LinkedBlockingDeque<StreamObserver<JoinResponse>>> joinersToRespondTo =
             new ConcurrentHashMap<>();
-    private final Map<HostAndPort, UUID> joinerUuid = new HashMap<>(); // XXX: Not being cleared.
+    private final Map<HostAndPort, UUID> joinerUuid = new HashMap<>();
+    private final Map<HostAndPort, Metadata> joinerMetadata = new HashMap<>();
     private final LinkFailureDetectorRunner linkFailureDetectorRunner;
     private final RpcClient rpcClient;
     private final MetadataManager metadataManager;
@@ -90,7 +92,7 @@ final class MembershipService {
     @GuardedBy("batchSchedulerLock")
     private final LinkedBlockingQueue<LinkUpdateMessage> sendQueue = new LinkedBlockingQueue<>();
     private final Lock batchSchedulerLock = new ReentrantLock();
-    private final ScheduledExecutorService scheduledExecutorService = Executors.newSingleThreadScheduledExecutor();
+    private final ScheduledExecutorService backgroundTasksExecutor = Executors.newSingleThreadScheduledExecutor();
     private final ScheduledFuture<?> linkUpdateBatcherJob;
     private final ScheduledFuture<?> failureDetectorJob;
     private final ExecutorService protocolExecutor;
@@ -106,7 +108,7 @@ final class MembershipService {
         private final WatermarkBuffer watermarkBuffer;
         private final HostAndPort myAddr;
         private final ExecutorService protocolExecutor;
-        private Map<String, String> metadata = Collections.emptyMap();
+        private Map<String, Metadata> metadata = Collections.emptyMap();
         @Nullable private ILinkFailureDetector linkFailureDetector = null;
         @Nullable private RpcClient rpcClient = null;
 
@@ -120,7 +122,7 @@ final class MembershipService {
             this.protocolExecutor = protocolExecutor;
         }
 
-        Builder setMetadata(final Map<String, String> metadata) {
+        Builder setMetadata(final Map<String, Metadata> metadata) {
             this.metadata = metadata;
             return this;
         }
@@ -146,14 +148,14 @@ final class MembershipService {
         this.watermarkBuffer = builder.watermarkBuffer;
         this.protocolExecutor = builder.protocolExecutor;
         this.metadataManager = new MetadataManager();
-        this.metadataManager.setMetadata(myAddr, builder.metadata);
+        this.metadataManager.addMetadata(builder.metadata);
         this.rpcClient = builder.rpcClient != null ? builder.rpcClient : new RpcClient(myAddr);
         this.broadcaster = new UnicastToAllBroadcaster(rpcClient);
         this.subscriptions = new HashMap<>(ClusterEvents.values().length); // One for each event.
         Arrays.stream(ClusterEvents.values()).forEach(event -> this.subscriptions.put(event, new ArrayList<>(1)));
 
         // Schedule background jobs
-        linkUpdateBatcherJob = this.scheduledExecutorService.scheduleAtFixedRate(new LinkUpdateBatcher(),
+        linkUpdateBatcherJob = this.backgroundTasksExecutor.scheduleAtFixedRate(new LinkUpdateBatcher(),
                 0, BATCHING_WINDOW_IN_MS, TimeUnit.MILLISECONDS);
 
         this.broadcaster.setMembership(membershipView.getRing(0));
@@ -167,7 +169,7 @@ final class MembershipService {
 
         // This primes the link failure detector with the initial set of monitorees.
         linkFailureDetectorRunner.updateMembership(membershipView.getMonitoreesOf(myAddr));
-        failureDetectorJob = this.scheduledExecutorService.scheduleAtFixedRate(linkFailureDetectorRunner,
+        failureDetectorJob = this.backgroundTasksExecutor.scheduleAtFixedRate(linkFailureDetectorRunner,
                 FAILURE_DETECTOR_INITIAL_DELAY_IN_MS, FAILURE_DETECTOR_INTERVAL_IN_MS, TimeUnit.MILLISECONDS);
     }
 
@@ -225,7 +227,7 @@ final class MembershipService {
                             .setConfigurationId(currentConfiguration)
                             .setUuid(joinMessage.getUuid())
                             .setRingNumber(ringNumber)
-                            .putAllMetadata(joinMessage.getMetadataMap())
+                            .setMetadata(joinMessage.getMetadata())
                             .build();
                     enqueueLinkUpdateMessage(msg);
                 }
@@ -395,8 +397,13 @@ final class MembershipService {
                 }
                 else {
                     assert joinerUuid.containsKey(node);
-                    membershipView.ringAdd(node, joinerUuid.get(node));
-                    statusChanges.add(new NodeStatusChange(node, LinkStatus.UP, metadataManager.get(node)));
+                    final UUID uuid = joinerUuid.remove(node);
+                    membershipView.ringAdd(node, uuid);
+                    final Metadata metadata = joinerMetadata.remove(node);
+                    if (metadata.getMetadataCount() > 0) {
+                        metadataManager.addMetadata(Collections.singletonMap(node.toString(), metadata));
+                    }
+                    statusChanges.add(new NodeStatusChange(node, LinkStatus.UP, metadata));
                 }
             }
         }
@@ -422,7 +429,6 @@ final class MembershipService {
             // the current session.
             LOG.trace("{} got kicked out and is shutting down.", myAddr);
             linkFailureDetectorRunner.updateMembership(Collections.emptyList());
-            // TODO: Invoke a "kicked-out" callback here that calls Cluster.shutdown().
             return;
         }
 
@@ -444,12 +450,13 @@ final class MembershipService {
                         .stream()
                         .map(UUID::toString)
                         .collect(Collectors.toList()))
+                .putAllClusterMetadata(metadataManager.getAllMetadata())
                 .build();
 
         // Send out responses to all the nodes waiting to join.
         for (final HostAndPort node: proposal) {
             if (joinersToRespondTo.containsKey(node)) {
-                scheduledExecutorService.execute(
+                backgroundTasksExecutor.execute(
                     () -> {
                         joinersToRespondTo.get(node).forEach(observer -> {
                             try {
@@ -530,7 +537,7 @@ final class MembershipService {
     void shutdown() {
         linkUpdateBatcherJob.cancel(true);
         failureDetectorJob.cancel(true);
-        scheduledExecutorService.shutdownNow();
+        backgroundTasksExecutor.shutdownNow();
         rpcClient.shutdown();
     }
 
@@ -630,10 +637,9 @@ final class MembershipService {
         }
 
         if (linkUpdateMessage.getLinkStatus() == LinkStatus.UP) {
+            // Both the UUID and Metadata are saved only after the node is done being added.
             joinerUuid.put(destination, UUID.fromString(linkUpdateMessage.getUuid()));
-
-            // TODO: Ideally, we'd set the role only after the node has successfully joined.
-            metadataManager.setMetadata(destination, linkUpdateMessage.getMetadataMap());
+            joinerMetadata.put(destination, linkUpdateMessage.getMetadata());
         }
         return true;
     }

@@ -87,7 +87,7 @@ class AkkaRunner {
         Objects.requireNonNull(actorSystem);
         try {
             final String hostname = statusChange.getHostAndPort().getHost();    // Rapid host
-            final String port = statusChange.getMetadata().get("akkaPort");     // Port for actor system
+            final String port = statusChange.getMetadata().getMetadataOrThrow("akkaPort");     // Port for actor system
             return Await.result(actorSystem.actorSelection(
                     "akka.tcp://" + APPLICATION + "1@" + hostname + ":" + port + "/user/Printer").resolveOne(timeout),
                     timeout.duration());
