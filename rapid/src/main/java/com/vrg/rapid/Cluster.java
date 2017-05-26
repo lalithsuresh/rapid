@@ -47,7 +47,21 @@ import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 /**
- * The public API for Rapid.
+ * The public API for Rapid. Users create Cluster objects using either Cluster.start()
+ * or Cluster.join(), depending on whether the user is starting a new cluster or not:
+ *
+ * <pre>
+ * {@code
+ *   HostAndPort seedAddress = HostAndPort.fromString("127.0.0.1", 1234);
+ *   Cluster c = Cluster.Builder(seedAddress).start();
+ *   ...
+ *   HostAndPort joinerAddress = HostAndPort.fromString("127.0.0.1", 1235);
+ *   Cluster c = Cluster.Builder(joinerAddress).join(seedAddress);
+ * }
+ * </pre>
+ *
+ * The API does not yet support a node, as identified by a hostname and port, to
+ * be part of multiple separate clusters.
  */
 public final class Cluster {
     private static final Logger LOG = LoggerFactory.getLogger("Cluster");
@@ -92,6 +106,7 @@ public final class Cluster {
          *
          * @param metadata A map specifying a set of key-value tags.
          */
+        @ExperimentalApi
         public Builder setMetadata(final Map<String, String> metadata) {
             Objects.requireNonNull(metadata);
             this.metadata = Metadata.newBuilder().putAllMetadata(metadata).build();
@@ -323,15 +338,17 @@ public final class Cluster {
         final RpcServer rpcServer = new RpcServer(listenAddress, protocolExecutor);
         final UUID currentIdentifier = UUID.randomUUID();
         final MembershipView membershipView = new MembershipView(K, Collections.singletonList(currentIdentifier),
-                Collections.singletonList(listenAddress));
+                                                                 Collections.singletonList(listenAddress));
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
         MembershipService.Builder builder = new MembershipService.Builder(listenAddress, watermarkBuffer,
-                membershipView, protocolExecutor);
+                                                                          membershipView, protocolExecutor);
+        // If linkFailureDetector == null, the system defaults to using the PingPongFailureDetector
         if (linkFailureDetector != null) {
             builder = builder.setLinkFailureDetector(linkFailureDetector);
         }
-        final MembershipService membershipService = builder.setMetadata(
-                Collections.singletonMap(listenAddress.toString(), metadata)).build();
+        final MembershipService membershipService = metadata.getMetadataCount() > 0
+                            ? builder.setMetadata(Collections.singletonMap(listenAddress.toString(), metadata)).build()
+                            : builder.build();
         rpcServer.setMembershipService(membershipService);
         rpcServer.startServer(interceptors);
         return new Cluster(rpcServer, membershipService, protocolExecutor, listenAddress);
@@ -344,6 +361,15 @@ public final class Cluster {
      */
     public List<HostAndPort> getMemberlist() {
         return membershipService.getMembershipView();
+    }
+
+    /**
+     * Returns the list of hosts currently in the membership set.
+     *
+     * @return list of hosts in the membership set
+     */
+    public Map<String, Metadata> getClusterMetadata() {
+        return membershipService.getMetadata();
     }
 
     /**

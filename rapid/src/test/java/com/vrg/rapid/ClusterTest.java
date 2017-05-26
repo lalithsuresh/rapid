@@ -64,6 +64,7 @@ public class ClusterTest {
     private final Map<HostAndPort, List<ServerInterceptor>> serverInterceptors = new ConcurrentHashMap<>();
     private final Map<HostAndPort, List<ClientInterceptor>> clientInterceptors = new ConcurrentHashMap<>();
     private boolean useStaticFd = false;
+    private boolean addMetadata = true;
     @Nullable private Random random = null;
     private long seed;
     private int basePort;
@@ -108,6 +109,7 @@ public class ClusterTest {
         RpcClient.Conf.RPC_PROBE_TIMEOUT = 5000;
 
         useStaticFd = false;
+        addMetadata = true;
         staticFds.clear();
         serverInterceptors.clear();
         clientInterceptors.clear();
@@ -176,18 +178,19 @@ public class ClusterTest {
 
     /**
      * Identical to the previous test, but with more than K nodes joining in parallel.
-     * <p>
+     *
      * The test starts with a single seed and all N - 1 subsequent nodes initiate their join protocol at the same
      * time. This tests a single seed's ability to bootstrap a large cluster in one step.
      */
     @Test(timeout=150000)
     public void threeHundredNodesJoinInParallel() throws IOException, InterruptedException {
+        addMetadata = false;
         final int numNodes = 300; // Includes the size of the cluster
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         createCluster(numNodes, seedHost);
         verifyCluster(numNodes, seedHost);
+        verifyClusterMetadata(0);
     }
-
 
     /**
      * This test starts with a single seed, and a wave where 50 subsequent nodes initiate their join protocol
@@ -289,7 +292,6 @@ public class ClusterTest {
         MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 100;
         MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 500;
         RpcClient.Conf.RPC_PROBE_TIMEOUT = 100;
-
         final int numNodes = 50;
         final int failingNodes = 12;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
@@ -629,6 +631,21 @@ public class ClusterTest {
         for (final Cluster cluster : instances.values()) {
             assertEquals(cluster.toString(), expectedSize, cluster.getMemberlist().size());
             assertEquals(cluster.getMemberlist(), instances.get(seedHost).getMemberlist());
+            if (addMetadata) {
+                assertEquals(cluster.getClusterMetadata().size(), expectedSize);
+            }
+        }
+    }
+
+    /**
+     * Verify that all nodes in the cluster are of size {@code expectedSize} and have an identical
+     * list of members as the seed node.
+     *
+     * @param expectedSize expected size of each cluster
+     */
+    private void verifyClusterMetadata(final int expectedSize) {
+        for (final Cluster cluster : instances.values()) {
+            assertEquals(cluster.getClusterMetadata().size(), expectedSize);
         }
     }
 
@@ -702,6 +719,9 @@ public class ClusterTest {
         }
         if (clientInterceptors.containsKey(host)) {
             builder = builder.setClientInterceptors(clientInterceptors.get(host));
+        }
+        if (addMetadata) {
+            builder = builder.setMetadata(Collections.singletonMap("Key", host.toString()));
         }
         return builder;
     }

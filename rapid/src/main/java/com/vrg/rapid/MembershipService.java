@@ -532,6 +532,17 @@ final class MembershipService {
     }
 
     /**
+     * Gets the list of hosts currently in the membership view.
+     *
+     * @return list of hosts in the membership view
+     */
+    Map<String, Metadata> getMetadata() {
+        synchronized (membershipUpdateLock) {
+            return metadataManager.getAllMetadata();
+        }
+    }
+
+    /**
      * Shuts down all the executors.
      */
     void shutdown() {
