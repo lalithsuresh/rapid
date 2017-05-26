@@ -51,7 +51,7 @@ public class MessagingTest {
     private static final String localhostIp = "127.0.0.1";
     private final List<RpcServer> rpcServers = new ArrayList<>();
     private final List<MembershipService> services = new ArrayList<>();
-    private final ExecutorService executorService = Executors.newSingleThreadScheduledExecutor();
+    private final ExecutorService protocolExecutor = Executors.newSingleThreadScheduledExecutor();
 
     static {
         // gRPC INFO logs clutter the test output
@@ -255,7 +255,7 @@ public class MessagingTest {
         final HostAndPort serverAddr2 = HostAndPort.fromParts(localhostIp, serverPortBase + 1);
         final UUID nodeIdentifier1 = UUID.randomUUID();
         final UUID nodeIdentifier2 = UUID.randomUUID();
-        final RpcServer rpcServer = new RpcServer(serverAddr2, executorService);
+        final RpcServer rpcServer = new RpcServer(serverAddr2, protocolExecutor);
         rpcServer.startServer();
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr1, nodeIdentifier1);
@@ -307,9 +307,9 @@ public class MessagingTest {
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, UUID.randomUUID());
         final MembershipService service =
-                new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView)
+                new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView, protocolExecutor)
                                     .build();
-        final RpcServer rpcServer = new RpcServer(serverAddr, executorService);
+        final RpcServer rpcServer = new RpcServer(serverAddr, protocolExecutor);
         rpcServer.setMembershipService(service);
         rpcServer.startServer();
         rpcServers.add(rpcServer);
@@ -327,9 +327,9 @@ public class MessagingTest {
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, UUID.randomUUID());
         final MembershipService service =
-                new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView)
+                new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView, protocolExecutor)
                         .build();
-        final RpcServer rpcServer = new RpcServer(serverAddr, executorService);
+        final RpcServer rpcServer = new RpcServer(serverAddr, protocolExecutor);
         rpcServer.setMembershipService(service);
         rpcServer.startServer(interceptors);
         rpcServers.add(rpcServer);
@@ -346,9 +346,9 @@ public class MessagingTest {
             throws IOException {
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
         final MembershipService service =
-                new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView)
+                new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView, protocolExecutor)
                         .build();
-        final RpcServer rpcServer = new RpcServer(serverAddr, executorService);
+        final RpcServer rpcServer = new RpcServer(serverAddr, protocolExecutor);
         rpcServer.setMembershipService(service);
         rpcServer.startServer(interceptors);
         rpcServers.add(rpcServer);

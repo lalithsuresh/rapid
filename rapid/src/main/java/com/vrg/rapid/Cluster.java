@@ -153,12 +153,14 @@ public final class Cluster {
                final List<ServerInterceptor> serverInterceptors, final List<ClientInterceptor> clientInterceptors)
                                                                             throws IOException, InterruptedException {
         UUID currentIdentifier = UUID.randomUUID();
-        final ExecutorService executor = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder()
+
+        // This is the single-threaded executor that handles all the protocol messaging.
+        final ExecutorService protocolExecutor = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder()
                 .setUncaughtExceptionHandler(
                         (t, e) -> System.err.println(String.format("Server executor caught exception: %s %s", t, t))
                 ).build());
 
-        final RpcServer server = new RpcServer(listenAddress, executor);
+        final RpcServer server = new RpcServer(listenAddress, protocolExecutor);
         final RpcClient joinerClient = new RpcClient(listenAddress, clientInterceptors);
         server.startServer(serverInterceptors);
         boolean didPreviousJoinSucceed = false;
@@ -269,7 +271,8 @@ public final class Cluster {
                                 new MembershipView(K, identifiersSeen, allHosts);
                         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
                         MembershipService.Builder msBuilder =
-                                new MembershipService.Builder(listenAddress, watermarkBuffer, membershipViewFinal);
+                                new MembershipService.Builder(listenAddress, watermarkBuffer, membershipViewFinal,
+                                                              protocolExecutor);
                         if (linkFailureDetector != null) {
                             msBuilder = msBuilder.setLinkFailureDetector(linkFailureDetector);
                         }
@@ -283,7 +286,7 @@ public final class Cluster {
                             LOG.trace("{} has monitorees {}", listenAddress,
                                     membershipViewFinal.getMonitorsOf(listenAddress));
                         }
-                        return new Cluster(server, membershipService, executor, listenAddress);
+                        return new Cluster(server, membershipService, protocolExecutor, listenAddress);
                     }
                 }
             } catch (final ExecutionException e) {
@@ -308,24 +311,26 @@ public final class Cluster {
                                 final Map<String, String> metadata,
                                 final List<ServerInterceptor> interceptors) throws IOException {
         Objects.requireNonNull(listenAddress);
-        final ExecutorService executor = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder()
+
+        // This is the single-threaded executor that handles all the protocol messaging.
+        final ExecutorService protocolExecutor = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder()
                 .setUncaughtExceptionHandler(
                         (t, e) -> System.err.println(String.format("Server executor caught exception: %s %s", t, t))
                 ).build());
-        final RpcServer rpcServer = new RpcServer(listenAddress, executor);
+        final RpcServer rpcServer = new RpcServer(listenAddress, protocolExecutor);
         final UUID currentIdentifier = UUID.randomUUID();
         final MembershipView membershipView = new MembershipView(K, Collections.singletonList(currentIdentifier),
                 Collections.singletonList(listenAddress));
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
         MembershipService.Builder builder = new MembershipService.Builder(listenAddress, watermarkBuffer,
-                membershipView);
+                membershipView, protocolExecutor);
         if (linkFailureDetector != null) {
             builder = builder.setLinkFailureDetector(linkFailureDetector);
         }
         final MembershipService membershipService = builder.setMetadata(metadata).build();
         rpcServer.setMembershipService(membershipService);
         rpcServer.startServer(interceptors);
-        return new Cluster(rpcServer, membershipService, executor, listenAddress);
+        return new Cluster(rpcServer, membershipService, protocolExecutor, listenAddress);
     }
 
     /**

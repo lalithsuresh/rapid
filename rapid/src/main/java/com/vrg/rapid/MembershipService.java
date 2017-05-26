@@ -43,6 +43,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -92,6 +93,7 @@ final class MembershipService {
     private final ScheduledExecutorService scheduledExecutorService = Executors.newSingleThreadScheduledExecutor();
     private final ScheduledFuture<?> linkUpdateBatcherJob;
     private final ScheduledFuture<?> failureDetectorJob;
+    private final ExecutorService protocolExecutor;
 
     // Fields used by consensus protocol
     private final Map<List<String>, AtomicInteger> votesPerProposal = new HashMap<>();
@@ -103,16 +105,19 @@ final class MembershipService {
         private final MembershipView membershipView;
         private final WatermarkBuffer watermarkBuffer;
         private final HostAndPort myAddr;
+        private final ExecutorService protocolExecutor;
         private Map<String, String> metadata = Collections.emptyMap();
         @Nullable private ILinkFailureDetector linkFailureDetector = null;
         @Nullable private RpcClient rpcClient = null;
 
         Builder(final HostAndPort myAddr,
                 final WatermarkBuffer watermarkBuffer,
-                final MembershipView membershipView) {
+                final MembershipView membershipView,
+                final ExecutorService protocolExecutor) {
             this.myAddr = Objects.requireNonNull(myAddr);
             this.watermarkBuffer = Objects.requireNonNull(watermarkBuffer);
             this.membershipView = Objects.requireNonNull(membershipView);
+            this.protocolExecutor = protocolExecutor;
         }
 
         Builder setMetadata(final Map<String, String> metadata) {
@@ -139,6 +144,7 @@ final class MembershipService {
         this.myAddr = builder.myAddr;
         this.membershipView = builder.membershipView;
         this.watermarkBuffer = builder.watermarkBuffer;
+        this.protocolExecutor = builder.protocolExecutor;
         this.metadataManager = new MetadataManager();
         this.metadataManager.setMetadata(myAddr, builder.metadata);
         this.rpcClient = builder.rpcClient != null ? builder.rpcClient : new RpcClient(myAddr);
@@ -487,8 +493,7 @@ final class MembershipService {
      * @param monitoree The monitoree that has failed.
      */
     private void linkFailureNotification(final HostAndPort monitoree) {
-        // TODO: This should execute on the grpc-server thread.
-        scheduledExecutorService.execute(() -> {
+        protocolExecutor.execute(() -> {
                 final long configurationId = membershipView.getCurrentConfigurationId();
                 if (LOG.isDebugEnabled()) {
                     final int size = membershipView.getMembershipSize();
