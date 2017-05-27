@@ -68,6 +68,11 @@
             <artifactId>slf4j-simple</artifactId>
             <version>1.7.24</version>
         </dependency>
+        <dependency>
+            <groupId>net.openhft</groupId>
+            <artifactId>zero-allocation-hashing</artifactId>
+            <version>0.8</version>
+        </dependency>
     </dependencies>
     <build>
         <extensions>

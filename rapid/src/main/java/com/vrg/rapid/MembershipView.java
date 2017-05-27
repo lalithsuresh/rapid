@@ -14,16 +14,13 @@
 package com.vrg.rapid;
 
 import com.google.common.collect.ImmutableList;
-import com.google.common.hash.Funnel;
-import com.google.common.hash.HashFunction;
-import com.google.common.hash.Hashing;
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.JoinStatusCode;
+import net.openhft.hashing.LongHashFunction;
 
 import javax.annotation.concurrent.GuardedBy;
 import javax.annotation.concurrent.ThreadSafe;
 import java.io.Serializable;
-import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -407,21 +404,16 @@ final class MembershipView {
      */
     private static final class AddressComparator implements Comparator<HostAndPort>, Serializable {
         private static final long serialVersionUID = -4891729390L;
-        private static final Funnel<HostAndPort> HOST_AND_PORT_FUNNEL = (Funnel<HostAndPort>) (address, into) -> into
-                                                                .putString(address.getHost(),
-                                                                           Charset.defaultCharset())
-                                                                .putInt(address.getPort());
-        // XXX: FindBugs does not like this (SE_TRANSIENT_FIELD_NOT_RESTORED)
-        private final transient HashFunction hashFunction;
+        private final LongHashFunction hashFunction;
 
         AddressComparator(final int seed) {
-            this.hashFunction = Hashing.murmur3_32(seed);
+            this.hashFunction = LongHashFunction.xx(seed);
         }
 
         public final int compare(final HostAndPort c1, final HostAndPort c2) {
-            final int hash1 = hashFunction.hashObject(c1, HOST_AND_PORT_FUNNEL).asInt();
-            final int hash2 = hashFunction.hashObject(c2, HOST_AND_PORT_FUNNEL).asInt();
-            return Integer.compare(hash1, hash2);
+            final long hash1 = hashFunction.hashChars(c1.getHost()) * 31 + hashFunction.hashInt(c1.getPort());
+            final long hash2 = hashFunction.hashChars(c2.getHost()) * 31 + hashFunction.hashInt(c2.getPort());
+            return Long.compare(hash1, hash2);
         }
     }
 
