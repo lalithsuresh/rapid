@@ -19,9 +19,13 @@ import com.vrg.rapid.pb.LinkUpdateMessage;
 import org.junit.Test;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 /**
  * Tests for a watermark-buffer
@@ -249,23 +253,51 @@ public class WatermarkBufferTest {
 
     @Test
     public void waterMarkTestLinkInvalidation() {
+        final MembershipView mView = new MembershipView(K);
         final WatermarkBuffer wb = new WatermarkBuffer(K, H, L);
-        final int numNodes = 3;
+        final int numNodes = 30;
         final List<HostAndPort> hostAndPorts = new ArrayList<>();
         for (int i = 0; i < numNodes; i++) {
-            hostAndPorts.add(HostAndPort.fromParts("127.0.0.2", 2 + i));
+            final HostAndPort node = HostAndPort.fromParts("127.0.0.2", 2 + i);
+            hostAndPorts.add(node);
+            mView.ringAdd(node, UUID.randomUUID());
         }
 
-        final List<HostAndPort> proposal = new ArrayList<>();
-        for (final HostAndPort host: hostAndPorts) {
-            for (int ringNumber = 0; ringNumber < K; ringNumber++) {
-                proposal.addAll(wb.aggregateForProposal(createLinkUpdateMessage(
-                        HostAndPort.fromParts("127.0.0.1", 1), host, LinkStatus.UP,
-                        configurationId, ringNumber)));
+        final HostAndPort dst = hostAndPorts.get(0);
+        final List<HostAndPort> monitors = mView.getMonitorsOf(dst);
+        assertEquals(K, monitors.size());
+
+        List<HostAndPort> ret;
+
+        // This adds alerts from the monitors[0, H - 1) of node dst.
+        for (int i = 0; i < H - 1; i++) {
+            ret = wb.aggregateForProposal(createLinkUpdateMessage(monitors.get(i), dst,
+                                                                  LinkStatus.DOWN, configurationId, i));
+            assertEquals(0, ret.size());
+            assertEquals(0, wb.getNumProposals());
+        }
+
+        // Next, we add alerts *about* monitors[H, K) of node dst.
+        final Set<HostAndPort> failedMonitors = new HashSet<>(K - H - 1);
+        for (int i = H - 1; i < K; i++) {
+            final List<HostAndPort> monitorsOfMonitor = mView.getMonitorsOf(monitors.get(i));
+            failedMonitors.add(monitors.get(i));
+            for (int j = 0; j < K; j++) {
+                ret = wb.aggregateForProposal(createLinkUpdateMessage(monitorsOfMonitor.get(j), monitors.get(i),
+                        LinkStatus.DOWN, configurationId, j));
+                assertEquals(0, ret.size());
+                assertEquals(0, wb.getNumProposals());
             }
         }
 
-        assertEquals(proposal.size(), numNodes);
+        // At this point, (K - H - 1) monitors of dst will be past H, and dst will be in H - 1. Link invalidation
+        // should bring the failed monitors and dst to the stable region.
+        ret = wb.invalidateFailingLinks(mView);
+        assertEquals(4, ret.size());
+        assertEquals(1, wb.getNumProposals());
+        for (final HostAndPort node: ret) {
+            assertTrue(failedMonitors.contains(node) || node.equals(dst));
+        }
     }
 
     private LinkUpdateMessage createLinkUpdateMessage(final HostAndPort src,
