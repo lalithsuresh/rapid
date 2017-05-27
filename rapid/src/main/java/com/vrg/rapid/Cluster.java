@@ -250,7 +250,6 @@ public final class Cluster {
                         listenAddress, entry.getKey(), configurationToJoin);
                 final ListenableFuture<JoinResponse> call = joinerClient.sendJoinPhase2Message(entry.getKey(), msg);
                 responseFutures.add(call);
-                ringNumber++;
             }
 
             // The returned list of responses must contain the full configuration (hosts and identifiers) we just
