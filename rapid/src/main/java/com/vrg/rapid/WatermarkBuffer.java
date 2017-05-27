@@ -73,23 +73,28 @@ final class WatermarkBuffer {
      */
     List<HostAndPort> aggregateForProposal(final LinkUpdateMessage msg) {
         Objects.requireNonNull(msg);
-        assert msg.getRingNumber() <= K;
+        return aggregateForProposal(HostAndPort.fromString(msg.getLinkSrc()), HostAndPort.fromString(msg.getLinkDst()),
+                                    msg.getLinkStatus(), msg.getRingNumber());
+    }
+
+    private List<HostAndPort> aggregateForProposal(final HostAndPort linkSrc, final HostAndPort linkDst,
+                                                   final LinkStatus linkStatus, final int ringNumber) {
+        assert ringNumber <= K;
 
         synchronized (lock) {
-            if (msg.getLinkStatus() == LinkStatus.DOWN) {
+            if (linkStatus == LinkStatus.DOWN) {
                 seenLinkDownEvents = true;
             }
 
-            final HostAndPort linkDst = HostAndPort.fromString(msg.getLinkDst());
             final Map<Integer, HostAndPort> reportsForHost = reportsPerHost.computeIfAbsent(
                                                                  linkDst,
                                                                  (k) -> new HashMap<>(K));
 
-            if (reportsForHost.containsKey(msg.getRingNumber())) {
+            if (reportsForHost.containsKey(ringNumber)) {
                 return Collections.emptyList();  // duplicate announcement, ignore.
             }
 
-            reportsForHost.put(msg.getRingNumber(), HostAndPort.fromString(msg.getLinkSrc()));
+            reportsForHost.put(ringNumber, linkSrc);
             final int numReportsForHost = reportsForHost.size();
 
             if (numReportsForHost == L) {
@@ -98,7 +103,7 @@ final class WatermarkBuffer {
             }
 
             if (numReportsForHost == H) {
-                // Enough reports about "msg.getDst()" have been received that it is safe to act upon,
+                // Enough reports about linkDst have been received that it is safe to act upon,
                 // provided there are no other nodes with L < #reports < H.
                 preProposal.remove(linkDst);
                 proposal.add(linkDst);
@@ -138,17 +143,13 @@ final class WatermarkBuffer {
                 final List<HostAndPort> monitors = view.isHostPresent(nodeInFlux)
                                                     ? view.getMonitorsOf(nodeInFlux)          // For failing nodes
                                                     : view.getExpectedMonitorsOf(nodeInFlux); // For joining nodes
-                // Account for all links between nodes that are past the L threshold.
+                // Account for all links between nodes that are past the L threshold
                 int ringNumber = 0;
                 for (final HostAndPort monitor : monitors) {
                     if (proposal.contains(monitor) || preProposal.contains(monitor)) {
-                        // speed up the process.
-                        final LinkUpdateMessage msg = LinkUpdateMessage.newBuilder()
-                                                        .setLinkSrc(monitor.toString())
-                                                        .setLinkDst(nodeInFlux.toString())
-                                                        .setRingNumber(ringNumber)
-                                                        .build();
-                        proposalsToReturn.addAll(aggregateForProposal(msg));
+                        // Implicit detection of link between monitor and nodeInFlux
+                        final LinkStatus linkStatus = view.isHostPresent(nodeInFlux) ? LinkStatus.DOWN : LinkStatus.UP;
+                        proposalsToReturn.addAll(aggregateForProposal(monitor, nodeInFlux, linkStatus, ringNumber));
                     }
                     ringNumber++;
                 }
