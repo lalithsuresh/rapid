@@ -27,7 +27,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * A filter that outputs a view change proposal about a node only if:
@@ -39,8 +38,8 @@ final class WatermarkBuffer {
     private final int K;
     private final int H;
     private final int L;
-    @GuardedBy("lock") private final AtomicInteger proposalCount = new AtomicInteger(0);
-    @GuardedBy("lock") private final AtomicInteger updatesInProgress = new AtomicInteger(0);
+    @GuardedBy("lock") private int proposalCount = 0;
+    @GuardedBy("lock") private int updatesInProgress = 0;
     @GuardedBy("lock") private final Map<HostAndPort, Map<Integer, HostAndPort>> reportsPerHost;
     @GuardedBy("lock") private final ArrayList<HostAndPort> proposal = new ArrayList<>();
     @GuardedBy("lock") private final Set<HostAndPort> preProposal = new HashSet<>();
@@ -60,7 +59,7 @@ final class WatermarkBuffer {
 
     int getNumProposals() {
         synchronized (lock) {
-            return proposalCount.get();
+            return proposalCount;
         }
     }
 
@@ -94,7 +93,7 @@ final class WatermarkBuffer {
             final int numReportsForHost = reportsForHost.size();
 
             if (numReportsForHost == L) {
-                updatesInProgress.incrementAndGet();
+                updatesInProgress++;
                 preProposal.add(linkDst);
             }
 
@@ -103,12 +102,12 @@ final class WatermarkBuffer {
                 // provided there are no other nodes with L < #reports < H.
                 preProposal.remove(linkDst);
                 proposal.add(linkDst);
-                final int updatesInProgressVal = updatesInProgress.decrementAndGet();
+                updatesInProgress--;
 
-                if (updatesInProgressVal == 0) {
+                if (updatesInProgress == 0) {
                     // No outstanding updates, so all nodes that have crossed the H threshold of reports are
                     // now part of a single proposal.
-                    this.proposalCount.incrementAndGet();
+                    proposalCount++;
                     final List<HostAndPort> ret = ImmutableList.copyOf(proposal);
                     proposal.clear();
                     return ret;
@@ -166,8 +165,8 @@ final class WatermarkBuffer {
         synchronized (lock) {
             reportsPerHost.clear();
             proposal.clear();
-            updatesInProgress.set(0);
-            proposalCount.set(0);
+            updatesInProgress = 0;
+            proposalCount = 0;
             preProposal.clear();
             seenLinkDownEvents = false;
         }
