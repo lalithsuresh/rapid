@@ -333,8 +333,8 @@ public class ClusterTest {
     @Test
     public void injectAsymmetricDrops() throws IOException, InterruptedException {
         MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 100;
-        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 200;
-        RpcClient.Conf.RPC_PROBE_TIMEOUT = 200;
+        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 500;
+        RpcClient.Conf.RPC_PROBE_TIMEOUT = 500;
         final int numNodes = 50;
         final int numFailingNodes = 10;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
