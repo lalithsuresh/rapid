@@ -1,6 +1,7 @@
 package com.vrg.standalone;
 
 import com.google.common.net.HostAndPort;
+import com.sun.management.UnixOperatingSystemMXBean;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.DefaultParser;
@@ -8,6 +9,8 @@ import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 
 import java.io.IOException;
+import java.lang.management.ManagementFactory;
+import java.lang.management.OperatingSystemMXBean;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.Executor;
@@ -23,6 +26,12 @@ public class StandaloneAgent {
     private static final int MAX_TRIES = 400;
 
     public static void main( String[] args ) throws ParseException, IOException, InterruptedException {
+        final OperatingSystemMXBean os = ManagementFactory.getOperatingSystemMXBean();
+        if(os instanceof UnixOperatingSystemMXBean)
+        {
+            final UnixOperatingSystemMXBean bean = (UnixOperatingSystemMXBean) os;
+            System.out.println("File descriptor limit: " + bean.getMaxFileDescriptorCount());
+        }
         final Options options = new Options();
         options.addRequiredOption("cluster", "cluster", true, "Cluster tool to use");
         options.addRequiredOption("l", "listenAddresses", true, "The listening addresses Rapid Cluster instances");
