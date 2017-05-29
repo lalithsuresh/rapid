@@ -14,6 +14,7 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.vrg.rapid.monitoring.ILinkFailureDetector;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
@@ -92,7 +93,7 @@ final class MembershipService {
     @GuardedBy("batchSchedulerLock")
     private final LinkedBlockingQueue<LinkUpdateMessage> sendQueue = new LinkedBlockingQueue<>();
     private final Lock batchSchedulerLock = new ReentrantLock();
-    private final ScheduledExecutorService backgroundTasksExecutor = Executors.newSingleThreadScheduledExecutor();
+    private final ScheduledExecutorService backgroundTasksExecutor;
     private final ScheduledFuture<?> linkUpdateBatcherJob;
     private final ScheduledFuture<?> failureDetectorJob;
     private final ExecutorService protocolExecutor;
@@ -155,6 +156,11 @@ final class MembershipService {
         Arrays.stream(ClusterEvents.values()).forEach(event -> this.subscriptions.put(event, new ArrayList<>(1)));
 
         // Schedule background jobs
+        this.backgroundTasksExecutor = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder()
+                .setNameFormat("msbg-" + myAddr + "-%d")
+                .setUncaughtExceptionHandler(
+                (t, e) -> System.err.println(String.format("backgroundTasksExecutor caught exception: %s %s", t, t))
+            ).build());
         linkUpdateBatcherJob = this.backgroundTasksExecutor.scheduleAtFixedRate(new LinkUpdateBatcher(),
                 0, BATCHING_WINDOW_IN_MS, TimeUnit.MILLISECONDS);
 
@@ -530,6 +536,18 @@ final class MembershipService {
             return membershipView.getRing(0);
         }
     }
+
+    /**
+     * Gets the list of hosts currently in the membership view.
+     *
+     * @return list of hosts in the membership view
+     */
+    int getMembershipSize() {
+        synchronized (membershipUpdateLock) {
+            return membershipView.getMembershipSize();
+        }
+    }
+
 
     /**
      * Gets the list of hosts currently in the membership view.

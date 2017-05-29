@@ -37,6 +37,14 @@ class RapidRunner {
             Thread.sleep(sleepDelayMsForNonSeed);
             cluster = new Cluster.Builder(listenAddress).join(seedAddress);
         }
+        cluster.registerSubscription(com.vrg.rapid.ClusterEvents.VIEW_CHANGE_PROPOSAL,
+                this::onViewChangeProposal);
+        cluster.registerSubscription(com.vrg.rapid.ClusterEvents.VIEW_CHANGE,
+                this::onViewChange);
+        cluster.registerSubscription(com.vrg.rapid.ClusterEvents.VIEW_CHANGE_ONE_STEP_FAILED,
+                this::onViewChangeOneStepFailed);
+        cluster.registerSubscription(com.vrg.rapid.ClusterEvents.KICKED,
+                this::onKicked);
     }
 
     /**
@@ -71,20 +79,15 @@ class RapidRunner {
      * Wait inside a loop
      */
     void run(final int maxTries, final int sleepIntervalMs) throws InterruptedException {
-        cluster.registerSubscription(com.vrg.rapid.ClusterEvents.VIEW_CHANGE_PROPOSAL,
-                this::onViewChangeProposal);
-        cluster.registerSubscription(com.vrg.rapid.ClusterEvents.VIEW_CHANGE,
-                this::onViewChange);
-        cluster.registerSubscription(com.vrg.rapid.ClusterEvents.VIEW_CHANGE_ONE_STEP_FAILED,
-                this::onViewChangeOneStepFailed);
-        cluster.registerSubscription(com.vrg.rapid.ClusterEvents.KICKED,
-                this::onKicked);
-
         int tries = maxTries;
         while (tries-- > 0) {
             System.out.println(System.currentTimeMillis() + " " + listenAddress +
-                    " Cluster size " + cluster.getMemberlist().size() + " " + tries);
+                    " Cluster size " + cluster.getMembershipSize() + " " + tries);
             Thread.sleep(sleepIntervalMs);
         }
+    }
+
+    String getClusterStatus() {
+        return System.currentTimeMillis() + " " + listenAddress + " Cluster size " + cluster.getMembershipSize();
     }
 }

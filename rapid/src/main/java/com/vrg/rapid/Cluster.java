@@ -172,6 +172,7 @@ public final class Cluster {
 
         // This is the single-threaded protocolExecutor that handles all the protocol messaging.
         final ExecutorService protocolExecutor = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder()
+            .setNameFormat("protocol-" + listenAddress + "-%d")
             .setUncaughtExceptionHandler(
                     (t, e) -> System.err.println(String.format("Server protocolExecutor caught exception: %s %s", t, t))
             ).build());
@@ -331,6 +332,7 @@ public final class Cluster {
 
         // This is the single-threaded protocolExecutor that handles all the protocol messaging.
         final ExecutorService protocolExecutor = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder()
+            .setNameFormat("protocol-" + listenAddress + "-%d")
             .setUncaughtExceptionHandler(
                     (t, e) -> System.err.println(String.format("Server protocolExecutor caught exception: %s %s", t, t))
             ).build());
@@ -360,6 +362,15 @@ public final class Cluster {
      */
     public List<HostAndPort> getMemberlist() {
         return membershipService.getMembershipView();
+    }
+
+    /**
+     * Returns the number of hosts currently in the membership set.
+     *
+     * @return the number of hosts in the membership set
+     */
+    public int getMembershipSize() {
+        return membershipService.getMembershipSize();
     }
 
     /**

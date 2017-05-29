@@ -2,6 +2,7 @@ package com.vrg.standalone;
 
 import com.google.common.net.HostAndPort;
 import com.sun.management.UnixOperatingSystemMXBean;
+import com.vrg.rapid.Cluster;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.DefaultParser;
@@ -13,7 +14,11 @@ import java.lang.management.ManagementFactory;
 import java.lang.management.OperatingSystemMXBean;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
@@ -48,7 +53,7 @@ public class StandaloneAgent {
                                                       .collect(Collectors.toList());
         final HostAndPort seedAddress = HostAndPort.fromString(cmd.getOptionValue("seedAddress"));
         final String role = cmd.getOptionValue("role");
-        final Executor executor = Executors.newWorkStealingPool(listenAddresses.size());
+        final ExecutorService executor = Executors.newWorkStealingPool(listenAddresses.size());
 
         if (clusterTool.equals("AkkaCluster")) {
             listenAddresses.forEach(listenAddress -> {
@@ -60,16 +65,29 @@ public class StandaloneAgent {
             });
         }
         else if (clusterTool.equals("Rapid")) {
+            final Queue<RapidRunner> runners = new ConcurrentLinkedQueue<>();
+            final CountDownLatch latch = new CountDownLatch(listenAddresses.size());
             listenAddresses.forEach(listenAddress -> executor.execute(() -> {
                 // Setup Rapid cluster and wait until completion
                 try {
                     final RapidRunner runner = new RapidRunner(listenAddress, seedAddress, WAIT_DELAY_NON_SEED_MS);
-                    runner.run(MAX_TRIES, SLEEP_INTERVAL_MS);
+                    runners.add(runner);
                 } catch (final IOException | InterruptedException e) {
                     e.printStackTrace();
+                } finally {
+                    latch.countDown();
                 }
-                System.exit(0);
             }));
+            latch.await();
+            executor.shutdownNow();
+            int tries = MAX_TRIES;
+            while (tries-- > 0) {
+                for (final RapidRunner runner: runners) {
+                    System.out.println(runner.getClusterStatus() + " " + tries);
+                }
+                Thread.sleep(SLEEP_INTERVAL_MS
+                );
+            }
         }
         Thread.currentThread().join();
     }
