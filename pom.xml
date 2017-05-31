@@ -15,6 +15,7 @@
     <modules>
        <module>rapid</module>
        <module>rapid-examples</module>
+       <module>integration-tests</module>
     </modules>
     <build>
         <plugins>
