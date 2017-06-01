@@ -13,7 +13,6 @@
 
 package com.vrg.rapid;
 
-import com.google.common.net.HostAndPort;
 import io.grpc.CallOptions;
 import io.grpc.Channel;
 import io.grpc.ClientCall;
@@ -49,7 +48,7 @@ class ServerDropInterceptors {
         public <ReqT, RespT> ServerCall.Listener<ReqT> interceptCall(final ServerCall<ReqT, RespT> serverCall,
                                      final Metadata metadata, final ServerCallHandler<ReqT, RespT> serverCallHandler) {
             if (dropProbability >= ThreadLocalRandom.current().nextDouble(1.0)) {
-                return new ServerCall.Listener<ReqT>() {};
+                return new ServerCall.Listener<ReqT>() { };
             }
             else {
                 return serverCallHandler.startCall(serverCall, metadata);
@@ -77,7 +76,7 @@ class ServerDropInterceptors {
                                      final Metadata metadata, final ServerCallHandler<ReqT, RespT> serverCallHandler) {
             if (methodDescriptor.getFullMethodName().equals(serverCall.getMethodDescriptor().getFullMethodName())
                     && counter.getAndDecrement() >= 0) {
-                return new ServerCall.Listener<ReqT>() {};
+                return new ServerCall.Listener<ReqT>() { };
             }
             return serverCallHandler.startCall(serverCall, metadata);
         }

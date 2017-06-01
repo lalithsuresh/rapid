@@ -152,7 +152,7 @@ public class ClusterTest {
         verifyCluster(1, seedHost);
         for (int i = 0; i < numNodes; i++) {
             extendCluster(1, seedHost);
-            waitAndVerifyAgreement( i + 2, 5, 1000, seedHost);
+            waitAndVerifyAgreement(i + 2, 5, 1000, seedHost);
         }
     }
 
@@ -172,7 +172,7 @@ public class ClusterTest {
 
         for (int i = 0; i < numNodes; i++) {
             extendCluster(1, seedHost);
-            waitAndVerifyAgreement( i + 2, 5, 1000, seedHost);
+            waitAndVerifyAgreement(i + 2, 5, 1000, seedHost);
         }
     }
 
@@ -182,7 +182,7 @@ public class ClusterTest {
      * The test starts with a single seed and all N - 1 subsequent nodes initiate their join protocol at the same
      * time. This tests a single seed's ability to bootstrap a large cluster in one step.
      */
-    @Test(timeout=150000)
+    @Test(timeout = 150000)
     public void threeHundredNodesJoinInParallel() throws IOException, InterruptedException {
         addMetadata = false;
         final int numNodes = 300; // Includes the size of the cluster
@@ -196,7 +196,7 @@ public class ClusterTest {
      * This test starts with a single seed, and a wave where 50 subsequent nodes initiate their join protocol
      * concurrently. Following this, a subsequent wave begins where 100 nodes then start together.
      */
-    @Test(timeout=150000)
+    @Test(timeout = 150000)
     public void hundredNodesJoinFiftyNodeCluster() throws IOException, InterruptedException {
         RpcServer.USE_IN_PROCESS_SERVER = true;
         RpcClient.USE_IN_PROCESS_CHANNEL = true;
@@ -232,7 +232,7 @@ public class ClusterTest {
     /**
      * This test starts with a 30 node cluster, then fails 5 nodes while an additional 10 join.
      */
-    @Test(timeout=30000)
+    @Test(timeout = 30000)
     public void concurrentNodeJoinsAndFails() throws IOException, InterruptedException {
         MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 100;
         MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 200;
@@ -254,7 +254,7 @@ public class ClusterTest {
     /**
      * This test starts with a 5 node cluster, then joins two waves of six nodes each.
      */
-    @Test(timeout=30000)
+    @Test(timeout = 30000)
     public void concurrentNodeJoinsNetty() throws IOException, InterruptedException {
         MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 100000;
         MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 100000;
@@ -268,7 +268,7 @@ public class ClusterTest {
         verifyCluster(numNodes, seedHost);
         final Random r = new Random();
 
-        for (int i = 0; i < phaseOneJoiners/2; i++) {
+        for (int i = 0; i < phaseOneJoiners / 2; i++) {
             final List<HostAndPort> keysAsArray = new ArrayList<>(instances.keySet());
             extendCluster(2, keysAsArray.get(r.nextInt(instances.size())));
             Thread.sleep(50);
@@ -460,7 +460,7 @@ public class ClusterTest {
                             waitAndVerifyAgreement(numNodes - failNodes, 20, 500, seedHost);
                             extendCluster(leavingHost, seedHost);
                             waitAndVerifyAgreement(numNodes, 20, 500, seedHost);
-                        } catch (InterruptedException e) {
+                        } catch (final InterruptedException e) {
                             fail();
                         }
                     }
@@ -509,7 +509,7 @@ public class ClusterTest {
                                 HostAndPort.fromParts("127.0.0.1", portCounter.incrementAndGet());
                         final Cluster nonSeed = buildCluster(joiningHost).join(seedHost);
                         instances.put(joiningHost, nonSeed);
-                    } catch (final Exception e) {
+                    } catch (final InterruptedException | IOException e) {
                         e.printStackTrace();
                         fail();
                     } finally {
@@ -518,7 +518,7 @@ public class ClusterTest {
                 });
             }
             latch.await();
-        } catch (final Exception e) {
+        } catch (final InterruptedException e) {
             e.printStackTrace();
             fail();
         } finally {
@@ -541,15 +541,14 @@ public class ClusterTest {
                 try {
                     final Cluster nonSeed = buildCluster(joiningNode).join(seedHost);
                     instances.put(joiningNode, nonSeed);
-                } catch (final Exception e) {
-                    e.printStackTrace();
+                } catch (final InterruptedException | IOException e) {
                     fail();
                 } finally {
                     latch.countDown();
                 }
             });
             latch.await();
-        } catch (final Exception e) {
+        } catch (final InterruptedException e) {
             e.printStackTrace();
             fail();
         } finally {
@@ -575,15 +574,12 @@ public class ClusterTest {
                                 HostAndPort.fromParts("127.0.0.1", portCounter.incrementAndGet());
                         final Cluster nonSeed = buildCluster(joiningHost).join(seedHost);
                         instances.put(joiningHost, nonSeed);
-                    } catch (final Exception e) {
+                    } catch (final InterruptedException | IOException e) {
                         e.printStackTrace();
                         fail();
                     }
                 });
             }
-        } catch (final Exception e) {
-            e.printStackTrace();
-            fail();
         } finally {
             executor.shutdown();
         }
@@ -612,7 +608,7 @@ public class ClusterTest {
                 });
             }
             latch.await();
-        } catch (final Exception e) {
+        } catch (final InterruptedException e) {
             e.printStackTrace();
             fail();
         } finally {

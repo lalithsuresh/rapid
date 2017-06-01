@@ -156,6 +156,7 @@
                 <version>2.17</version>
                 <configuration>
                     <configLocation>${project.basedir}/checkstyle.xml</configLocation>
+                    <includeTestSourceDirectory>true</includeTestSourceDirectory>
                     <suppressionsLocation>${project.basedir}/suppressions.xml</suppressionsLocation>
                 </configuration>
                 <executions>

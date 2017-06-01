@@ -112,8 +112,7 @@ final class MembershipView {
         Objects.requireNonNull(uuid);
 
         if (isIdentifierPresent(uuid)) {
-            throw new RuntimeException("Host add attempt with identifier already seen:" +
-                    " {host: " + node + ", identifier: " + uuid + "}:");
+            throw new UUIDAlreadySeenException(node, uuid);
         }
 
         rwLock.writeLock().lock();
@@ -426,6 +425,13 @@ final class MembershipView {
     static class NodeNotInRingException extends RuntimeException {
         NodeNotInRingException(final HostAndPort node) {
             super(node.toString());
+        }
+    }
+
+    static class UUIDAlreadySeenException extends RuntimeException {
+        UUIDAlreadySeenException(final HostAndPort node, final UUID uuid) {
+            super("Host add attempt with identifier already seen:" +
+                    " {host: " + node + ", identifier: " + uuid + "}:");
         }
     }
 

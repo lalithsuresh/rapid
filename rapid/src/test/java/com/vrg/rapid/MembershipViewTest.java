@@ -106,7 +106,7 @@ public class MembershipViewTest {
         for (int i = 0; i < numNodes; i++) {
             try {
                 mview.ringAdd(HostAndPort.fromParts("127.0.0.1", startPort + i), UUID.randomUUID());
-            } catch (final Exception e) {
+            } catch (final MembershipView.NodeAlreadyInRingException e) {
                 numThrows++;
             }
         }
@@ -126,7 +126,7 @@ public class MembershipViewTest {
         for (int i = 0; i < numNodes; i++) {
             try {
                 mview.ringDelete(HostAndPort.fromParts("127.0.0.1", i));
-            } catch (final Exception e) {
+            } catch (final MembershipView.NodeNotInRingException e) {
                 numThrows++;
             }
         }
@@ -140,27 +140,15 @@ public class MembershipViewTest {
     @Test
     public void ringAdditionsAndDeletions() {
         final MembershipView mview = new MembershipView(K);
-
         final int numNodes = 10;
-        int numThrows = 0;
 
         for (int i = 0; i < numNodes; i++) {
-            try {
-                mview.ringAdd(HostAndPort.fromParts("127.0.0.1", i), UUID.randomUUID());
-            } catch (final Exception e) {
-                fail();
-            }
+            mview.ringAdd(HostAndPort.fromParts("127.0.0.1", i), UUID.randomUUID());
         }
 
         for (int i = 0; i < numNodes; i++) {
-            try {
-                mview.ringDelete(HostAndPort.fromParts("127.0.0.1", i));
-            } catch (final Exception e) {
-                numThrows++;
-            }
+            mview.ringDelete(HostAndPort.fromParts("127.0.0.1", i));
         }
-
-        assertEquals(0, numThrows);
 
         for (int k = 0; k < K; k++) {
             final List<HostAndPort> list = mview.getRing(k);
@@ -362,11 +350,7 @@ public class MembershipViewTest {
         int numExceptions = 0;
         final HostAndPort n1 = HostAndPort.fromParts("127.0.0.1", 1);
         final UUID id1 = UUID.randomUUID();
-        try {
-            mview.ringAdd(n1, id1);
-        } catch (final Exception e) {
-            fail();
-        }
+        mview.ringAdd(n1, id1);
 
         final HostAndPort n2 = HostAndPort.fromParts("127.0.0.1", 1);
         final UUID id2 = UUID.fromString(id1.toString());
@@ -374,7 +358,7 @@ public class MembershipViewTest {
         // Same host, same ID
         try {
             mview.ringAdd(n2, id2);
-        } catch (final Exception e) {
+        } catch (final MembershipView.UUIDAlreadySeenException e) {
             numExceptions++;
         }
         assertEquals(1, numExceptions);
@@ -382,7 +366,7 @@ public class MembershipViewTest {
         // Same host, different ID
         try {
             mview.ringAdd(n2, UUID.randomUUID());
-        } catch (final Exception e) {
+        } catch (final MembershipView.NodeAlreadyInRingException e) {
             numExceptions++;
         }
         assertEquals(2, numExceptions);
@@ -391,7 +375,7 @@ public class MembershipViewTest {
         final HostAndPort n3 = HostAndPort.fromParts("127.0.0.1", 2);
         try {
             mview.ringAdd(n3, id2);
-        } catch (final Exception e) {
+        } catch (final MembershipView.UUIDAlreadySeenException e) {
             numExceptions++;
         }
         assertEquals(3, numExceptions);
@@ -399,7 +383,7 @@ public class MembershipViewTest {
         // different host, different ID
         try {
             mview.ringAdd(n3, UUID.randomUUID());
-        } catch (final Exception e) {
+        } catch (final MembershipView.NodeNotInRingException e) {
             numExceptions++;
         }
         // Should not have triggered an exception
@@ -420,46 +404,29 @@ public class MembershipViewTest {
 
         final HostAndPort n1 = HostAndPort.fromParts("127.0.0.1", 1);
         final UUID id1 = UUID.randomUUID();
-        try {
-            mview.ringAdd(n1, id1);
-        } catch (final Exception e) {
-            fail();
-        }
+        mview.ringAdd(n1, id1);
 
         final HostAndPort n2 = HostAndPort.fromParts("127.0.0.1", 2);
         final UUID id2 = UUID.randomUUID();
 
         // Same host, same ID
-        try {
-            mview.ringAdd(n2, id2);
-        } catch (final Exception e) {
-            fail();
-        }
+        mview.ringAdd(n2, id2);
 
         // Node is removed from the ring
-        try {
-            mview.ringDelete(n2);
-        } catch (final Exception e) {
-            fail();
-        }
+        mview.ringDelete(n2);
         assertEquals(1, mview.getRing(0).size());
 
         int numExceptions = 0;
         // Node rejoins with id2
         try {
             mview.ringAdd(n2, id2);
-        } catch (final Exception e) {
+        } catch (final MembershipView.UUIDAlreadySeenException e) {
             numExceptions++;
         }
         assertEquals(1, numExceptions);
 
         // Re-attempt with new ID
-        try {
-            mview.ringAdd(n2, UUID.randomUUID());
-        } catch (final Exception e) {
-            fail();
-        }
-
+        mview.ringAdd(n2, UUID.randomUUID());
         assertEquals(2, mview.getRing(0).size());
     }
 

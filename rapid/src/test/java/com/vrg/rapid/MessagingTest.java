@@ -31,8 +31,6 @@ import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 import static org.junit.Assert.assertEquals;
@@ -47,8 +45,8 @@ public class MessagingTest {
     private static final int H = 8;
     private static final int L = 3;
 
-    private static final int serverPortBase = 1134;
-    private static final String localhostIp = "127.0.0.1";
+    private static final int SERVER_PORT_BASE = 1134;
+    private static final String LOCALHOST_IP = "127.0.0.1";
     private final List<RpcServer> rpcServers = new ArrayList<>();
     private final List<MembershipService> services = new ArrayList<>();
     private final ExecutorService protocolExecutor = Executors.newSingleThreadScheduledExecutor();
@@ -72,10 +70,10 @@ public class MessagingTest {
             MembershipView.NodeAlreadyInRingException, ExecutionException {
         final int serverPort = 1234;
         final int clientPort = 1235;
-        final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, serverPort);
+        final HostAndPort serverAddr = HostAndPort.fromParts(LOCALHOST_IP, serverPort);
         createAndStartMembershipService(serverAddr);
 
-        final HostAndPort clientAddr = HostAndPort.fromParts(localhostIp, clientPort);
+        final HostAndPort clientAddr = HostAndPort.fromParts(LOCALHOST_IP, clientPort);
         final RpcClient client = new RpcClient(clientAddr);
         final JoinResponse result = client.sendJoinMessage(serverAddr, clientAddr, UUID.randomUUID()).get();
         assertNotNull(result);
@@ -92,13 +90,13 @@ public class MessagingTest {
             throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException, ExecutionException {
         final int serverPort = 1234;
         final UUID nodeIdentifier = UUID.randomUUID();
-        final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, serverPort);
+        final HostAndPort serverAddr = HostAndPort.fromParts(LOCALHOST_IP, serverPort);
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, nodeIdentifier);
         createAndStartMembershipService(serverAddr, new ArrayList<>(), membershipView);
 
         // Try with the same host details as the server
-        final HostAndPort clientAddr1 = HostAndPort.fromParts(localhostIp, serverPort);
+        final HostAndPort clientAddr1 = HostAndPort.fromParts(LOCALHOST_IP, serverPort);
         final RpcClient client1 = new RpcClient(clientAddr1);
         final JoinResponse result1 = client1.sendJoinMessage(serverAddr, clientAddr1, UUID.randomUUID()).get();
         assertNotNull(result1);
@@ -109,7 +107,7 @@ public class MessagingTest {
         // Try again with a different port, this should fail because we're using the same
         // uuid as the server.
         final int clientPort2 = 1235;
-        final HostAndPort clientAddr2 = HostAndPort.fromParts(localhostIp, clientPort2);
+        final HostAndPort clientAddr2 = HostAndPort.fromParts(LOCALHOST_IP, clientPort2);
         final RpcClient client2 = new RpcClient(clientAddr2);
         final JoinResponse result2 = client2.sendJoinMessage(serverAddr, clientAddr2, nodeIdentifier).get();
         assertNotNull(result2);
@@ -128,16 +126,16 @@ public class MessagingTest {
             throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException, ExecutionException {
         final UUID nodeIdentifier = UUID.randomUUID();
         final int numNodes = 1000;
-        final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, serverPortBase);
+        final HostAndPort serverAddr = HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE);
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, nodeIdentifier);
         for (int i = 1; i < numNodes; i++) {
-            membershipView.ringAdd(HostAndPort.fromParts(localhostIp, serverPortBase + i), UUID.randomUUID());
+            membershipView.ringAdd(HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE + i), UUID.randomUUID());
         }
         createAndStartMembershipService(serverAddr, new ArrayList<>(), membershipView);
 
-        final int clientPort = serverPortBase - 1;
-        final HostAndPort joinerAddr = HostAndPort.fromParts(localhostIp, clientPort);
+        final int clientPort = SERVER_PORT_BASE - 1;
+        final HostAndPort joinerAddr = HostAndPort.fromParts(LOCALHOST_IP, clientPort);
         final RpcClient joinerClient = new RpcClient(joinerAddr);
         final JoinResponse phaseOneResult = joinerClient.sendJoinMessage(serverAddr,
                                                                          joinerAddr, UUID.randomUUID()).get();
@@ -165,14 +163,14 @@ public class MessagingTest {
     public void joinWithSingleNodeBootstrap()
             throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException, ExecutionException {
         final UUID nodeIdentifier = UUID.randomUUID();
-        final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, serverPortBase);
+        final HostAndPort serverAddr = HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE);
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, nodeIdentifier);
         createAndStartMembershipService(serverAddr,
                 new ArrayList<>(), membershipView);
 
-        final int clientPort = serverPortBase - 1;
-        final HostAndPort joinerAddress = HostAndPort.fromParts(localhostIp, clientPort);
+        final int clientPort = SERVER_PORT_BASE - 1;
+        final HostAndPort joinerAddress = HostAndPort.fromParts(LOCALHOST_IP, clientPort);
         final RpcClient joinerRpcClient = new RpcClient(joinerAddress);
         final UUID joinerUuid = UUID.randomUUID();
         final JoinResponse response = joinerRpcClient.sendJoinMessage(serverAddr, joinerAddress, joinerUuid).get();
@@ -201,14 +199,14 @@ public class MessagingTest {
     public void bootstrapAndThenProbeTest()
             throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException, ExecutionException {
         final UUID nodeIdentifier = UUID.randomUUID();
-        final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, serverPortBase);
+        final HostAndPort serverAddr = HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE);
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, nodeIdentifier);
         createAndStartMembershipService(serverAddr,
                 new ArrayList<>(), membershipView);
 
-        final int clientPort = serverPortBase - 1;
-        final HostAndPort joinerAddress = HostAndPort.fromParts(localhostIp, clientPort);
+        final int clientPort = SERVER_PORT_BASE - 1;
+        final HostAndPort joinerAddress = HostAndPort.fromParts(LOCALHOST_IP, clientPort);
         final RpcClient joinerRpcClient = new RpcClient(joinerAddress);
         final UUID joinerUuid = UUID.randomUUID();
         final JoinResponse response = joinerRpcClient.sendJoinMessage(serverAddr, joinerAddress, joinerUuid).get();
@@ -244,8 +242,8 @@ public class MessagingTest {
     @Test
     public void probeBeforeBootstrapTest()
             throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException, ExecutionException {
-        final HostAndPort serverAddr1 = HostAndPort.fromParts(localhostIp, serverPortBase);
-        final HostAndPort serverAddr2 = HostAndPort.fromParts(localhostIp, serverPortBase + 1);
+        final HostAndPort serverAddr1 = HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE);
+        final HostAndPort serverAddr2 = HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE + 1);
         final UUID nodeIdentifier1 = UUID.randomUUID();
         final UUID nodeIdentifier2 = UUID.randomUUID();
         final RpcServer rpcServer = new RpcServer(serverAddr2, protocolExecutor);
@@ -275,12 +273,12 @@ public class MessagingTest {
     public void droppedMessage() throws InterruptedException,
             IOException, MembershipView.NodeAlreadyInRingException {
         final int serverPort = 1234;
-        final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, serverPort);
+        final HostAndPort serverAddr = HostAndPort.fromParts(LOCALHOST_IP, serverPort);
         final List<ServerInterceptor> interceptors = new ArrayList<>();
         interceptors.add(new ServerDropInterceptors.FixedProbability(1.0));
         createAndStartMembershipService(serverAddr, interceptors);
 
-        final HostAndPort clientAddr = HostAndPort.fromParts(localhostIp, serverPort);
+        final HostAndPort clientAddr = HostAndPort.fromParts(LOCALHOST_IP, serverPort);
         final RpcClient client = new RpcClient(clientAddr);
         boolean exceptionCaught = false;
         try {

@@ -34,7 +34,7 @@ public class WatermarkBufferTest {
     private static final int K = 10;
     private static final int H = 8;
     private static final int L = 2;
-    private static final long configurationId = -1;  // Should not affect the following tests
+    private static final long CONFIGURATION_ID = -1;  // Should not affect the following tests
 
     /**
      * A series of updates with the right ring indexes
@@ -47,13 +47,13 @@ public class WatermarkBufferTest {
 
         for (int i = 0; i < H - 1; i++) {
             ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                    HostAndPort.fromParts("127.0.0.1", i + 1), dst, LinkStatus.UP, configurationId, i));
+                    HostAndPort.fromParts("127.0.0.1", i + 1), dst, LinkStatus.UP, CONFIGURATION_ID, i));
             assertEquals(0, ret.size());
             assertEquals(0, wb.getNumProposals());
         }
 
         ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                HostAndPort.fromParts("127.0.0.1", H), dst, LinkStatus.UP, configurationId, H - 1));
+                HostAndPort.fromParts("127.0.0.1", H), dst, LinkStatus.UP, CONFIGURATION_ID, H - 1));
         assertEquals(1, ret.size());
         assertEquals(1, wb.getNumProposals());
     }
@@ -67,25 +67,25 @@ public class WatermarkBufferTest {
 
         for (int i = 0; i < H - 1; i++) {
             ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                    HostAndPort.fromParts("127.0.0.1", i + 1), dst1, LinkStatus.UP, configurationId, i));
+                    HostAndPort.fromParts("127.0.0.1", i + 1), dst1, LinkStatus.UP, CONFIGURATION_ID, i));
             assertEquals(0, ret.size());
             assertEquals(0, wb.getNumProposals());
         }
 
         for (int i = 0; i < H - 1; i++) {
             ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                    HostAndPort.fromParts("127.0.0.1", i + 1), dst2, LinkStatus.UP, configurationId, i));
+                    HostAndPort.fromParts("127.0.0.1", i + 1), dst2, LinkStatus.UP, CONFIGURATION_ID, i));
             assertEquals(0, ret.size());
             assertEquals(0, wb.getNumProposals());
         }
 
         ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                HostAndPort.fromParts("127.0.0.1", H), dst1, LinkStatus.UP, configurationId, H - 1));
+                HostAndPort.fromParts("127.0.0.1", H), dst1, LinkStatus.UP, CONFIGURATION_ID, H - 1));
         assertEquals(0, ret.size());
         assertEquals(0, wb.getNumProposals());
 
         ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                HostAndPort.fromParts("127.0.0.1", H), dst2, LinkStatus.UP, configurationId, H - 1));
+                HostAndPort.fromParts("127.0.0.1", H), dst2, LinkStatus.UP, CONFIGURATION_ID, H - 1));
         assertEquals(2, ret.size());
         assertEquals(1, wb.getNumProposals());
     }
@@ -101,37 +101,37 @@ public class WatermarkBufferTest {
 
         for (int i = 0; i < H - 1; i++) {
             ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                    HostAndPort.fromParts("127.0.0.1", i + 1), dst1, LinkStatus.UP, configurationId, i));
+                    HostAndPort.fromParts("127.0.0.1", i + 1), dst1, LinkStatus.UP, CONFIGURATION_ID, i));
             assertEquals(0, ret.size());
             assertEquals(0, wb.getNumProposals());
         }
 
         for (int i = 0; i < H - 1; i++) {
             ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                    HostAndPort.fromParts("127.0.0.1", i + 1), dst2, LinkStatus.UP, configurationId, i));
+                    HostAndPort.fromParts("127.0.0.1", i + 1), dst2, LinkStatus.UP, CONFIGURATION_ID, i));
             assertEquals(0, ret.size());
             assertEquals(0, wb.getNumProposals());
         }
 
         for (int i = 0; i < H - 1; i++) {
             ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                    HostAndPort.fromParts("127.0.0.1", i + 1), dst3, LinkStatus.UP, configurationId, i));
+                    HostAndPort.fromParts("127.0.0.1", i + 1), dst3, LinkStatus.UP, CONFIGURATION_ID, i));
             assertEquals(0, ret.size());
             assertEquals(0, wb.getNumProposals());
         }
 
         ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                HostAndPort.fromParts("127.0.0.1", H), dst1, LinkStatus.UP, configurationId, H - 1));
+                HostAndPort.fromParts("127.0.0.1", H), dst1, LinkStatus.UP, CONFIGURATION_ID, H - 1));
         assertEquals(0, ret.size());
         assertEquals(0, wb.getNumProposals());
 
         ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                HostAndPort.fromParts("127.0.0.1", H), dst3, LinkStatus.UP, configurationId, H - 1));
+                HostAndPort.fromParts("127.0.0.1", H), dst3, LinkStatus.UP, CONFIGURATION_ID, H - 1));
         assertEquals(0, ret.size());
         assertEquals(0, wb.getNumProposals());
 
         ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                HostAndPort.fromParts("127.0.0.1", H), dst2, LinkStatus.UP, configurationId, H - 1));
+                HostAndPort.fromParts("127.0.0.1", H), dst2, LinkStatus.UP, CONFIGURATION_ID, H - 1));
         assertEquals(3, ret.size());
         assertEquals(1, wb.getNumProposals());
     }
@@ -146,21 +146,21 @@ public class WatermarkBufferTest {
 
         for (int i = 0; i < H - 1; i++) {
             ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                    HostAndPort.fromParts("127.0.0.1", i + 1), dst1, LinkStatus.UP, configurationId, i));
+                    HostAndPort.fromParts("127.0.0.1", i + 1), dst1, LinkStatus.UP, CONFIGURATION_ID, i));
             assertEquals(0, ret.size());
             assertEquals(0, wb.getNumProposals());
         }
 
         for (int i = 0; i < H - 1; i++) {
             ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                    HostAndPort.fromParts("127.0.0.1", i + 1), dst2, LinkStatus.UP, configurationId, i));
+                    HostAndPort.fromParts("127.0.0.1", i + 1), dst2, LinkStatus.UP, CONFIGURATION_ID, i));
             assertEquals(0, ret.size());
             assertEquals(0, wb.getNumProposals());
         }
 
         for (int i = 0; i < H - 1; i++) {
             ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                    HostAndPort.fromParts("127.0.0.1", i + 1), dst3, LinkStatus.UP, configurationId, i));
+                    HostAndPort.fromParts("127.0.0.1", i + 1), dst3, LinkStatus.UP, CONFIGURATION_ID, i));
             assertEquals(0, ret.size());
             assertEquals(0, wb.getNumProposals());
         }
@@ -168,22 +168,22 @@ public class WatermarkBufferTest {
         // Unlike the previous test, add more reports for
         // dst1 and dst3 past the H boundary.
         wb.aggregateForProposal(createLinkUpdateMessage(
-                HostAndPort.fromParts("127.0.0.1", H), dst1, LinkStatus.UP, configurationId, H - 1));
+                HostAndPort.fromParts("127.0.0.1", H), dst1, LinkStatus.UP, CONFIGURATION_ID, H - 1));
         ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                HostAndPort.fromParts("127.0.0.1", H + 1), dst1, LinkStatus.UP, configurationId, H - 1));
+                HostAndPort.fromParts("127.0.0.1", H + 1), dst1, LinkStatus.UP, CONFIGURATION_ID, H - 1));
         assertEquals(0, ret.size());
         assertEquals(0, wb.getNumProposals());
 
         wb.aggregateForProposal(createLinkUpdateMessage(
-                HostAndPort.fromParts("127.0.0.1", H), dst3, LinkStatus.UP, configurationId, H - 1));
+                HostAndPort.fromParts("127.0.0.1", H), dst3, LinkStatus.UP, CONFIGURATION_ID, H - 1));
         ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                HostAndPort.fromParts("127.0.0.1", H + 1), dst3, LinkStatus.UP, configurationId, H - 1));
+                HostAndPort.fromParts("127.0.0.1", H + 1), dst3, LinkStatus.UP, CONFIGURATION_ID, H - 1));
         assertEquals(0, ret.size());
         assertEquals(0, wb.getNumProposals());
 
 
         ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                HostAndPort.fromParts("127.0.0.1", H), dst2, LinkStatus.UP, configurationId, H - 1));
+                HostAndPort.fromParts("127.0.0.1", H), dst2, LinkStatus.UP, CONFIGURATION_ID, H - 1));
         assertEquals(3, ret.size());
         assertEquals(1, wb.getNumProposals());
     }
@@ -198,7 +198,7 @@ public class WatermarkBufferTest {
 
         for (int i = 0; i < H - 1; i++) {
             ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                    HostAndPort.fromParts("127.0.0.1", i + 1), dst1, LinkStatus.UP, configurationId, i));
+                    HostAndPort.fromParts("127.0.0.1", i + 1), dst1, LinkStatus.UP, CONFIGURATION_ID, i));
             assertEquals(0, ret.size());
             assertEquals(0, wb.getNumProposals());
         }
@@ -206,25 +206,25 @@ public class WatermarkBufferTest {
         // Unlike the previous test, dst2 has < L updates
         for (int i = 0; i < L - 1; i++) {
             ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                    HostAndPort.fromParts("127.0.0.1", i + 1), dst2, LinkStatus.UP, configurationId, i));
+                    HostAndPort.fromParts("127.0.0.1", i + 1), dst2, LinkStatus.UP, CONFIGURATION_ID, i));
             assertEquals(0, ret.size());
             assertEquals(0, wb.getNumProposals());
         }
 
         for (int i = 0; i < H - 1; i++) {
             ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                    HostAndPort.fromParts("127.0.0.1", i + 1), dst3, LinkStatus.UP, configurationId, i));
+                    HostAndPort.fromParts("127.0.0.1", i + 1), dst3, LinkStatus.UP, CONFIGURATION_ID, i));
             assertEquals(0, ret.size());
             assertEquals(0, wb.getNumProposals());
         }
 
         ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                HostAndPort.fromParts("127.0.0.1", H), dst1, LinkStatus.UP, configurationId, H - 1));
+                HostAndPort.fromParts("127.0.0.1", H), dst1, LinkStatus.UP, CONFIGURATION_ID, H - 1));
         assertEquals(0, ret.size());
         assertEquals(0, wb.getNumProposals());
 
         ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                HostAndPort.fromParts("127.0.0.1", H), dst3, LinkStatus.UP, configurationId, H - 1));
+                HostAndPort.fromParts("127.0.0.1", H), dst3, LinkStatus.UP, CONFIGURATION_ID, H - 1));
         assertEquals(2, ret.size());
         assertEquals(1, wb.getNumProposals());
     }
@@ -244,7 +244,7 @@ public class WatermarkBufferTest {
             for (int ringNumber = 0; ringNumber < K; ringNumber++) {
                 proposal.addAll(wb.aggregateForProposal(createLinkUpdateMessage(
                         HostAndPort.fromParts("127.0.0.1", 1), host, LinkStatus.UP,
-                        configurationId, ringNumber)));
+                        CONFIGURATION_ID, ringNumber)));
             }
         }
 
@@ -272,7 +272,7 @@ public class WatermarkBufferTest {
         // This adds alerts from the monitors[0, H - 1) of node dst.
         for (int i = 0; i < H - 1; i++) {
             ret = wb.aggregateForProposal(createLinkUpdateMessage(monitors.get(i), dst,
-                                                                  LinkStatus.DOWN, configurationId, i));
+                                                                  LinkStatus.DOWN, CONFIGURATION_ID, i));
             assertEquals(0, ret.size());
             assertEquals(0, wb.getNumProposals());
         }
@@ -284,7 +284,7 @@ public class WatermarkBufferTest {
             failedMonitors.add(monitors.get(i));
             for (int j = 0; j < K; j++) {
                 ret = wb.aggregateForProposal(createLinkUpdateMessage(monitorsOfMonitor.get(j), monitors.get(i),
-                        LinkStatus.DOWN, configurationId, j));
+                        LinkStatus.DOWN, CONFIGURATION_ID, j));
                 assertEquals(0, ret.size());
                 assertEquals(0, wb.getNumProposals());
             }
