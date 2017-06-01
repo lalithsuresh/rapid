@@ -47,16 +47,11 @@ public class MessagingTest {
     private static final int H = 8;
     private static final int L = 3;
 
-    private final int serverPortBase = 1134;
+    private static final int serverPortBase = 1134;
     private static final String localhostIp = "127.0.0.1";
     private final List<RpcServer> rpcServers = new ArrayList<>();
     private final List<MembershipService> services = new ArrayList<>();
     private final ExecutorService protocolExecutor = Executors.newSingleThreadScheduledExecutor();
-
-    static {
-        // gRPC INFO logs clutter the test output
-        Logger.getLogger("io.grpc").setLevel(Level.WARNING);
-    }
 
     @After
     public void cleanup() throws InterruptedException {
@@ -78,7 +73,7 @@ public class MessagingTest {
         final int serverPort = 1234;
         final int clientPort = 1235;
         final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, serverPort);
-        @SuppressWarnings("unused") final RpcServer rpcServer = createAndStartMembershipService(serverAddr);
+        createAndStartMembershipService(serverAddr);
 
         final HostAndPort clientAddr = HostAndPort.fromParts(localhostIp, clientPort);
         final RpcClient client = new RpcClient(clientAddr);
@@ -100,8 +95,7 @@ public class MessagingTest {
         final HostAndPort serverAddr = HostAndPort.fromParts(localhostIp, serverPort);
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, nodeIdentifier);
-        @SuppressWarnings("unused") final RpcServer rpcServer = createAndStartMembershipService(serverAddr,
-                                            new ArrayList<>(), membershipView);
+        createAndStartMembershipService(serverAddr, new ArrayList<>(), membershipView);
 
         // Try with the same host details as the server
         final HostAndPort clientAddr1 = HostAndPort.fromParts(localhostIp, serverPort);
@@ -140,8 +134,7 @@ public class MessagingTest {
         for (int i = 1; i < numNodes; i++) {
             membershipView.ringAdd(HostAndPort.fromParts(localhostIp, serverPortBase + i), UUID.randomUUID());
         }
-        @SuppressWarnings("unused") final RpcServer rpcServer = createAndStartMembershipService(serverAddr,
-                new ArrayList<>(), membershipView);
+        createAndStartMembershipService(serverAddr, new ArrayList<>(), membershipView);
 
         final int clientPort = serverPortBase - 1;
         final HostAndPort joinerAddr = HostAndPort.fromParts(localhostIp, clientPort);

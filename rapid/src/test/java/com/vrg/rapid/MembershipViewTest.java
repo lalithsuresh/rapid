@@ -17,6 +17,7 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.net.HostAndPort;
 import org.junit.Test;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -186,13 +187,13 @@ public class MembershipViewTest {
         final HostAndPort n2 = HostAndPort.fromParts("127.0.0.1", 2);
 
         try {
-            mview.getMonitoreesOf(n2).size();
+            mview.getMonitoreesOf(n2);
             fail();
         } catch (final MembershipView.NodeNotInRingException ignored) {
         }
 
         try {
-            mview.getMonitorsOf(n2).size();
+            mview.getMonitorsOf(n2);
             fail();
         } catch (final MembershipView.NodeNotInRingException ignored) {
         }
@@ -208,14 +209,14 @@ public class MembershipViewTest {
         final HostAndPort n = HostAndPort.fromParts("127.0.0.1", 1);
 
         try {
-            mview.getMonitoreesOf(n).size();
+            mview.getMonitoreesOf(n);
         } catch (final MembershipView.NodeNotInRingException e) {
             numExceptions++;
         }
         assertEquals(1, numExceptions);
 
         try {
-            mview.getMonitorsOf(n).size();
+            mview.getMonitorsOf(n);
         } catch (final MembershipView.NodeNotInRingException e) {
             numExceptions++;
         }
@@ -475,12 +476,8 @@ public class MembershipViewTest {
 
         for (int i = 0; i < numNodes; i++) {
             final HostAndPort n = HostAndPort.fromParts("127.0.0.1", i);
-            try {
-                mview.ringAdd(n, UUID.nameUUIDFromBytes(n.toString().getBytes()));
-                set.add(mview.getCurrentConfigurationId());
-            } catch (final Exception e) {
-                fail();
-            }
+            mview.ringAdd(n, UUID.nameUUIDFromBytes(n.toString().getBytes(StandardCharsets.UTF_8)));
+            set.add(mview.getCurrentConfigurationId());
         }
         assertEquals(numNodes, set.size()); // should be 1000 different configurations
     }
@@ -502,22 +499,14 @@ public class MembershipViewTest {
 
         for (int i = 0; i < numNodes; i++) {
             final HostAndPort n = HostAndPort.fromParts("127.0.0.1", i);
-            try {
-                mview1.ringAdd(n, UUID.nameUUIDFromBytes(n.toString().getBytes()));
-                list1.add(mview1.getCurrentConfigurationId());
-            } catch (final Exception e) {
-                fail();
-            }
+            mview1.ringAdd(n, UUID.nameUUIDFromBytes(n.toString().getBytes(StandardCharsets.UTF_8)));
+            list1.add(mview1.getCurrentConfigurationId());
         }
 
         for (int i = numNodes - 1; i > -1; i--) {
             final HostAndPort n = HostAndPort.fromParts("127.0.0.1", i);
-            try {
-                mview2.ringAdd(n, UUID.nameUUIDFromBytes(n.toString().getBytes()));
-                list2.add(mview2.getCurrentConfigurationId());
-            } catch (final Exception e) {
-                fail();
-            }
+            mview2.ringAdd(n, UUID.nameUUIDFromBytes(n.toString().getBytes(StandardCharsets.UTF_8)));
+            list2.add(mview2.getCurrentConfigurationId());
         }
 
         assertEquals(numNodes, list1.size());

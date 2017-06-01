@@ -63,15 +63,13 @@ class ServerDropInterceptors {
     static class FirstN<T1, T2> implements ServerInterceptor {
         private final AtomicInteger counter;
         private final MethodDescriptor<T1, T2> methodDescriptor;
-        private final HostAndPort host;
 
-        FirstN(final int N, final MethodDescriptor<T1, T2> methodDescriptor, final HostAndPort host) {
+        FirstN(final int N, final MethodDescriptor<T1, T2> methodDescriptor) {
             if (N < 1) {
                 throw new IllegalArgumentException("N must be >= 1");
             }
             this.counter = new AtomicInteger(N);
             this.methodDescriptor = methodDescriptor;
-            this.host = host;
         }
 
         @Override

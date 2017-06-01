@@ -102,6 +102,7 @@
                     <!-- Configures the directory in which the XML report is created -->
                     <excludeFilterFile>${project.basedir}/findbugs-exclude.xml</excludeFilterFile>
                     <findbugsXmlOutputDirectory>${project.build.directory}/findbugs</findbugsXmlOutputDirectory>
+                    <includeTests>true</includeTests>
                 </configuration>
                 <executions>
                     <!--

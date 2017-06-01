@@ -503,7 +503,7 @@ public class ClusterTest {
         try {
             final CountDownLatch latch = new CountDownLatch(numNodes);
             for (int i = 0; i < numNodes; i++) {
-                executor.submit(() -> {
+                executor.execute(() -> {
                     try {
                         final HostAndPort joiningHost =
                                 HostAndPort.fromParts("127.0.0.1", portCounter.incrementAndGet());
@@ -537,7 +537,7 @@ public class ClusterTest {
         final ExecutorService executor = Executors.newWorkStealingPool(1);
         try {
             final CountDownLatch latch = new CountDownLatch(1);
-            executor.submit(() -> {
+            executor.execute(() -> {
                 try {
                     final Cluster nonSeed = buildCluster(joiningNode).join(seedHost);
                     instances.put(joiningNode, nonSeed);
@@ -569,7 +569,7 @@ public class ClusterTest {
         final ExecutorService executor = Executors.newWorkStealingPool(numNodes);
         try {
             for (int i = 0; i < numNodes; i++) {
-                executor.submit(() -> {
+                executor.execute(() -> {
                     try {
                         final HostAndPort joiningHost =
                                 HostAndPort.fromParts("127.0.0.1", portCounter.incrementAndGet());
@@ -730,7 +730,7 @@ public class ClusterTest {
     private <T, E> void dropFirstNAtServer(final HostAndPort host, final int N,
                                            final MethodDescriptor<T, E> messageType) {
         serverInterceptors.computeIfAbsent(host, (k) -> new ArrayList<>(1))
-                .add(new ServerDropInterceptors.FirstN<>(N, messageType, host));
+                .add(new ServerDropInterceptors.FirstN<>(N, messageType));
     }
 
     // Helper that delays requests of a given type at the client
