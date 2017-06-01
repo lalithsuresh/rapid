@@ -1,5 +1,6 @@
 package com.vrg.rapid.integration;
 
+import com.vrg.standalone.StandaloneAgent;
 import lombok.Getter;
 import lombok.experimental.Accessors;
 
@@ -10,7 +11,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 
-import java.lang.reflect.Field;
 import java.nio.file.Paths;
 
 import static java.nio.file.Files.write;
@@ -19,6 +19,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import com.google.common.io.Files;
 
@@ -28,24 +29,16 @@ import org.junit.Before;
 import org.junit.Assert;
 
 /**
- * AbstractIT for running rapid agents.
- * <p>
- * Created by zlokhandwala on 5/30/17.
+ * AbstractMultiJVMTest for running rapid agents.
  */
-public class AbstractIT {
+public class AbstractMultiJVMTest {
 
-    private static String RAPID_PROJECT_DIR = new File("..").getAbsolutePath() + File.separator;
-    private static String RAPID_RUNNER_JAR = RAPID_PROJECT_DIR + "rapid-examples/target/rapid-examples-1.0-SNAPSHOT-allinone.jar";
-    private static String KILL_COMMAND = "kill -9 ";
-
-    // Interval to wait after shutdown retry
-    private static Long SHUTDOWN_RETRY_WAIT = 500L;
-    // Number of retries to kill node before giving up.
-    private static int SHUTDOWN_RETRIES = 10;
+    // Get Rapid StandAlone runner jar path.
+    private static String RAPID_RUNNER_JAR = StandaloneAgent.class.getProtectionDomain().getCodeSource().getLocation().getPath();
 
     private static Set<RapidNodeRunner> rapidNodeRunners;
 
-    public AbstractIT() {
+    AbstractMultiJVMTest() {
         rapidNodeRunners = new HashSet<>();
     }
 
@@ -55,15 +48,15 @@ public class AbstractIT {
     @Before
     public void setUp() {
         OUTPUT_LOG_DIR = Files.createTempDir();
+        OUTPUT_LOG_DIR.deleteOnExit();
     }
 
     /**
      * Deletes temp output directory.
-     * Cleans up all deleteOnExit rapidNodeRunners.
+     * Cleans up all rapidNodeRunners.
      */
     @After
     public void cleanUp() {
-        OUTPUT_LOG_DIR.deleteOnExit();
         // remove if kill successful
         rapidNodeRunners.removeIf(rapidNodeRunner -> {
             if (rapidNodeRunner.killOnExit) {
@@ -112,7 +105,7 @@ public class AbstractIT {
         @Getter
         private Process rapidProcess;
 
-        private boolean isKilled = true;
+        private boolean isKilled = false;
         private boolean killOnExit = false;
 
         RapidNodeRunner(String seed, String listenAddress, String role, String clusterName) {
@@ -170,7 +163,6 @@ public class AbstractIT {
 
             ProcessBuilder builder = new ProcessBuilder();
             builder.command("sh", "-c", command);
-            builder.directory(new File(RAPID_PROJECT_DIR));
             Process rapidProcess = builder.start();
             OutputLogger outputLogger = new OutputLogger(rapidProcess.getInputStream(), outputLogFile.getAbsolutePath());
             Executors.newSingleThreadExecutor().submit(outputLogger);
@@ -179,21 +171,6 @@ public class AbstractIT {
             rapidNodeRunners.add(this);
 
             return this;
-        }
-
-        private long getPid(Process p) {
-            long pid = -1;
-            try {
-                if (p.getClass().getName().equals("java.lang.UNIXProcess")) {
-                    Field f = p.getClass().getDeclaredField("pid");
-                    f.setAccessible(true);
-                    pid = f.getLong(p);
-                    f.setAccessible(false);
-                }
-            } catch (Exception e) {
-                pid = -1;
-            }
-            return pid;
         }
 
         /**
@@ -213,16 +190,25 @@ public class AbstractIT {
          * @throws IOException          if I/O error occurs.
          * @throws InterruptedException if kill interrupted.
          */
-        boolean killNode() throws IOException, InterruptedException {
+        boolean killNode() throws IOException {
+
+            // Interval to wait after shutdown retry
+            Long SHUTDOWN_RETRY_WAIT = 500L;
+            // Number of retries to kill node before giving up.
+            int SHUTDOWN_RETRIES = 10;
+            // Timeout for a shutdown (millis)
+            int SHUTDOWN_TIMEOUT = 5000;
+
             Assert.assertNotNull(rapidProcess);
             long retries = SHUTDOWN_RETRIES;
 
             while (true) {
-                Long pid = getPid(rapidProcess);
-                ProcessBuilder builder = new ProcessBuilder();
-                builder.command("sh", "-c", KILL_COMMAND + pid);
-                Process p = builder.start();
-                p.waitFor();
+
+                try {
+                    this.rapidProcess.destroyForcibly().waitFor(SHUTDOWN_TIMEOUT, TimeUnit.MILLISECONDS);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
 
                 if (retries == 0) {
                     return false;
@@ -230,7 +216,10 @@ public class AbstractIT {
 
                 if (rapidProcess.isAlive()) {
                     retries--;
-                    Thread.sleep(SHUTDOWN_RETRY_WAIT);
+                    try {
+                        Thread.sleep(SHUTDOWN_RETRY_WAIT);
+                    } catch (InterruptedException ignored) {
+                    }
                 } else {
                     isKilled = true;
                     return true;
