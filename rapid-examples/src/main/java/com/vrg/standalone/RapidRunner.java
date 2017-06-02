@@ -6,36 +6,41 @@ import com.vrg.rapid.NodeStatusChange;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
+import java.util.Collections;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Created by lsuresh on 5/25/17.
+ * Brings up Rapid Cluster instances.
  */
 class RapidRunner {
-    @Nullable private final static Logger nettyLogger;
-    @Nullable private final static Logger grpcLogger;
+    @Nullable private static final Logger NETTY_LOGGER;
+    @Nullable private static final Logger GRPC_LOGGER;
     private final Cluster cluster;
     private final HostAndPort listenAddress;
 
     static {
-        grpcLogger = Logger.getLogger("io.grpc");
-        grpcLogger.setLevel(Level.WARNING);
-        nettyLogger = Logger.getLogger("io.grpc.netty.NettyServerHandler");
-        nettyLogger.setLevel(Level.OFF);
+        GRPC_LOGGER = Logger.getLogger("io.grpc");
+        GRPC_LOGGER.setLevel(Level.WARNING);
+        NETTY_LOGGER = Logger.getLogger("io.grpc.netty.NettyServerHandler");
+        NETTY_LOGGER.setLevel(Level.OFF);
     }
 
     RapidRunner(final HostAndPort listenAddress, final HostAndPort seedAddress,
-                       final int sleepDelayMsForNonSeed)
+                final String role, final int sleepDelayMsForNonSeed)
             throws IOException, InterruptedException {
         this.listenAddress = listenAddress;
         if (listenAddress.equals(seedAddress)) {
-            cluster = new Cluster.Builder(listenAddress).start();
+            cluster = new Cluster.Builder(listenAddress)
+                                 .setMetadata(Collections.singletonMap("role", role))
+                                 .start();
 
         } else {
             Thread.sleep(sleepDelayMsForNonSeed);
-            cluster = new Cluster.Builder(listenAddress).join(seedAddress);
+            cluster = new Cluster.Builder(listenAddress)
+                                 .setMetadata(Collections.singletonMap("role", role))
+                                 .join(seedAddress);
         }
         cluster.registerSubscription(com.vrg.rapid.ClusterEvents.VIEW_CHANGE_PROPOSAL,
                 this::onViewChangeProposal);

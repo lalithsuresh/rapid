@@ -11,7 +11,7 @@ import akka.cluster.ClusterEvent.UnreachableMember;
 
 
 /**
- * Created by lsuresh on 3/31/17.
+ * Akka Actor example
  */
 public class AkkaListener extends UntypedActor {
     private final Cluster cluster = Cluster.get(getContext().system());
@@ -32,19 +32,17 @@ public class AkkaListener extends UntypedActor {
     }
 
     @Override
-    public void onReceive(Object message) {
+    public void onReceive(final Object message) {
         if (message instanceof MemberUp) {
-            MemberUp mUp = (MemberUp) message;
-
+            final MemberUp upEvent = (MemberUp) message;
+            System.out.println(upEvent);
         } else if (message instanceof UnreachableMember) {
-            UnreachableMember mUnreachable = (UnreachableMember) message;
-            System.out.println(mUnreachable);
+            final UnreachableMember unreachableEvent = (UnreachableMember) message;
+            System.out.println(unreachableEvent);
 
         } else if (message instanceof MemberRemoved) {
-            MemberRemoved mRemoved = (MemberRemoved) message;
-
-        } else if (message instanceof MemberEvent) {
-            // ignore
+            final MemberRemoved removedEvent = (MemberRemoved) message;
+            System.out.println(removedEvent);
         } else {
             unhandled(message);
         }

@@ -6,26 +6,20 @@ import akka.actor.AddressFromURIString;
 import akka.actor.Props;
 import akka.cluster.Cluster;
 import akka.cluster.MemberStatus;
-import akka.util.Timeout;
 import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
-import com.vrg.rapid.NodeStatusChange;
-import scala.concurrent.Await;
-import scala.concurrent.duration.Duration;
 
-import java.util.Objects;
 import java.util.stream.Collectors;
 
 
 /**
- * Created by lsuresh on 5/25/17.
+ * Brings up an Akka Cluster instance
  */
 class AkkaRunner {
     private final HostAndPort listenAddress;
     private static final String APPLICATION = "rapid-akka";
-    private static final Timeout timeout = new Timeout(Duration.create(1000, "milliseconds"));
     private final ActorSystem actorSystem;
     private final Cluster cluster;
 
@@ -76,24 +70,6 @@ class AkkaRunner {
                 Thread.currentThread().interrupt();
             }
         }
-    }
-
-
-    /**
-     * Takes a node-change event and the associated metadata to obtain an ActorRef.
-     */
-    private ActorRef getActorRefForHost(final NodeStatusChange statusChange) {
-        Objects.requireNonNull(actorSystem);
-        try {
-            final String hostname = statusChange.getHostAndPort().getHost();    // Rapid host
-            final String port = statusChange.getMetadata().getMetadataOrThrow("akkaPort");     // Port for actor system
-            return Await.result(actorSystem.actorSelection(
-                    "akka.tcp://" + APPLICATION + "1@" + hostname + ":" + port + "/user/Printer").resolveOne(timeout),
-                    timeout.duration());
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        return null;
     }
 
     private static String seedUri(final HostAndPort seedAddress) {

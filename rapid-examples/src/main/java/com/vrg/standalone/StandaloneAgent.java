@@ -2,7 +2,6 @@ package com.vrg.standalone;
 
 import com.google.common.net.HostAndPort;
 import com.sun.management.UnixOperatingSystemMXBean;
-import com.vrg.rapid.Cluster;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.DefaultParser;
@@ -17,7 +16,6 @@ import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
@@ -30,10 +28,9 @@ public class StandaloneAgent {
     private static final int SLEEP_INTERVAL_MS = 1000;
     private static final int MAX_TRIES = 400;
 
-    public static void main( String[] args ) throws ParseException, IOException, InterruptedException {
+    public static void main(final String[] args) throws ParseException, IOException, InterruptedException {
         final OperatingSystemMXBean os = ManagementFactory.getOperatingSystemMXBean();
-        if(os instanceof UnixOperatingSystemMXBean)
-        {
+        if (os instanceof UnixOperatingSystemMXBean) {
             final UnixOperatingSystemMXBean bean = (UnixOperatingSystemMXBean) os;
             System.out.println("File descriptor limit: " + bean.getMaxFileDescriptorCount());
         }
@@ -70,7 +67,8 @@ public class StandaloneAgent {
             listenAddresses.forEach(listenAddress -> executor.execute(() -> {
                 // Setup Rapid cluster and wait until completion
                 try {
-                    final RapidRunner runner = new RapidRunner(listenAddress, seedAddress, WAIT_DELAY_NON_SEED_MS);
+                    final RapidRunner runner = new RapidRunner(listenAddress, seedAddress, role,
+                                                               WAIT_DELAY_NON_SEED_MS);
                     runners.add(runner);
                 } catch (final IOException | InterruptedException e) {
                     e.printStackTrace();
