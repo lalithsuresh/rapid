@@ -6,4 +6,4 @@ script:
         - mvn clean verify -Dorg.slf4j.simpleLogger.defaultLogLevel=OFF
 
 after_success:
-        - mvn -pl '!rapid-examples' jacoco:report coveralls:report
+        - mvn -pl '!build-common,!rapid-examples' jacoco:report coveralls:report
