@@ -13,12 +13,44 @@
     <version>1.0-SNAPSHOT</version>
     <name>rapid-project</name>
     <modules>
-       <module>rapid</module>
-       <module>rapid-examples</module>
-       <module>integration-tests</module>
+        <module>build-common</module>
+        <module>rapid</module>
+        <module>rapid-examples</module>
+        <module>integration-tests</module>
     </modules>
     <build>
         <plugins>
+            <!-- Coding style checks -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-checkstyle-plugin</artifactId>
+                <version>2.17</version>
+                <dependencies>
+                    <dependency>
+                        <groupId>com.vrg.rapid</groupId>
+                        <artifactId>build-common</artifactId>
+                        <version>1.0</version>
+                    </dependency>
+                </dependencies>
+                <configuration>
+                    <configLocation>checkstyle.xml</configLocation>
+                    <includeTestSourceDirectory>true</includeTestSourceDirectory>
+                    <suppressionsLocation>suppressions.xml</suppressionsLocation>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>checkstyle</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <configuration>
+                            <failOnViolation>true</failOnViolation>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- Code coverage: Jacoco -->
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
@@ -39,6 +71,7 @@
                     </excludes>
                 </configuration>
             </plugin>
+            <!-- Code coverage: Coveralls -->
             <plugin>
                 <groupId>org.eluder.coveralls</groupId>
                 <artifactId>coveralls-maven-plugin</artifactId>

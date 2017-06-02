@@ -6,12 +6,16 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
     <modelVersion>4.0.0</modelVersion>
-    <groupId>com.vrg</groupId>
     <artifactId>rapid</artifactId>
     <packaging>jar</packaging>
     <version>1.0-SNAPSHOT</version>
     <name>rapid</name>
     <url>http://maven.apache.org</url>
+    <parent>
+        <groupId>com.vrg</groupId>
+        <artifactId>rapid-project</artifactId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
     <reporting>
         <plugins>
             <plugin>
@@ -148,29 +152,6 @@
                         <arg>-Xlint:all,-options,-path</arg>
                     </compilerArgs>
                 </configuration>
-            </plugin>
-            <!-- Coding style checks -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-checkstyle-plugin</artifactId>
-                <version>2.17</version>
-                <configuration>
-                    <configLocation>${project.basedir}/checkstyle.xml</configLocation>
-                    <includeTestSourceDirectory>true</includeTestSourceDirectory>
-                    <suppressionsLocation>${project.basedir}/suppressions.xml</suppressionsLocation>
-                </configuration>
-                <executions>
-                    <execution>
-                        <id>checkstyle</id>
-                        <phase>validate</phase>
-                        <goals>
-                            <goal>check</goal>
-                        </goals>
-                        <configuration>
-                            <failOnViolation>true</failOnViolation>
-                        </configuration>
-                    </execution>
-                </executions>
             </plugin>
             <!-- Test runner -->
             <plugin>
