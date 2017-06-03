@@ -47,7 +47,15 @@ import org.junit.Assert;
 public class AbstractMultiJVMTest {
 
     // Get Rapid StandAlone runner jar path.
-    private static String RAPID_RUNNER_JAR = StandaloneAgent.class.getProtectionDomain().getCodeSource().getLocation().getPath();
+    private static String RAPID_RUNNER_JAR =
+            StandaloneAgent.class.getProtectionDomain().getCodeSource().getLocation().getPath();
+
+    // Interval to wait after shutdown retry
+    private static final Long SHUTDOWN_RETRY_WAIT_MS = 500L;
+    // Number of retries to kill node before giving up.
+    private static final int SHUTDOWN_RETRIES = 10;
+    // Timeout for a shutdown (millis)
+    private static final int SHUTDOWN_TIMEOUT_MS = 5000;
 
     private static Set<RapidNodeRunner> rapidNodeRunners;
 
@@ -76,7 +84,7 @@ public class AbstractMultiJVMTest {
                 if (!rapidNodeRunner.isKilled) {
                     try {
                         return rapidNodeRunner.killNode();
-                    } catch (Exception e) {
+                    } catch (final IOException e) {
                         e.printStackTrace();
                     }
                 } else {
@@ -96,7 +104,7 @@ public class AbstractMultiJVMTest {
             if (!rapidNodeRunner.isKilled) {
                 try {
                     rapidNodeRunner.killNode();
-                } catch (Exception e) {
+                } catch (final IOException e) {
                     e.printStackTrace();
                 }
             }
@@ -121,7 +129,7 @@ public class AbstractMultiJVMTest {
         private boolean isKilled = false;
         private boolean killOnExit = false;
 
-        RapidNodeRunner(String seed, String listenAddress, String role, String clusterName) {
+        RapidNodeRunner(final String seed, final String listenAddress, final String role, final String clusterName) {
             this.seed = seed;
             this.listenAddress = listenAddress;
             this.role = role;
@@ -129,10 +137,10 @@ public class AbstractMultiJVMTest {
         }
 
         private class OutputLogger implements Runnable {
-            private InputStream inputStream;
-            private String logfile;
+            private final InputStream inputStream;
+            private final String logfile;
 
-            private OutputLogger(InputStream inputStream, String logfile) {
+            private OutputLogger(final InputStream inputStream, final String logfile) {
                 this.inputStream = inputStream;
                 this.logfile = logfile;
             }
@@ -143,7 +151,7 @@ public class AbstractMultiJVMTest {
                         .forEach((x) -> {
                                     try {
                                         write(Paths.get(logfile), x.getBytes());
-                                    } catch (Exception e) {
+                                    } catch (final IOException e) {
                                         e.printStackTrace();
                                     }
                                 }
@@ -159,11 +167,11 @@ public class AbstractMultiJVMTest {
          */
         RapidNodeRunner runNode() throws IOException {
 
-            File rapidRunnerJar = new File(RAPID_RUNNER_JAR);
+            final File rapidRunnerJar = new File(RAPID_RUNNER_JAR);
             if (!rapidRunnerJar.exists()) {
                 throw new FileNotFoundException("Rapid runner jar not found.");
             }
-            String command = "java" +
+            final String command = "java" +
                     " -server" +
                     " -jar " + RAPID_RUNNER_JAR +
                     " --listenAddress " + this.listenAddress +
@@ -171,13 +179,15 @@ public class AbstractMultiJVMTest {
                     " --role " + this.role +
                     " --cluster " + this.clusterName;
 
-            File outputLogFile = new File(OUTPUT_LOG_DIR + File.separator + UUID.randomUUID().toString());
-            System.out.println("Output for listenAddress:" + listenAddress + " logged : " + outputLogFile.getAbsolutePath());
+            final File outputLogFile = new File(OUTPUT_LOG_DIR + File.separator + UUID.randomUUID().toString());
+            System.out.println("Output for listenAddress:" +
+                    listenAddress + " logged : " + outputLogFile.getAbsolutePath());
 
-            ProcessBuilder builder = new ProcessBuilder();
+            final ProcessBuilder builder = new ProcessBuilder();
             builder.command("sh", "-c", command);
-            Process rapidProcess = builder.start();
-            OutputLogger outputLogger = new OutputLogger(rapidProcess.getInputStream(), outputLogFile.getAbsolutePath());
+            final Process rapidProcess = builder.start();
+            final OutputLogger outputLogger =
+                    new OutputLogger(rapidProcess.getInputStream(), outputLogFile.getAbsolutePath());
             Executors.newSingleThreadExecutor().submit(outputLogger);
             this.rapidProcess = rapidProcess;
             isKilled = false;
@@ -205,21 +215,14 @@ public class AbstractMultiJVMTest {
          */
         boolean killNode() throws IOException {
 
-            // Interval to wait after shutdown retry
-            Long SHUTDOWN_RETRY_WAIT = 500L;
-            // Number of retries to kill node before giving up.
-            int SHUTDOWN_RETRIES = 10;
-            // Timeout for a shutdown (millis)
-            int SHUTDOWN_TIMEOUT = 5000;
-
             Assert.assertNotNull(rapidProcess);
             long retries = SHUTDOWN_RETRIES;
 
             while (true) {
 
                 try {
-                    this.rapidProcess.destroyForcibly().waitFor(SHUTDOWN_TIMEOUT, TimeUnit.MILLISECONDS);
-                } catch (InterruptedException e) {
+                    this.rapidProcess.destroyForcibly().waitFor(SHUTDOWN_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                } catch (final InterruptedException e) {
                     e.printStackTrace();
                 }
 
@@ -230,8 +233,8 @@ public class AbstractMultiJVMTest {
                 if (rapidProcess.isAlive()) {
                     retries--;
                     try {
-                        Thread.sleep(SHUTDOWN_RETRY_WAIT);
-                    } catch (InterruptedException ignored) {
+                        Thread.sleep(SHUTDOWN_RETRY_WAIT_MS);
+                    } catch (final InterruptedException ignored) {
                     }
                 } else {
                     isKilled = true;
