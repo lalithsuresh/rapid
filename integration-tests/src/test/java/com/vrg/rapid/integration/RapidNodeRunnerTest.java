@@ -10,10 +10,11 @@ public class RapidNodeRunnerTest extends AbstractMultiJVMTest {
 
     @Test
     public void runAndAssertSingleNode() throws Exception {
-        RapidNodeRunner r = new RapidNodeRunner("127.0.0.1:1234", "127.0.0.1:1234", "testRole", "Rapid")
+        final RapidNodeRunner rapidNodeRunner =
+                new RapidNodeRunner("127.0.0.1:1234", "127.0.0.1:1234", "testRole", "Rapid")
                 .runNode();
-        Assert.assertTrue(r.getRapidProcess().isAlive());
-        r.killNode();
-        Assert.assertFalse(r.getRapidProcess().isAlive());
+        Assert.assertTrue(rapidNodeRunner.getRapidProcess().isAlive());
+        rapidNodeRunner.killNode();
+        Assert.assertFalse(rapidNodeRunner.getRapidProcess().isAlive());
     }
 }
