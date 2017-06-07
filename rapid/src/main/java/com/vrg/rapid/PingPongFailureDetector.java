@@ -31,8 +31,6 @@ import javax.annotation.concurrent.NotThreadSafe;
 import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -42,7 +40,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 @NotThreadSafe
 public class PingPongFailureDetector implements ILinkFailureDetector {
     private static final Logger LOG = LoggerFactory.getLogger(PingPongFailureDetector.class);
-    private static final Executor BACKGROUND_EXECUTOR = Executors.newSingleThreadScheduledExecutor();
     private static final int FAILURE_THRESHOLD = 10;
 
     // Number of BOOTSTRAPPING status responses a node is allowed to return before we begin
@@ -72,7 +69,7 @@ public class PingPongFailureDetector implements ILinkFailureDetector {
         final ProbeMessage probeMessage = messageHashMap.get(monitoree);
         final SettableFuture<Void> completionEvent = SettableFuture.create();
         Futures.addCallback(rpcClient.sendProbeMessage(monitoree, probeMessage),
-                            new ProbeCallback(monitoree, completionEvent), BACKGROUND_EXECUTOR);
+                            new ProbeCallback(monitoree, completionEvent));
         return completionEvent;
     }
 
