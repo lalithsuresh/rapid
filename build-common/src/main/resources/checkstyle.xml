@@ -36,10 +36,10 @@
         <module name="MultipleVariableDeclarations"/>
         <module name="ArrayTypeStyle"/>
         <module name="IllegalCatch"/>
-	<module name="MethodParamPad"/>
-	<module name="ParenPad"/>
-	<module name="VariableDeclarationUsageDistance"/>
-	<module name="WhitespaceAroundCheck"/>
+        <module name="MethodParamPad"/>
+        <module name="ParenPad"/>
+        <module name="VariableDeclarationUsageDistance"/>
+        <module name="WhitespaceAroundCheck"/>
         <module name="MissingSwitchDefault"/>
         <module name="FallThrough"/>
         <module name="UpperEll"/>
