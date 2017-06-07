@@ -38,6 +38,7 @@ import io.grpc.StatusRuntimeException;
 import io.grpc.inprocess.InProcessChannelBuilder;
 import io.grpc.internal.ManagedChannelImpl;
 import io.grpc.netty.NettyChannelBuilder;
+import io.netty.channel.ChannelOption;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -203,6 +204,7 @@ final class RpcClient {
      */
     void shutdown() {
         shuttingDown = true;
+        channelMap.keySet().forEach(this::shutdownChannel);
     }
 
     /**
@@ -233,9 +235,6 @@ final class RpcClient {
                                         final SettableFuture<T> signal,
                                         final int retries) {
         ListenableFuture<T> callFuture;
-        // StatusRuntimeException is thrown by gRPC commands failing. NPEs are thrown by gRPC when we
-        // shutdown a channel on which another RPC is already about to be made. A retry in the latter case
-        // attempts to re-establish the channel.
         if (shuttingDown) {
             return;
         }
@@ -317,6 +316,7 @@ final class RpcClient {
             channel = NettyChannelBuilder
                     .forAddress(remote.getHost(), remote.getPort())
                     .executor(GRPC_EXECUTORS)
+                    .withOption(ChannelOption.SO_REUSEADDR, true)
                     .usePlaintext(true)
                     .idleTimeout(10, TimeUnit.SECONDS)
                     .build();
