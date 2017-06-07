@@ -64,7 +64,7 @@ import java.util.stream.Collectors;
  * be part of multiple separate clusters.
  */
 public final class Cluster {
-    private static final Logger LOG = LoggerFactory.getLogger("Cluster");
+    private static final Logger LOG = LoggerFactory.getLogger(Cluster.class);
     private static final int K = 10;
     private static final int H = 9;
     private static final int L = 4;
@@ -201,7 +201,7 @@ public final class Cluster {
                     continue;
                 case MEMBERSHIP_REJECTED:
                     LOG.error("Membership rejected by {}. Quitting.", joinPhaseOneResult.getSender());
-                    throw new RuntimeException("Membership rejected");
+                    throw new JoinException("Membership rejected");
                 case HOSTNAME_ALREADY_IN_RING:
                     /*
                      * This is a special case. If the joinPhase2 request times out before the join confirmation
@@ -215,7 +215,7 @@ public final class Cluster {
                 case SAFE_TO_JOIN:
                     break;
                 default:
-                    throw new RuntimeException("Unrecognized status code");
+                    throw new JoinException("Unrecognized status code");
             }
 
             // -1 if we got a HOSTNAME_ALREADY_IN_RING status code in phase 1. This means we only need to ask
@@ -313,7 +313,7 @@ public final class Cluster {
             }
         }
         server.stopServer();
-        throw new RuntimeException("Join attempt unsuccessful " + listenAddress);
+        throw new JoinException("Join attempt unsuccessful " + listenAddress);
     }
 
     /**
@@ -407,5 +407,11 @@ public final class Cluster {
     @Override
     public String toString() {
         return "Cluster:" + listenAddress;
+    }
+
+    public static final class JoinException extends RuntimeException {
+        JoinException(final String msg) {
+            super(msg);
+        }
     }
 }

@@ -20,7 +20,6 @@ import io.grpc.MethodDescriptor;
 import io.grpc.ServerInterceptor;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TestWatcher;
@@ -42,8 +41,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -55,8 +52,6 @@ import static org.junit.Assert.fail;
  * Test public API
  */
 public class ClusterTest {
-    @SuppressWarnings("FieldCanBeLocal") @Nullable private static Logger grpcLogger = null;
-    @SuppressWarnings("FieldCanBeLocal") @Nullable private static Logger nettyLogger = null;
     private static final int RPC_TIMEOUT_SHORT_MS = 500;
     private static final int RPC_TIMEOUT_VERY_SHORT_MS = 100;
     private final Map<HostAndPort, Cluster> instances = new ConcurrentHashMap<>();
@@ -79,15 +74,6 @@ public class ClusterTest {
                                + "\u001B[0m");
         }
     };
-
-    @BeforeClass
-    public static void beforeClass() {
-        // gRPC INFO logs clutter the test output
-        grpcLogger = Logger.getLogger("io.grpc");
-        grpcLogger.setLevel(Level.WARNING);
-        nettyLogger = Logger.getLogger("io.grpc.netty.NettyServerHandler");
-        nettyLogger.setLevel(Level.OFF);
-    }
 
     @Before
     public void beforeTest() {
@@ -215,11 +201,11 @@ public class ClusterTest {
      * identifies the failing node and arrives at a decision to remove it.
      */
     @Test
-    public void oneFailureOutOfFourNodes() throws IOException, InterruptedException {
+    public void oneFailureOutOfFiveNodes() throws IOException, InterruptedException {
         MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 1000;
         MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 500;
 
-        final int numNodes = 4;
+        final int numNodes = 5;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         createCluster(numNodes, seedHost);
         verifyCluster(numNodes, seedHost);
@@ -431,6 +417,30 @@ public class ClusterTest {
         }
     }
 
+
+    /**
+     * Shutdown a node and rejoin before the failure detectors kick it out
+     */
+    @Test
+    public void testRejoinSingleNodeSameConfiguration() throws IOException, InterruptedException {
+        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 0;
+        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 200;
+        RpcClient.Conf.RPC_PROBE_TIMEOUT = 100;
+        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
+        final HostAndPort leavingHost = HostAndPort.fromParts("127.0.0.1", basePort + 1);
+        createCluster(10, seedHost);
+
+        // Shutdown and rejoin five times
+        final Cluster cluster = instances.remove(leavingHost);
+        cluster.shutdown();
+        try {
+            extendCluster(leavingHost, seedHost);
+        } catch (final Cluster.JoinException ignored) {
+        }
+        Thread.sleep(10000);
+        extendCluster(leavingHost, seedHost);
+        waitAndVerifyAgreement(10, 10, 500, seedHost);
+    }
 
     /**
      * Shutdown a node and rejoin multiple times.
