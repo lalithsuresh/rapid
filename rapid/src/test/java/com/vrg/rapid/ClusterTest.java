@@ -88,7 +88,6 @@ public class ClusterTest {
         RpcClient.USE_IN_PROCESS_CHANNEL = true;
 
         // Tests that depend on failure detection should set intervals by themselves
-        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 100000;
         MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 100000;
         RpcClient.Conf.RPC_JOIN_PHASE_2_TIMEOUT = RpcClient.Conf.RPC_TIMEOUT_MEDIUM_MS * 20;
         RpcClient.Conf.RPC_TIMEOUT_MS = RpcClient.Conf.RPC_TIMEOUT_MEDIUM_MS;
@@ -111,7 +110,7 @@ public class ClusterTest {
     /**
      * Test with a single node joining through a seed.
      */
-    @Test
+    @Test(timeout = 30000)
     public void singleNodeJoinsThroughSeed() throws IOException, InterruptedException, ExecutionException {
         RpcServer.USE_IN_PROCESS_SERVER = false;
         RpcClient.USE_IN_PROCESS_CHANNEL = false;
@@ -126,7 +125,7 @@ public class ClusterTest {
     /**
      * Test with K nodes joining the network through a single seed.
      */
-    @Test
+    @Test(timeout = 30000)
     public void tenNodesJoinSequentially() throws IOException, InterruptedException {
         // Explicitly test netty
         RpcServer.USE_IN_PROCESS_SERVER = false;
@@ -145,7 +144,7 @@ public class ClusterTest {
     /**
      * Identical to the previous test, but with more than K nodes joining in serial.
      */
-    @Test
+    @Test(timeout = 30000)
     public void twentyNodesJoinSequentially() throws IOException, InterruptedException {
         // Explicitly test netty
         RpcServer.USE_IN_PROCESS_SERVER = false;
@@ -200,9 +199,8 @@ public class ClusterTest {
      * This test starts with a 4 node cluster. We then fail a single node to see if the monitoring mechanism
      * identifies the failing node and arrives at a decision to remove it.
      */
-    @Test
+    @Test(timeout = 30000)
     public void oneFailureOutOfFiveNodes() throws IOException, InterruptedException {
-        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 1000;
         MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 500;
 
         final int numNodes = 5;
@@ -220,7 +218,6 @@ public class ClusterTest {
      */
     @Test(timeout = 30000)
     public void concurrentNodeJoinsAndFails() throws IOException, InterruptedException {
-        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 100;
         MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 200;
 
         final int numNodes = 30;
@@ -242,7 +239,6 @@ public class ClusterTest {
      */
     @Test(timeout = 30000)
     public void concurrentNodeJoinsNetty() throws IOException, InterruptedException {
-        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 100000;
         MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 100000;
         RpcServer.USE_IN_PROCESS_SERVER = false;
         RpcClient.USE_IN_PROCESS_CHANNEL = false;
@@ -273,9 +269,8 @@ public class ClusterTest {
      * identifies the crashed nodes, and arrives at a decision.
      *
      */
-    @Test
+    @Test(timeout = 30000)
     public void twelveFailuresOutOfFiftyNodes() throws IOException, InterruptedException {
-        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 100;
         MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 500;
         RpcClient.Conf.RPC_PROBE_TIMEOUT = 100;
         final int numNodes = 50;
@@ -294,9 +289,8 @@ public class ClusterTest {
      * This test starts with a 50 node cluster. We then use the static failure detector to fail
      * all edges to 3 nodes.
      */
-    @Test
+    @Test(timeout = 30000)
     public void failTenRandomNodes() throws IOException, InterruptedException {
-        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 100;
         MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 200;
         useStaticFd = true;
         final int numNodes = 50;
@@ -318,7 +312,6 @@ public class ClusterTest {
      */
     @Test
     public void injectAsymmetricDrops() throws IOException, InterruptedException {
-        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 100;
         MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 500;
         RpcClient.Conf.RPC_PROBE_TIMEOUT = 500;
         final int numNodes = 50;
@@ -340,7 +333,7 @@ public class ClusterTest {
      * This test starts with a node joining a 1 node cluster. We drop phase 2 messages at the seed
      * such that RPC-level retries of the first join attempt eventually get through.
      */
-    @Test
+    @Test(timeout = 30000)
     public void phase2MessageDropsRpcRetries() throws IOException, InterruptedException {
         RpcClient.Conf.RPC_JOIN_PHASE_2_TIMEOUT = RPC_TIMEOUT_SHORT_MS * 5;
         RpcClient.Conf.RPC_TIMEOUT_MS = RPC_TIMEOUT_SHORT_MS; // use short retry delays to run tests faster.
@@ -358,7 +351,7 @@ public class ClusterTest {
      * This test starts with a node joining a 1 node cluster. We drop phase 2 messages at the seed
      * such that RPC-level retries of the first join attempt fail, and the client re-initiates a join.
      */
-    @Test
+    @Test(timeout = 30000)
     public void phase2JoinAttemptRetry() throws IOException, InterruptedException {
         RpcClient.Conf.RPC_JOIN_PHASE_2_TIMEOUT = RPC_TIMEOUT_VERY_SHORT_MS * 5;
         RpcClient.Conf.RPC_TIMEOUT_MS = RPC_TIMEOUT_VERY_SHORT_MS; // use short retry delays to run tests faster.
@@ -375,7 +368,7 @@ public class ClusterTest {
     /**
      * By the time a joiner issues a join-phase2-message, we change the configuration.
      */
-    @Test
+    @Test(timeout = 30000)
     public void phase2JoinAttemptRetryWithConfigChange() throws IOException, InterruptedException {
         RpcClient.Conf.RPC_JOIN_PHASE_2_TIMEOUT = RPC_TIMEOUT_SHORT_MS * 5;
         RpcClient.Conf.RPC_TIMEOUT_MS = RPC_TIMEOUT_SHORT_MS; // use short retry delays to run tests faster.
@@ -398,9 +391,8 @@ public class ClusterTest {
     /**
      * Shutdown a node and rejoin multiple times.
      */
-    @Test
+    @Test(timeout = 30000)
     public void testRejoinSingleNode() throws IOException, InterruptedException {
-        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 0;
         MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 200;
         RpcClient.Conf.RPC_PROBE_TIMEOUT = 100;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
@@ -421,9 +413,8 @@ public class ClusterTest {
     /**
      * Shutdown a node and rejoin before the failure detectors kick it out
      */
-    @Test
+    @Test(timeout = 30000)
     public void testRejoinSingleNodeSameConfiguration() throws IOException, InterruptedException {
-        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 0;
         MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 200;
         RpcClient.Conf.RPC_PROBE_TIMEOUT = 100;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
@@ -445,9 +436,8 @@ public class ClusterTest {
     /**
      * Shutdown a node and rejoin multiple times.
      */
-    @Test
+    @Test(timeout = 30000)
     public void testRejoinMultipleNodes() throws IOException, InterruptedException {
-        MembershipService.FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 0;
         MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 200;
         RpcClient.Conf.RPC_PROBE_TIMEOUT = 100;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
