@@ -87,11 +87,12 @@ public class ClusterTest {
         RpcServer.USE_IN_PROCESS_SERVER = true;
         RpcClient.USE_IN_PROCESS_CHANNEL = true;
 
+
         // Tests that depend on failure detection should set intervals by themselves
-        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 100000;
         RpcClient.Conf.RPC_JOIN_PHASE_2_TIMEOUT = RpcClient.Conf.RPC_TIMEOUT_MEDIUM_MS * 20;
         RpcClient.Conf.RPC_TIMEOUT_MS = RpcClient.Conf.RPC_TIMEOUT_MEDIUM_MS;
-        RpcClient.Conf.RPC_PROBE_TIMEOUT = 5000;
+        RpcClient.Conf.RPC_PROBE_TIMEOUT = 100;
+        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 200;
 
         useStaticFd = false;
         addMetadata = true;
@@ -201,8 +202,6 @@ public class ClusterTest {
      */
     @Test(timeout = 30000)
     public void oneFailureOutOfFiveNodes() throws IOException, InterruptedException {
-        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 500;
-
         final int numNodes = 5;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         createCluster(numNodes, seedHost);
@@ -218,8 +217,6 @@ public class ClusterTest {
      */
     @Test(timeout = 30000)
     public void concurrentNodeJoinsAndFails() throws IOException, InterruptedException {
-        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 200;
-
         final int numNodes = 30;
         final int failingNodes = 5;
         final int phaseTwojoiners = 10;
@@ -239,7 +236,6 @@ public class ClusterTest {
      */
     @Test(timeout = 30000)
     public void concurrentNodeJoinsNetty() throws IOException, InterruptedException {
-        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 100000;
         RpcServer.USE_IN_PROCESS_SERVER = false;
         RpcClient.USE_IN_PROCESS_CHANNEL = false;
         final int numNodes = 5;
@@ -271,7 +267,6 @@ public class ClusterTest {
      */
     @Test(timeout = 30000)
     public void twelveFailuresOutOfFiftyNodes() throws IOException, InterruptedException {
-        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 500;
         RpcClient.Conf.RPC_PROBE_TIMEOUT = 100;
         final int numNodes = 50;
         final int failingNodes = 12;
@@ -291,7 +286,6 @@ public class ClusterTest {
      */
     @Test(timeout = 30000)
     public void failTenRandomNodes() throws IOException, InterruptedException {
-        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 200;
         useStaticFd = true;
         final int numNodes = 50;
         final int numFailingNodes = 10;
@@ -312,7 +306,6 @@ public class ClusterTest {
      */
     @Test
     public void injectAsymmetricDrops() throws IOException, InterruptedException {
-        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 500;
         RpcClient.Conf.RPC_PROBE_TIMEOUT = 500;
         final int numNodes = 50;
         final int numFailingNodes = 10;
@@ -393,7 +386,6 @@ public class ClusterTest {
      */
     @Test(timeout = 30000)
     public void testRejoinSingleNode() throws IOException, InterruptedException {
-        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 200;
         RpcClient.Conf.RPC_PROBE_TIMEOUT = 100;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         final HostAndPort leavingHost = HostAndPort.fromParts("127.0.0.1", basePort + 1);
@@ -415,7 +407,6 @@ public class ClusterTest {
      */
     @Test(timeout = 30000)
     public void testRejoinSingleNodeSameConfiguration() throws IOException, InterruptedException {
-        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 200;
         RpcClient.Conf.RPC_PROBE_TIMEOUT = 100;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         final HostAndPort leavingHost = HostAndPort.fromParts("127.0.0.1", basePort + 1);
@@ -438,7 +429,6 @@ public class ClusterTest {
      */
     @Test(timeout = 30000)
     public void testRejoinMultipleNodes() throws IOException, InterruptedException {
-        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 200;
         RpcClient.Conf.RPC_PROBE_TIMEOUT = 100;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         final int numNodes = 30;
