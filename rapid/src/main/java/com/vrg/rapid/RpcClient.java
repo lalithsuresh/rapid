@@ -64,17 +64,19 @@ final class RpcClient {
     private final HostAndPort address;
     private final List<ClientInterceptor> interceptors;
     private final Map<HostAndPort, Channel> channelMap = new ConcurrentHashMap<>();
-    private static final ExecutorService GRPC_EXECUTORS = Executors.newFixedThreadPool(20);
-    private static final ExecutorService BACKGROUND_EXECUTOR = Executors.newFixedThreadPool(20);
+    private final ExecutorService GRPC_EXECUTORS = Executors.newFixedThreadPool(1);
+    private final ExecutorService BACKGROUND_EXECUTOR = Executors.newFixedThreadPool(1);
     private boolean shuttingDown = false;
+    private final Conf conf;
 
     RpcClient(final HostAndPort address) {
-        this(address, Collections.emptyList());
+        this(address, Collections.emptyList(), new Conf());
     }
 
-    RpcClient(final HostAndPort address, final List<ClientInterceptor> interceptors) {
+    RpcClient(final HostAndPort address, final List<ClientInterceptor> interceptors, final Conf conf) {
         this.address = address;
         this.interceptors = interceptors;
+        this.conf = conf;
     }
 
     /**
@@ -90,7 +92,7 @@ final class RpcClient {
         Objects.requireNonNull(probeMessage);
 
         final MembershipServiceFutureStub stub = getFutureStub(remote);
-        return stub.withDeadlineAfter(Conf.RPC_PROBE_TIMEOUT, TimeUnit.MILLISECONDS).receiveProbe(probeMessage);
+        return stub.withDeadlineAfter(conf.RPC_PROBE_TIMEOUT, TimeUnit.MILLISECONDS).receiveProbe(probeMessage);
     }
 
     /**
@@ -113,11 +115,11 @@ final class RpcClient {
                 .build();
         final Supplier<ListenableFuture<JoinResponse>> call = () -> {
             final MembershipServiceFutureStub stub = getFutureStub(remote)
-                    .withDeadlineAfter(Conf.RPC_TIMEOUT_MS * 5,
+                    .withDeadlineAfter(conf.RPC_TIMEOUT_MS * 5,
                             TimeUnit.MILLISECONDS);
             return stub.receiveJoinMessage(msg);
         };
-        return callWithRetries(call, remote, Conf.RPC_DEFAULT_RETRIES);
+        return callWithRetries(call, remote, conf.RPC_DEFAULT_RETRIES);
     }
 
     /**
@@ -134,11 +136,11 @@ final class RpcClient {
 
         final Supplier<ListenableFuture<JoinResponse>> call = () -> {
             final MembershipServiceFutureStub stub = getFutureStub(remote)
-                    .withDeadlineAfter(Conf.RPC_JOIN_PHASE_2_TIMEOUT,
+                    .withDeadlineAfter(conf.RPC_JOIN_PHASE_2_TIMEOUT,
                             TimeUnit.MILLISECONDS);
             return stub.receiveJoinPhase2Message(msg);
         };
-        return callWithRetries(call, remote, Conf.RPC_DEFAULT_RETRIES);
+        return callWithRetries(call, remote, conf.RPC_DEFAULT_RETRIES);
     }
 
     /**
@@ -152,10 +154,10 @@ final class RpcClient {
         BACKGROUND_EXECUTOR.execute(() -> {
             final Supplier<ListenableFuture<ConsensusProposalResponse>> call = () -> {
                 final MembershipServiceFutureStub stub = getFutureStub(remote)
-                        .withDeadlineAfter(Conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                        .withDeadlineAfter(conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
                 return stub.receiveConsensusProposal(msg);
             };
-            callWithRetries(call, remote, Conf.RPC_DEFAULT_RETRIES);
+            callWithRetries(call, remote, conf.RPC_DEFAULT_RETRIES);
         });
     }
 
@@ -170,11 +172,11 @@ final class RpcClient {
         BACKGROUND_EXECUTOR.execute(() -> {
             final Supplier<ListenableFuture<Response>> call = () -> {
                 final MembershipServiceFutureStub stub = getFutureStub(remote)
-                        .withDeadlineAfter(Conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                        .withDeadlineAfter(conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
                 return stub.receiveLinkUpdateMessage(msg);
             };
 
-            callWithRetries(call, remote, Conf.RPC_DEFAULT_RETRIES);
+            callWithRetries(call, remote, conf.RPC_DEFAULT_RETRIES);
         });
     }
 
@@ -323,9 +325,9 @@ final class RpcClient {
 
     @VisibleForTesting
     static class Conf {
-        static int RPC_TIMEOUT_MS = 500;
-        static int RPC_DEFAULT_RETRIES = 5;
-        static int RPC_JOIN_PHASE_2_TIMEOUT = RPC_TIMEOUT_MS * 5;
-        static int RPC_PROBE_TIMEOUT = 200;
+        int RPC_TIMEOUT_MS = 1000;
+        int RPC_DEFAULT_RETRIES = 5;
+        int RPC_JOIN_PHASE_2_TIMEOUT = RPC_TIMEOUT_MS * 5;
+        int RPC_PROBE_TIMEOUT = 1000;
     }
 }

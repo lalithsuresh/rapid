@@ -71,7 +71,7 @@ final class MembershipService {
     private static final Logger LOG = LoggerFactory.getLogger(MembershipService.class);
     private static final int BATCHING_WINDOW_IN_MS = 100;
     static int FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
-    private static int FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 2000;
+    private static int FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 1000;
     private final MembershipView membershipView;
     private final WatermarkBuffer watermarkBuffer;
     private final HostAndPort myAddr;
@@ -341,7 +341,8 @@ final class MembershipService {
         final long membershipSize = membershipView.getMembershipSize();
 
         if (proposalMessage.getConfigurationId() != currentConfigurationId) {
-            LOG.trace("Configuration ID mismatch for proposal: current_config:{} proposal:{}", proposalMessage);
+            LOG.trace("Configuration ID mismatch for proposal: current_config:{} proposal:{}", currentConfigurationId,
+                      proposalMessage);
             return;
         }
 

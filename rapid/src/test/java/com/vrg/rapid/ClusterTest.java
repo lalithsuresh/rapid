@@ -62,6 +62,7 @@ public class ClusterTest {
     private long seed;
     private int basePort;
     @Nullable private AtomicInteger portCounter = null;
+    private RpcClient.Conf clientConf = new RpcClient.Conf();
 
     @Rule
     public final TestWatcher testWatcher = new TestWatcher() {
@@ -80,14 +81,12 @@ public class ClusterTest {
         instances.clear();
         seed = ThreadLocalRandom.current().nextLong();
         random = new Random(seed);
+        clientConf = new RpcClient.Conf();
 
         // Tests need to opt out of the in-process channel
         RpcServer.USE_IN_PROCESS_SERVER = true;
         RpcClient.USE_IN_PROCESS_CHANNEL = true;
-
-        // Tests that depend on failure detection should set intervals by themselves
-        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 200;
-
+        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
         useStaticFd = false;
         addMetadata = true;
         staticFds.clear();
@@ -163,9 +162,9 @@ public class ClusterTest {
      * time. This tests a single seed's ability to bootstrap a large cluster in one step.
      */
     @Test(timeout = 150000)
-    public void threeHundredNodesJoinInParallel() throws IOException, InterruptedException {
+    public void hundredNodesJoinInParallel() throws IOException, InterruptedException {
         addMetadata = false;
-        final int numNodes = 300; // Includes the size of the cluster
+        final int numNodes = 100; // Includes the size of the cluster
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         createCluster(numNodes, seedHost);
         verifyCluster(numNodes, seedHost);
@@ -177,12 +176,12 @@ public class ClusterTest {
      * concurrently. Following this, a subsequent wave begins where 100 nodes then start together.
      */
     @Test(timeout = 150000)
-    public void hundredNodesJoinFiftyNodeCluster() throws IOException, InterruptedException {
+    public void fiftyNodesJoinTwentyNodeCluster() throws IOException, InterruptedException {
         RpcServer.USE_IN_PROCESS_SERVER = true;
         RpcClient.USE_IN_PROCESS_CHANNEL = true;
 
-        final int numNodesPhase1 = 50;
-        final int numNodesPhase2 = 100;
+        final int numNodesPhase1 = 20;
+        final int numNodesPhase2 = 50;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         createCluster(numNodesPhase1, seedHost);
         waitAndVerifyAgreement(numNodesPhase1, 10, 100, seedHost);
@@ -196,6 +195,7 @@ public class ClusterTest {
      */
     @Test(timeout = 30000)
     public void oneFailureOutOfFiveNodes() throws IOException, InterruptedException {
+        useFastFailureDetectionTimeouts();
         final int numNodes = 5;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         createCluster(numNodes, seedHost);
@@ -211,6 +211,7 @@ public class ClusterTest {
      */
     @Test(timeout = 30000)
     public void concurrentNodeJoinsAndFails() throws IOException, InterruptedException {
+        useFastFailureDetectionTimeouts();
         final int numNodes = 30;
         final int failingNodes = 5;
         final int phaseTwojoiners = 10;
@@ -261,6 +262,7 @@ public class ClusterTest {
      */
     @Test(timeout = 30000)
     public void twelveFailuresOutOfFiftyNodes() throws IOException, InterruptedException {
+        useFastFailureDetectionTimeouts();
         final int numNodes = 50;
         final int failingNodes = 12;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
@@ -299,6 +301,7 @@ public class ClusterTest {
      */
     @Test
     public void injectAsymmetricDrops() throws IOException, InterruptedException {
+        useFastFailureDetectionTimeouts();
         final int numNodes = 50;
         final int numFailingNodes = 10;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
@@ -320,9 +323,10 @@ public class ClusterTest {
      */
     @Test(timeout = 30000)
     public void phase2MessageDropsRpcRetries() throws IOException, InterruptedException {
+        useShortJoinTimeouts();
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         // Drop join-phase-2 attempts by nextNode, but only enough that the RPC retries make it past
-        dropFirstNAtServer(seedHost, (RpcClient.Conf.RPC_DEFAULT_RETRIES) - 1,
+        dropFirstNAtServer(seedHost, (clientConf.RPC_DEFAULT_RETRIES) - 1,
                    MembershipServiceGrpc.METHOD_RECEIVE_JOIN_PHASE2MESSAGE);
         createCluster(1, seedHost);
         extendCluster(1, seedHost);
@@ -336,9 +340,10 @@ public class ClusterTest {
      */
     @Test(timeout = 30000)
     public void phase2JoinAttemptRetry() throws IOException, InterruptedException {
+        useShortJoinTimeouts();
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         // Drop join-phase-2 attempts by nextNode such that it re-attempts a join under a new configuration
-        dropFirstNAtServer(seedHost, (RpcClient.Conf.RPC_DEFAULT_RETRIES) + 1,
+        dropFirstNAtServer(seedHost, (clientConf.RPC_DEFAULT_RETRIES) + 1,
                    MembershipServiceGrpc.METHOD_RECEIVE_JOIN_PHASE2MESSAGE);
         createCluster(1, seedHost);
         extendCluster(1, seedHost);
@@ -372,17 +377,18 @@ public class ClusterTest {
      */
     @Test(timeout = 30000)
     public void testRejoinSingleNode() throws IOException, InterruptedException {
+        useFastFailureDetectionTimeouts();
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         final HostAndPort leavingHost = HostAndPort.fromParts("127.0.0.1", basePort + 1);
         createCluster(10, seedHost);
 
-        // Shutdown and rejoin five times
-        for (int i = 0; i < 5; i++) {
+        // Shutdown and rejoin twice
+        for (int i = 0; i < 2; i++) {
             final Cluster cluster = instances.remove(leavingHost);
             cluster.shutdown();
-            waitAndVerifyAgreement(9, 10, 500, seedHost);
+            waitAndVerifyAgreement(9, 20, 500, seedHost);
             extendCluster(leavingHost, seedHost);
-            waitAndVerifyAgreement(10, 10, 500, seedHost);
+            waitAndVerifyAgreement(10, 20, 500, seedHost);
         }
     }
 
@@ -392,20 +398,30 @@ public class ClusterTest {
      */
     @Test(timeout = 30000)
     public void testRejoinSingleNodeSameConfiguration() throws IOException, InterruptedException {
+        useShortJoinTimeouts();
+        useFastFailureDetectionTimeouts();
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
-        final HostAndPort leavingHost = HostAndPort.fromParts("127.0.0.1", basePort + 1);
+        final HostAndPort rejoiningHost = HostAndPort.fromParts("127.0.0.1", basePort + 1);
         createCluster(10, seedHost);
 
-        // Shutdown and rejoin five times
-        final Cluster cluster = instances.remove(leavingHost);
-        cluster.shutdown();
+        // Shutdown and rejoin once
+        Cluster cluster = null;
         try {
-            extendCluster(leavingHost, seedHost);
-        } catch (final Cluster.JoinException ignored) {
+            cluster = instances.remove(rejoiningHost);
+            cluster.shutdown();
+            try {
+                buildCluster(rejoiningHost).join(seedHost);
+                fail();
+            } catch (final Cluster.JoinException ignored) {
+            }
+            waitAndVerifyAgreement(9, 10, 1000, seedHost);
+            cluster = buildCluster(rejoiningHost).join(seedHost);
+            waitAndVerifyAgreement(10, 10, 500, seedHost);
+        } finally {
+            if (cluster != null) {
+                cluster.shutdown();
+            }
         }
-        Thread.sleep(10000);
-        extendCluster(leavingHost, seedHost);
-        waitAndVerifyAgreement(10, 10, 500, seedHost);
     }
 
     /**
@@ -413,6 +429,7 @@ public class ClusterTest {
      */
     @Test(timeout = 30000)
     public void testRejoinMultipleNodes() throws IOException, InterruptedException {
+        useFastFailureDetectionTimeouts();
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         final int numNodes = 30;
         final int failNodes = 5;
@@ -423,9 +440,9 @@ public class ClusterTest {
         for (int j = 0; j < failNodes; j++) {
             final int inc = j;
             executor.execute(() -> {
-                // Shutdown and rejoin five times
+                // Shutdown and rejoin thrice
                 try {
-                    for (int i = 0; i < 5; i++) {
+                    for (int i = 0; i < 3; i++) {
                         final HostAndPort leavingHost = HostAndPort.fromParts("127.0.0.1", basePort + 1 + inc);
                         final Cluster cluster = instances.remove(leavingHost);
                         try {
@@ -677,7 +694,7 @@ public class ClusterTest {
 
     // Helper to use static-failure-detectors and inject interceptors
     private Cluster.Builder buildCluster(final HostAndPort host) {
-        Cluster.Builder builder = new Cluster.Builder(host);
+        Cluster.Builder builder = new Cluster.Builder(host).setRpcClientConf(clientConf);
         if (useStaticFd) {
             final StaticFailureDetector fd = new StaticFailureDetector(new HashSet<>());
             builder = builder.setLinkFailureDetector(fd);
@@ -708,5 +725,17 @@ public class ClusterTest {
         clientInterceptors.computeIfAbsent(host, (k) -> new ArrayList<>(1))
                 .add(new ClientInterceptors.Delayer<>(latch, messageType));
         return latch;
+    }
+
+    // This speeds up the retry attempts during the join protocol
+    private void useShortJoinTimeouts() {
+        clientConf.RPC_TIMEOUT_MS = 100;
+        clientConf.RPC_JOIN_PHASE_2_TIMEOUT = 500; // use short timeouts
+    }
+
+    // This speeds up failure detection when using the PingPongFailureDetector
+    private void useFastFailureDetectionTimeouts() {
+        clientConf.RPC_PROBE_TIMEOUT = 200;
+        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 200;
     }
 }
