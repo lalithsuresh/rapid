@@ -69,8 +69,7 @@ final class RpcClient {
     private final Map<HostAndPort, Channel> channelMap = new ConcurrentHashMap<>();
     private final ExecutorService grpcExecutor;
     private final ExecutorService backgroundExecutor;
-    private final EventLoopGroup eventLoopGroup = new NioEventLoopGroup(1,
-                                                  new DefaultThreadFactory("client-elg", true));
+    @Nullable private EventLoopGroup eventLoopGroup = null;
     private boolean shuttingDown = false;
     private final Conf conf;
 
@@ -94,6 +93,10 @@ final class RpcClient {
                 .setUncaughtExceptionHandler(
                     (t, e) -> System.err.println(String.format("rpc-client-bg-executor caught exception: %s %s", t, e))
                 ).build());
+        if (!USE_IN_PROCESS_CHANNEL) {
+            this.eventLoopGroup = new NioEventLoopGroup(1,
+                    new DefaultThreadFactory("client-elg", true));
+        }
     }
 
     /**
@@ -202,8 +205,9 @@ final class RpcClient {
      */
     void shutdown() {
         shuttingDown = true;
-        backgroundExecutor.shutdown();
-        eventLoopGroup.shutdownGracefully();
+        if (eventLoopGroup != null) {
+            eventLoopGroup.shutdownGracefully();
+        }
         channelMap.keySet().forEach(this::shutdownChannel);
     }
 

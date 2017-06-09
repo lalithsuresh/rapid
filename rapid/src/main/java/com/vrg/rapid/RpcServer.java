@@ -56,8 +56,7 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     @VisibleForTesting static boolean USE_IN_PROCESS_SERVER = false;
     private final ExecutorService grpcExecutor = Executors.newFixedThreadPool(1,
                                                   new DefaultThreadFactory("server-exec", true));
-    private final EventLoopGroup eventLoopGroup = new NioEventLoopGroup(1,
-                                                  new DefaultThreadFactory("server-elg", true));
+    @Nullable private EventLoopGroup eventLoopGroup = null;
     private static final ProbeResponse BOOTSTRAPPING_MESSAGE =
             ProbeResponse.newBuilder().setStatus(NodeStatus.BOOTSTRAPPING).build();
     private final HostAndPort address;
@@ -73,6 +72,10 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
               final ExecutorService executorService) {
         this.address = address;
         this.executor = executorService;
+        if (!USE_IN_PROCESS_SERVER) {
+            this.eventLoopGroup = new NioEventLoopGroup(1,
+                                  new DefaultThreadFactory("server-elg", true));
+        }
     }
 
     /**
@@ -206,7 +209,9 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
             server.shutdown();
             server.awaitTermination(1, TimeUnit.SECONDS);
             executor.shutdownNow();
-            eventLoopGroup.shutdownGracefully();
+            if (eventLoopGroup != null) {
+                eventLoopGroup.shutdownGracefully();
+            }
         } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
         }
