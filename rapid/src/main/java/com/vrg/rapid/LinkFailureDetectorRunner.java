@@ -58,7 +58,6 @@ class LinkFailureDetectorRunner implements Runnable {
      */
     synchronized void updateMembership(final List<HostAndPort> newMonitorees) {
         this.monitorees = new HashSet<>(newMonitorees);
-        rpcClient.updateLongLivedConnections(this.monitorees);
         this.linkFailureDetector.onMembershipChange(newMonitorees);
     }
 

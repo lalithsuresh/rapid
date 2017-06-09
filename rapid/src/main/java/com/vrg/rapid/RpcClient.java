@@ -19,6 +19,7 @@ import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
 import com.vrg.rapid.pb.ConsensusProposalResponse;
@@ -46,7 +47,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -64,8 +64,8 @@ final class RpcClient {
     private final HostAndPort address;
     private final List<ClientInterceptor> interceptors;
     private final Map<HostAndPort, Channel> channelMap = new ConcurrentHashMap<>();
-    private final ExecutorService GRPC_EXECUTORS = Executors.newFixedThreadPool(1);
-    private final ExecutorService BACKGROUND_EXECUTOR = Executors.newFixedThreadPool(1);
+    private final ExecutorService grpcExecutor;
+    private final ExecutorService backgroundExecutor;
     private boolean shuttingDown = false;
     private final Conf conf;
 
@@ -77,6 +77,16 @@ final class RpcClient {
         this.address = address;
         this.interceptors = interceptors;
         this.conf = conf;
+        this.grpcExecutor = Executors.newFixedThreadPool(1, new ThreadFactoryBuilder()
+            .setNameFormat("grpc-client-" + address + "-%d")
+            .setUncaughtExceptionHandler(
+                (t, e) -> System.err.println(String.format("grpc-client-executor caught exception: %s %s", t, e))
+            ).build());
+        this.backgroundExecutor = Executors.newFixedThreadPool(1, new ThreadFactoryBuilder()
+            .setNameFormat("client-bg-" + address + "-%d")
+            .setUncaughtExceptionHandler(
+                (t, e) -> System.err.println(String.format("rpc-client-bg-executor caught exception: %s %s", t, e))
+            ).build());
     }
 
     /**
@@ -151,7 +161,7 @@ final class RpcClient {
      */
     void sendConsensusProposal(final HostAndPort remote, final ConsensusProposal msg) {
         Objects.requireNonNull(msg);
-        BACKGROUND_EXECUTOR.execute(() -> {
+        backgroundExecutor.execute(() -> {
             final Supplier<ListenableFuture<ConsensusProposalResponse>> call = () -> {
                 final MembershipServiceFutureStub stub = getFutureStub(remote)
                         .withDeadlineAfter(conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
@@ -169,7 +179,7 @@ final class RpcClient {
      */
     void sendLinkUpdateMessage(final HostAndPort remote, final BatchedLinkUpdateMessage msg) {
         Objects.requireNonNull(msg);
-        BACKGROUND_EXECUTOR.execute(() -> {
+        backgroundExecutor.execute(() -> {
             final Supplier<ListenableFuture<Response>> call = () -> {
                 final MembershipServiceFutureStub stub = getFutureStub(remote)
                         .withDeadlineAfter(conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
@@ -181,24 +191,7 @@ final class RpcClient {
     }
 
     /**
-     * Clear all existing cached stubs and prepare new ones for a set of nodes.
-     *
-     * @param nodeSet set of nodes to prepare a long lived connection for
-     */
-    void updateLongLivedConnections(final Set<HostAndPort> nodeSet) {
-        //  TODO: We need smarter policies to clear out channels we don't need.
-    }
-
-    /**
-     * Create new long-lived channels for a set of nodes.
-     *
-     * @param nodeSet set of nodes to prepare a long lived connection for
-     */
-    void createLongLivedConnections(final Set<HostAndPort> nodeSet) {
-    }
-
-    /**
-     * Recover resources. For future use in case we provide custom GRPC_EXECUTORS for the ManagedChannels.
+     * Recover resources. For future use in case we provide custom grpcExecutor for the ManagedChannels.
      */
     void shutdown() {
         shuttingDown = true;
@@ -254,7 +247,7 @@ final class RpcClient {
                 LOG.trace("Retrying call {}");
                 handleFailure(call, remote, signal, retries, throwable);
             }
-        }, BACKGROUND_EXECUTOR);
+        }, backgroundExecutor);
     }
 
     /**
@@ -306,14 +299,14 @@ final class RpcClient {
         if (USE_IN_PROCESS_CHANNEL) {
             channel = InProcessChannelBuilder
                     .forName(remote.toString())
-                    .executor(GRPC_EXECUTORS)
+                    .executor(grpcExecutor)
                     .usePlaintext(true)
                     .idleTimeout(10, TimeUnit.SECONDS)
                     .build();
         } else {
             channel = NettyChannelBuilder
                     .forAddress(remote.getHost(), remote.getPort())
-                    .executor(GRPC_EXECUTORS)
+                    .executor(grpcExecutor)
                     .withOption(ChannelOption.SO_REUSEADDR, true)
                     .usePlaintext(true)
                     .idleTimeout(10, TimeUnit.SECONDS)

@@ -159,7 +159,7 @@ final class MembershipService {
         this.backgroundTasksExecutor = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder()
                 .setNameFormat("msbg-" + myAddr + "-%d")
                 .setUncaughtExceptionHandler(
-                (t, e) -> System.err.println(String.format("backgroundTasksExecutor caught exception: %s %s", t, t))
+                (t, e) -> System.err.println(String.format("backgroundTasksExecutor caught exception: %s %s", t, e))
             ).build());
         linkUpdateBatcherJob = this.backgroundTasksExecutor.scheduleAtFixedRate(new LinkUpdateBatcher(),
                 0, BATCHING_WINDOW_IN_MS, TimeUnit.MILLISECONDS);

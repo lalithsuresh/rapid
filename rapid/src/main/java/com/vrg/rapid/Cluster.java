@@ -14,7 +14,6 @@
 package com.vrg.rapid;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableSet;
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
@@ -193,7 +192,6 @@ public final class Cluster {
         server.startServer(serverInterceptors);
         boolean didPreviousJoinSucceed = false;
         for (int attempt = 0; attempt < RETRIES; attempt++) {
-            joinerClient.createLongLivedConnections(ImmutableSet.of(seedAddress));
             // First, get the configuration ID and the monitors to contact from the seed node.
             final JoinResponse joinPhaseOneResult;
             try {
@@ -345,7 +343,7 @@ public final class Cluster {
         final ExecutorService protocolExecutor = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder()
             .setNameFormat("protocol-" + listenAddress + "-%d")
             .setUncaughtExceptionHandler(
-                    (t, e) -> System.err.println(String.format("Server protocolExecutor caught exception: %s %s", t, t))
+                    (t, e) -> System.err.println(String.format("Server protocolExecutor caught exception: %s %s", t, e))
             ).build());
         final RpcServer rpcServer = new RpcServer(listenAddress, protocolExecutor);
         final RpcClient rpcClient = new RpcClient(listenAddress, Collections.emptyList(), conf);
