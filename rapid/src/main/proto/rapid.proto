@@ -107,6 +107,14 @@ message ProbeResponse
     NodeStatus status = 1;
 }
 
+message BroadcastMessage
+{
+   oneof subMsg {
+        BatchedLinkUpdateMessage linkUpdateMessage = 1;
+        ConsensusProposal consensusProposal = 2;
+   }
+}
+
 enum NodeStatus {
     OK = 0;             // this is the default value
     BOOTSTRAPPING = 1;

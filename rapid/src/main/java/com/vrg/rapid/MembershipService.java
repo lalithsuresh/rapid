@@ -83,6 +83,7 @@ final class MembershipService {
     private final LinkFailureDetectorRunner linkFailureDetectorRunner;
     private final RpcClient rpcClient;
     private final MetadataManager metadataManager;
+    private final BestEffortMessaging bestEffortMessaging;
 
     // Event subscriptions
     private final Map<ClusterEvents, List<Consumer<List<NodeStatusChange>>>> subscriptions;
@@ -108,19 +109,19 @@ final class MembershipService {
         private final MembershipView membershipView;
         private final WatermarkBuffer watermarkBuffer;
         private final HostAndPort myAddr;
-        private final ExecutorService protocolExecutor;
         private Map<String, Metadata> metadata = Collections.emptyMap();
+        private final SharedResources resources;
         @Nullable private ILinkFailureDetector linkFailureDetector = null;
         @Nullable private RpcClient rpcClient = null;
 
         Builder(final HostAndPort myAddr,
                 final WatermarkBuffer watermarkBuffer,
                 final MembershipView membershipView,
-                final ExecutorService protocolExecutor) {
+                final SharedResources resources) {
             this.myAddr = Objects.requireNonNull(myAddr);
             this.watermarkBuffer = Objects.requireNonNull(watermarkBuffer);
             this.membershipView = Objects.requireNonNull(membershipView);
-            this.protocolExecutor = protocolExecutor;
+            this.resources = resources;
         }
 
         Builder setMetadata(final Map<String, Metadata> metadata) {
@@ -147,11 +148,13 @@ final class MembershipService {
         this.myAddr = builder.myAddr;
         this.membershipView = builder.membershipView;
         this.watermarkBuffer = builder.watermarkBuffer;
-        this.protocolExecutor = builder.protocolExecutor;
+        this.protocolExecutor = builder.resources.getProtocolExecutor();
         this.metadataManager = new MetadataManager();
         this.metadataManager.addMetadata(builder.metadata);
-        this.rpcClient = builder.rpcClient != null ? builder.rpcClient : new RpcClient(myAddr);
-        this.broadcaster = new UnicastToAllBroadcaster(rpcClient);
+        this.rpcClient = builder.rpcClient != null ? builder.rpcClient : new RpcClient(myAddr, builder.resources);
+        this.bestEffortMessaging = new BestEffortMessaging(myAddr, this, builder.resources);
+        this.broadcaster = new UnicastToAllBroadcaster(rpcClient, bestEffortMessaging);
+        bestEffortMessaging.start();
         this.subscriptions = new HashMap<>(ClusterEvents.values().length); // One for each event.
         Arrays.stream(ClusterEvents.values()).forEach(event -> this.subscriptions.put(event, new ArrayList<>(1)));
 
@@ -567,6 +570,7 @@ final class MembershipService {
         failureDetectorJob.cancel(true);
         backgroundTasksExecutor.shutdownNow();
         rpcClient.shutdown();
+        bestEffortMessaging.shutdown();
     }
 
     /**

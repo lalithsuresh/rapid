@@ -15,6 +15,7 @@ package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
+import com.vrg.rapid.pb.BroadcastMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,10 +32,12 @@ import java.util.concurrent.ThreadLocalRandom;
 final class UnicastToAllBroadcaster implements IBroadcaster {
     private static final Logger LOG = LoggerFactory.getLogger(UnicastToAllBroadcaster.class);
     private final RpcClient rpcClient;
+    private final BestEffortMessaging bestEffortMessaging;
     private List<HostAndPort> recipients = Collections.emptyList();
 
-    public UnicastToAllBroadcaster(final RpcClient rpcClient) {
+    public UnicastToAllBroadcaster(final RpcClient rpcClient, final BestEffortMessaging bestEffortMessaging) {
         this.rpcClient = rpcClient;
+        this.bestEffortMessaging = bestEffortMessaging;
     }
 
     @Override
@@ -42,13 +45,17 @@ final class UnicastToAllBroadcaster implements IBroadcaster {
         for (final HostAndPort recipient: recipients) {
             rpcClient.sendLinkUpdateMessage(recipient, msg);
         }
+//        final BroadcastMessage broadcastMessage = BroadcastMessage.newBuilder().setLinkUpdateMessage(msg).build();
+//        bestEffortMessaging.send(broadcastMessage, recipients);
     }
 
     @Override
     public synchronized void broadcast(final ConsensusProposal msg) {
-        for (final HostAndPort recipient: recipients) {
-            rpcClient.sendConsensusProposal(recipient, msg);
-        }
+//        for (final HostAndPort recipient: recipients) {
+//            rpcClient.sendConsensusProposal(recipient, msg);
+//        }
+        final BroadcastMessage broadcastMessage = BroadcastMessage.newBuilder().setConsensusProposal(msg).build();
+        bestEffortMessaging.send(broadcastMessage, recipients);
     }
 
     @Override

@@ -19,7 +19,6 @@ import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
 import com.vrg.rapid.pb.ConsensusProposalResponse;
@@ -40,8 +39,6 @@ import io.grpc.internal.ManagedChannelImpl;
 import io.grpc.netty.NettyChannelBuilder;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoopGroup;
-import io.netty.channel.nio.NioEventLoopGroup;
-import io.netty.util.concurrent.DefaultThreadFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,7 +50,6 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
@@ -73,29 +69,20 @@ final class RpcClient {
     private boolean shuttingDown = false;
     private final Conf conf;
 
-    RpcClient(final HostAndPort address) {
-        this(address, Collections.emptyList(), new Conf());
+
+    RpcClient(final HostAndPort address, final SharedResources resources) {
+        this(address, Collections.emptyList(), new Conf(), resources);
     }
 
-    RpcClient(final HostAndPort address, final List<ClientInterceptor> interceptors, final Conf conf) {
+    RpcClient(final HostAndPort address, final List<ClientInterceptor> interceptors, final Conf conf,
+              final SharedResources resources) {
         this.address = address;
         this.interceptors = interceptors;
         this.conf = conf;
-        this.grpcExecutor = Executors.newFixedThreadPool(1, new ThreadFactoryBuilder()
-                .setNameFormat("grpc-client-" + address + "-%d")
-                .setDaemon(true)
-                .setUncaughtExceptionHandler(
-                    (t, e) -> System.err.println(String.format("grpc-client-executor caught exception: %s %s", t, e))
-                ).build());
-        this.backgroundExecutor = Executors.newFixedThreadPool(1, new ThreadFactoryBuilder()
-                .setNameFormat("client-bg-" + address + "-%d")
-                .setDaemon(true)
-                .setUncaughtExceptionHandler(
-                    (t, e) -> System.err.println(String.format("rpc-client-bg-executor caught exception: %s %s", t, e))
-                ).build());
+        this.grpcExecutor = resources.getClientChannelExecutor();
+        this.backgroundExecutor = resources.getBackgroundExecutor();
         if (!USE_IN_PROCESS_CHANNEL) {
-            this.eventLoopGroup = new NioEventLoopGroup(1,
-                    new DefaultThreadFactory("client-elg", true));
+            this.eventLoopGroup = resources.getEventLoopGroup();
         }
     }
 
@@ -205,9 +192,6 @@ final class RpcClient {
      */
     void shutdown() {
         shuttingDown = true;
-        if (eventLoopGroup != null) {
-            eventLoopGroup.shutdownGracefully();
-        }
         channelMap.keySet().forEach(this::shutdownChannel);
     }
 

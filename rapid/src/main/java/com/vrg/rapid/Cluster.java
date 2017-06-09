@@ -17,7 +17,6 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.vrg.rapid.monitoring.ILinkFailureDetector;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
@@ -40,8 +39,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -70,16 +67,16 @@ public final class Cluster {
     private static final int RETRIES = 5;
     private final MembershipService membershipService;
     private final RpcServer rpcServer;
-    private final ExecutorService protocolExecutor;
     private final HostAndPort listenAddress;
+    private final SharedResources resources;
 
     private Cluster(final RpcServer rpcServer,
                     final MembershipService membershipService,
-                    final ExecutorService executorService,
+                    final SharedResources resources,
                     final HostAndPort listenAddress) {
         this.membershipService = membershipService;
         this.rpcServer = rpcServer;
-        this.protocolExecutor = executorService;
+        this.resources = resources;
         this.listenAddress = listenAddress;
     }
 
@@ -181,14 +178,9 @@ public final class Cluster {
         UUID currentIdentifier = UUID.randomUUID();
 
         // This is the single-threaded protocolExecutor that handles all the protocol messaging.
-        final ExecutorService protocolExecutor = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder()
-            .setNameFormat("protocol-" + listenAddress + "-%d")
-            .setUncaughtExceptionHandler(
-                    (t, e) -> System.err.println(String.format("Server protocolExecutor caught exception: %s %s", t, t))
-            ).build());
-
-        final RpcServer server = new RpcServer(listenAddress, protocolExecutor);
-        final RpcClient joinerClient = new RpcClient(listenAddress, clientInterceptors, conf);
+        final SharedResources sharedResources = new SharedResources(listenAddress);
+        final RpcServer server = new RpcServer(listenAddress, sharedResources);
+        final RpcClient joinerClient = new RpcClient(listenAddress, clientInterceptors, conf, sharedResources);
         server.startServer(serverInterceptors);
         boolean didPreviousJoinSucceed = false;
         for (int attempt = 0; attempt < RETRIES; attempt++) {
@@ -299,7 +291,7 @@ public final class Cluster {
                         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
                         MembershipService.Builder msBuilder =
                                 new MembershipService.Builder(listenAddress, watermarkBuffer, membershipViewFinal,
-                                                              protocolExecutor);
+                                                              sharedResources);
                         if (linkFailureDetector != null) {
                             msBuilder = msBuilder.setLinkFailureDetector(linkFailureDetector);
                         }
@@ -313,7 +305,7 @@ public final class Cluster {
                             LOG.trace("{} has monitorees {}", listenAddress,
                                     membershipViewFinal.getMonitorsOf(listenAddress));
                         }
-                        return new Cluster(server, membershipService, protocolExecutor, listenAddress);
+                        return new Cluster(server, membershipService, sharedResources, listenAddress);
                     }
                 }
             } catch (final ExecutionException e) {
@@ -338,21 +330,16 @@ public final class Cluster {
                                 final Metadata metadata, final List<ServerInterceptor> interceptors,
                                 final RpcClient.Conf conf) throws IOException {
         Objects.requireNonNull(listenAddress);
-
+        final SharedResources sharedResources = new SharedResources(listenAddress);
         // This is the single-threaded protocolExecutor that handles all the protocol messaging.
-        final ExecutorService protocolExecutor = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder()
-            .setNameFormat("protocol-" + listenAddress + "-%d")
-            .setUncaughtExceptionHandler(
-                    (t, e) -> System.err.println(String.format("Server protocolExecutor caught exception: %s %s", t, e))
-            ).build());
-        final RpcServer rpcServer = new RpcServer(listenAddress, protocolExecutor);
-        final RpcClient rpcClient = new RpcClient(listenAddress, Collections.emptyList(), conf);
+        final RpcServer rpcServer = new RpcServer(listenAddress, sharedResources);
+        final RpcClient rpcClient = new RpcClient(listenAddress, Collections.emptyList(), conf, sharedResources);
         final UUID currentIdentifier = UUID.randomUUID();
         final MembershipView membershipView = new MembershipView(K, Collections.singletonList(currentIdentifier),
                                                                  Collections.singletonList(listenAddress));
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
         MembershipService.Builder builder = new MembershipService.Builder(listenAddress, watermarkBuffer,
-                                                                          membershipView, protocolExecutor)
+                                                                          membershipView, sharedResources)
                                                                  .setRpcClient(rpcClient);
         // If linkFailureDetector == null, the system defaults to using the PingPongFailureDetector
         if (linkFailureDetector != null) {
@@ -363,7 +350,7 @@ public final class Cluster {
                             : builder.build();
         rpcServer.setMembershipService(membershipService);
         rpcServer.startServer(interceptors);
-        return new Cluster(rpcServer, membershipService, protocolExecutor, listenAddress);
+        return new Cluster(rpcServer, membershipService, sharedResources, listenAddress);
     }
 
     /**
@@ -411,8 +398,8 @@ public final class Cluster {
         // TODO: this should probably be a "leave" method
         LOG.debug("Shutting down RpcServer and MembershipService");
         rpcServer.stopServer();
-        protocolExecutor.shutdownNow();
         membershipService.shutdown();
+        resources.shutdown();
     }
 
     @Override
