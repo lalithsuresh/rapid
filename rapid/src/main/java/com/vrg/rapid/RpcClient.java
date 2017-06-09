@@ -18,7 +18,6 @@ import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
-import com.google.common.util.concurrent.RateLimiter;
 import com.google.common.util.concurrent.SettableFuture;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
@@ -67,7 +66,6 @@ final class RpcClient {
     private final Map<HostAndPort, Channel> channelMap = new ConcurrentHashMap<>();
     private static final ExecutorService GRPC_EXECUTORS = Executors.newFixedThreadPool(20);
     private static final ExecutorService BACKGROUND_EXECUTOR = Executors.newFixedThreadPool(20);
-    private final RateLimiter broadcastRateLimiter = RateLimiter.create(100);
     private boolean shuttingDown = false;
 
     RpcClient(final HostAndPort address) {
@@ -153,7 +151,6 @@ final class RpcClient {
         Objects.requireNonNull(msg);
         BACKGROUND_EXECUTOR.execute(() -> {
             final Supplier<ListenableFuture<ConsensusProposalResponse>> call = () -> {
-                broadcastRateLimiter.acquire();
                 final MembershipServiceFutureStub stub = getFutureStub(remote)
                         .withDeadlineAfter(Conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
                 return stub.receiveConsensusProposal(msg);
@@ -172,7 +169,6 @@ final class RpcClient {
         Objects.requireNonNull(msg);
         BACKGROUND_EXECUTOR.execute(() -> {
             final Supplier<ListenableFuture<Response>> call = () -> {
-                broadcastRateLimiter.acquire();
                 final MembershipServiceFutureStub stub = getFutureStub(remote)
                         .withDeadlineAfter(Conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
                 return stub.receiveLinkUpdateMessage(msg);
