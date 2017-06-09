@@ -39,6 +39,9 @@ import io.grpc.inprocess.InProcessChannelBuilder;
 import io.grpc.internal.ManagedChannelImpl;
 import io.grpc.netty.NettyChannelBuilder;
 import io.netty.channel.ChannelOption;
+import io.netty.channel.EventLoopGroup;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.util.concurrent.DefaultThreadFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -66,6 +69,8 @@ final class RpcClient {
     private final Map<HostAndPort, Channel> channelMap = new ConcurrentHashMap<>();
     private final ExecutorService grpcExecutor;
     private final ExecutorService backgroundExecutor;
+    private final EventLoopGroup eventLoopGroup = new NioEventLoopGroup(1,
+                                                  new DefaultThreadFactory("client-elg", true));
     private boolean shuttingDown = false;
     private final Conf conf;
 
@@ -78,15 +83,17 @@ final class RpcClient {
         this.interceptors = interceptors;
         this.conf = conf;
         this.grpcExecutor = Executors.newFixedThreadPool(1, new ThreadFactoryBuilder()
-            .setNameFormat("grpc-client-" + address + "-%d")
-            .setUncaughtExceptionHandler(
-                (t, e) -> System.err.println(String.format("grpc-client-executor caught exception: %s %s", t, e))
-            ).build());
+                .setNameFormat("grpc-client-" + address + "-%d")
+                .setDaemon(true)
+                .setUncaughtExceptionHandler(
+                    (t, e) -> System.err.println(String.format("grpc-client-executor caught exception: %s %s", t, e))
+                ).build());
         this.backgroundExecutor = Executors.newFixedThreadPool(1, new ThreadFactoryBuilder()
-            .setNameFormat("client-bg-" + address + "-%d")
-            .setUncaughtExceptionHandler(
-                (t, e) -> System.err.println(String.format("rpc-client-bg-executor caught exception: %s %s", t, e))
-            ).build());
+                .setNameFormat("client-bg-" + address + "-%d")
+                .setDaemon(true)
+                .setUncaughtExceptionHandler(
+                    (t, e) -> System.err.println(String.format("rpc-client-bg-executor caught exception: %s %s", t, e))
+                ).build());
     }
 
     /**
@@ -195,6 +202,8 @@ final class RpcClient {
      */
     void shutdown() {
         shuttingDown = true;
+        backgroundExecutor.shutdown();
+        eventLoopGroup.shutdownGracefully();
         channelMap.keySet().forEach(this::shutdownChannel);
     }
 
@@ -226,7 +235,7 @@ final class RpcClient {
                                         final SettableFuture<T> signal,
                                         final int retries) {
         ListenableFuture<T> callFuture;
-        if (shuttingDown) {
+        if (shuttingDown || Thread.currentThread().isInterrupted()) {
             return;
         }
         try {
@@ -307,6 +316,7 @@ final class RpcClient {
             channel = NettyChannelBuilder
                     .forAddress(remote.getHost(), remote.getPort())
                     .executor(grpcExecutor)
+                    .eventLoopGroup(eventLoopGroup)
                     .withOption(ChannelOption.SO_REUSEADDR, true)
                     .usePlaintext(true)
                     .idleTimeout(10, TimeUnit.SECONDS)

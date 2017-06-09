@@ -33,6 +33,9 @@ import io.grpc.ServerInterceptors;
 import io.grpc.inprocess.InProcessServerBuilder;
 import io.grpc.netty.NettyServerBuilder;
 import io.grpc.stub.StreamObserver;
+import io.netty.channel.EventLoopGroup;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.util.concurrent.DefaultThreadFactory;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -51,7 +54,10 @@ import java.util.concurrent.TimeUnit;
  */
 final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     @VisibleForTesting static boolean USE_IN_PROCESS_SERVER = false;
-    private static final ExecutorService GRPC_EXECUTORS = Executors.newFixedThreadPool(20);
+    private final ExecutorService grpcExecutor = Executors.newFixedThreadPool(1,
+                                                  new DefaultThreadFactory("server-exec", true));
+    private final EventLoopGroup eventLoopGroup = new NioEventLoopGroup(1,
+                                                  new DefaultThreadFactory("server-elg", true));
     private static final ProbeResponse BOOTSTRAPPING_MESSAGE =
             ProbeResponse.newBuilder().setStatus(NodeStatus.BOOTSTRAPPING).build();
     private final HostAndPort address;
@@ -171,15 +177,15 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
             final ServerBuilder builder = InProcessServerBuilder.forName(address.toString());
             server = builder.addService(ServerInterceptors
                     .intercept(this, interceptorList))
-                    .executor(GRPC_EXECUTORS)
+                    .executor(grpcExecutor)
                     .build()
                     .start();
         } else {
-            final ServerBuilder builder = NettyServerBuilder.forAddress(new InetSocketAddress(address.getHost(),
-                                                                                              address.getPort()));
-            server = builder.addService(ServerInterceptors
+            server = NettyServerBuilder.forAddress(new InetSocketAddress(address.getHost(), address.getPort()))
+                    .workerEventLoopGroup(eventLoopGroup)
+                    .addService(ServerInterceptors
                     .intercept(this, interceptorList))
-                    .executor(GRPC_EXECUTORS)
+                    .executor(grpcExecutor)
                     .build()
                     .start();
         }
@@ -200,6 +206,7 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
             server.shutdown();
             server.awaitTermination(1, TimeUnit.SECONDS);
             executor.shutdownNow();
+            eventLoopGroup.shutdownGracefully();
         } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
         }
