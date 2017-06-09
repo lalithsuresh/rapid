@@ -73,8 +73,12 @@ final class WatermarkBuffer {
      */
     List<HostAndPort> aggregateForProposal(final LinkUpdateMessage msg) {
         Objects.requireNonNull(msg);
-        return aggregateForProposal(HostAndPort.fromString(msg.getLinkSrc()), HostAndPort.fromString(msg.getLinkDst()),
-                                    msg.getLinkStatus(), msg.getRingNumber());
+        final ArrayList<HostAndPort> proposals = new ArrayList<>();
+        msg.getRingNumberList().forEach(ringNumber ->
+            proposals.addAll(aggregateForProposal(HostAndPort.fromString(msg.getLinkSrc()),
+                                                  HostAndPort.fromString(msg.getLinkDst()),
+                                                  msg.getLinkStatus(), ringNumber)));
+        return proposals;
     }
 
     private List<HostAndPort> aggregateForProposal(final HostAndPort linkSrc, final HostAndPort linkDst,

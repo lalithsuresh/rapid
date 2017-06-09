@@ -309,7 +309,7 @@ public class WatermarkBufferTest {
                 .setLinkSrc(src.toString())
                 .setLinkDst(dst.toString())
                 .setLinkStatus(status)
-                .setRingNumber(ringNumber)
+                .addRingNumber(ringNumber)
                 .setConfigurationId(configuration).build();
     }
 }

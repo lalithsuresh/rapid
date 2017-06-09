@@ -59,7 +59,7 @@ message LinkUpdateMessage
     string linkDst = 2;
     LinkStatus linkStatus = 3;
     int64 configurationId = 4;
-    int32 ringNumber = 5;
+    repeated int32 ringNumber = 5;
     string uuid = 6;                      // Required only for join protocol
     Metadata metadata = 7;     // Required only for join protocol
 }

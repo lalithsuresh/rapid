@@ -244,12 +244,10 @@ public class ClusterTest {
         for (int i = 0; i < phaseOneJoiners / 2; i++) {
             final List<HostAndPort> keysAsArray = new ArrayList<>(instances.keySet());
             extendCluster(2, keysAsArray.get(r.nextInt(instances.size())));
-            Thread.sleep(50);
         }
         Thread.sleep(100);
         for (int i = 0; i < phaseTwojoiners; i++) {
             extendCluster(1, seedHost);
-            Thread.sleep(50);
         }
         waitAndVerifyAgreement(numNodes + phaseOneJoiners + phaseTwojoiners, 20, 1000, seedHost);
         verifyNumClusterInstances(numNodes + phaseOneJoiners + phaseTwojoiners);

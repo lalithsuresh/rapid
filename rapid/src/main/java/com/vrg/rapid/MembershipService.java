@@ -225,19 +225,16 @@ final class MembershipService {
             joinersToRespondTo.computeIfAbsent(HostAndPort.fromString(joinMessage.getSender()),
                     (k) -> new LinkedBlockingDeque<>()).add(responseObserver);
 
-            joinMessage.getRingNumberList().forEach(ringNumber -> {
-                    final LinkUpdateMessage msg = LinkUpdateMessage.newBuilder()
-                            .setLinkSrc(this.myAddr.toString())
-                            .setLinkDst(joinMessage.getSender())
-                            .setLinkStatus(LinkStatus.UP)
-                            .setConfigurationId(currentConfiguration)
-                            .setUuid(joinMessage.getUuid())
-                            .setRingNumber(ringNumber)
-                            .setMetadata(joinMessage.getMetadata())
-                            .build();
-                    enqueueLinkUpdateMessage(msg);
-                }
-            );
+            final LinkUpdateMessage msg = LinkUpdateMessage.newBuilder()
+                    .setLinkSrc(this.myAddr.toString())
+                    .setLinkDst(joinMessage.getSender())
+                    .setLinkStatus(LinkStatus.UP)
+                    .setConfigurationId(currentConfiguration)
+                    .setUuid(joinMessage.getUuid())
+                    .addAllRingNumber(joinMessage.getRingNumberList())
+                    .setMetadata(joinMessage.getMetadata())
+                    .build();
+            enqueueLinkUpdateMessage(msg);
         } else {
             // This handles the corner case where the configuration changed between phase 1 and phase 2
             // of the joining node's bootstrap. It should attempt to rejoin the network.
@@ -515,13 +512,14 @@ final class MembershipService {
                             monitoree, myAddr, configurationId, size);
                 }
                 // Note: setUuid is deliberately missing here because it does not affect leaves.
-                final LinkUpdateMessage.Builder msgTemplate = LinkUpdateMessage.newBuilder()
+                final LinkUpdateMessage msg = LinkUpdateMessage.newBuilder()
                         .setLinkSrc(myAddr.toString())
                         .setLinkDst(monitoree.toString())
                         .setLinkStatus(LinkStatus.DOWN)
-                        .setConfigurationId(configurationId);
-                membershipView.getRingNumbers(myAddr, monitoree)
-                        .forEach(i -> enqueueLinkUpdateMessage(msgTemplate.setRingNumber(i).build()));
+                        .addAllRingNumber(membershipView.getRingNumbers(myAddr, monitoree))
+                        .setConfigurationId(configurationId)
+                        .build();
+                enqueueLinkUpdateMessage(msg);
             }
         );
     }
