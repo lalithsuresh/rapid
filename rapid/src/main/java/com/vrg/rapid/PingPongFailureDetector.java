@@ -87,7 +87,10 @@ public class PingPongFailureDetector implements ILinkFailureDetector {
         if (!failureCount.containsKey(monitoree)) {
             LOG.trace("handleProbeOnSuccess at {} heard from a node we are not assigned to ({})", address, monitoree);
         }
-        failureCount.get(monitoree).incrementAndGet();
+        final AtomicInteger counter = failureCount.get(monitoree);
+        if (counter != null) {
+            counter.incrementAndGet();
+        }
         LOG.trace("handleProbeOnFailure at {} from {}: {}", address, monitoree, throwable.getLocalizedMessage());
     }
 
@@ -109,9 +112,10 @@ public class PingPongFailureDetector implements ILinkFailureDetector {
     public boolean hasFailed(final HostAndPort monitoree) {
         if (!failureCount.containsKey(monitoree)) {
             LOG.trace("handleProbeOnSuccess at {} heard from a node we are not assigned to ({})",
-                       address, monitoree);
+                    address, monitoree);
         }
-        return failureCount.get(monitoree).get() >= FAILURE_THRESHOLD;
+        final AtomicInteger counter = failureCount.get(monitoree);
+        return counter != null && counter.get() >= FAILURE_THRESHOLD;
     }
 
     // Executed at monitoree
