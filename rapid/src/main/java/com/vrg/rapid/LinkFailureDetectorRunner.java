@@ -32,7 +32,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
-import java.util.function.Consumer;
+import java.util.function.BiConsumer;
 
 /**
  * A runnable that periodically executes a failure detector. In the future, the frequency of invoking this
@@ -43,7 +43,8 @@ class LinkFailureDetectorRunner implements Runnable {
     @GuardedBy("this") private Set<HostAndPort> monitorees = Collections.emptySet();
     private final ILinkFailureDetector linkFailureDetector;
     private final RpcClient rpcClient;
-    private final List<Consumer<HostAndPort>> linkFailureSubscriptions = new ArrayList<>();
+    private final List<BiConsumer<HostAndPort, Long>> linkFailureSubscriptions = new ArrayList<>();
+    private long currentConfigurationId = -1;
 
     LinkFailureDetectorRunner(final ILinkFailureDetector linkFailureDetector,
                               final RpcClient rpcClient) {
@@ -56,9 +57,10 @@ class LinkFailureDetectorRunner implements Runnable {
      *
      * @param newMonitorees the new set of monitorees for this node.
      */
-    synchronized void updateMembership(final List<HostAndPort> newMonitorees) {
+    synchronized void updateMembership(final List<HostAndPort> newMonitorees, final long configurationId) {
         this.monitorees = new HashSet<>(newMonitorees);
         this.linkFailureDetector.onMembershipChange(newMonitorees);
+        this.currentConfigurationId = configurationId;
     }
 
     /**
@@ -72,7 +74,7 @@ class LinkFailureDetectorRunner implements Runnable {
     /**
      * Register subscribe to link failed notifications.
      */
-    void registerSubscription(final Consumer<HostAndPort> consumer) {
+    void registerSubscription(final BiConsumer<HostAndPort, Long> consumer) {
         linkFailureSubscriptions.add(consumer);
     }
 
@@ -83,6 +85,7 @@ class LinkFailureDetectorRunner implements Runnable {
     @Override
     public synchronized void run() {
         try {
+            assert currentConfigurationId != -1;
             if (monitorees.size() == 0) {
                 return;
             }
@@ -93,8 +96,10 @@ class LinkFailureDetectorRunner implements Runnable {
                     final ListenableFuture<Void> check = linkFailureDetector.checkMonitoree(monitoree);
                     healthChecks.add(check);
                 } else {
+                    // Necessary to avoid IS2_INCONSISTENT_SYNC
+                    final long configurationId = currentConfigurationId;
                     // Informs MembershipService and other subscribers, if any, about the failure.
-                    linkFailureSubscriptions.forEach(subscriber -> subscriber.accept(monitoree));
+                    linkFailureSubscriptions.forEach(subscriber -> subscriber.accept(monitoree, configurationId));
                 }
             }
 

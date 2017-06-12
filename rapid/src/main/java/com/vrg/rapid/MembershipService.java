@@ -174,7 +174,8 @@ final class MembershipService {
         this.linkFailureDetectorRunner.registerSubscription(this::linkFailureNotification);
 
         // This primes the link failure detector with the initial set of monitorees.
-        linkFailureDetectorRunner.updateMembership(membershipView.getMonitoreesOf(myAddr));
+        linkFailureDetectorRunner.updateMembership(membershipView.getMonitoreesOf(myAddr),
+                                                   membershipView.getCurrentConfigurationId());
         failureDetectorJob = this.backgroundTasksExecutor.scheduleAtFixedRate(linkFailureDetectorRunner,
                 FAILURE_DETECTOR_INITIAL_DELAY_IN_MS, FAILURE_DETECTOR_INTERVAL_IN_MS, TimeUnit.MILLISECONDS);
     }
@@ -423,21 +424,22 @@ final class MembershipService {
         announcedProposal = false;
 
         broadcaster.setMembership(membershipView.getRing(0));
+
+        // This should yield the new configuration.
+        final MembershipView.Configuration configuration = membershipView.getConfiguration();
+
         // Inform LinkFailureDetector about membership change
         if (membershipView.isHostPresent(myAddr)) {
             final List<HostAndPort> newMonitorees = membershipView.getMonitoreesOf(myAddr);
-            linkFailureDetectorRunner.updateMembership(newMonitorees);
+            linkFailureDetectorRunner.updateMembership(newMonitorees, configuration.getConfigurationId());
         }
         else {
             // We need to gracefully exit by calling a user handler and invalidating
             // the current session.
             LOG.trace("{} got kicked out and is shutting down.", myAddr);
-            linkFailureDetectorRunner.updateMembership(Collections.emptyList());
+            linkFailureDetectorRunner.updateMembership(Collections.emptyList(), configuration.getConfigurationId());
             return;
         }
-
-        // This should yield the new configuration.
-        final MembershipView.Configuration configuration = membershipView.getConfiguration();
 
         assert configuration.hostAndPorts.size() > 0;
         assert configuration.uuids.size() > 0;
@@ -503,10 +505,15 @@ final class MembershipService {
      *
      * @param monitoree The monitoree that has failed.
      */
-    private void linkFailureNotification(final HostAndPort monitoree) {
+    private void linkFailureNotification(final HostAndPort monitoree, final long configurationId) {
         // TODO: race condition: the notification may be processed by protocolExecutor after a membership change.
         protocolExecutor.execute(() -> {
-                final long configurationId = membershipView.getCurrentConfigurationId();
+                if (configurationId != membershipView.getCurrentConfigurationId()) {
+                    LOG.debug("Ignoring failure notification from old configuration" +
+                                    " {monitoree:{}, monitor:{}, config:{}, oldConfiguration:{}}",
+                            monitoree, myAddr, membershipView.getCurrentConfigurationId(), configurationId);
+                    return;
+                }
                 if (LOG.isDebugEnabled()) {
                     final int size = membershipView.getMembershipSize();
                     LOG.debug("Announcing LinkFail event {monitoree:{}, monitor:{}, config:{}, size:{}}",

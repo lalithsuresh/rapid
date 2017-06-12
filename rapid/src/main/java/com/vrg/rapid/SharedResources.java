@@ -107,10 +107,7 @@ class SharedResources {
                 .setNameFormat(namePrefix + "-%d")
                 .setDaemon(true)
                 .setUncaughtExceptionHandler(
-                    (t, e) -> {
-                        e.printStackTrace();
-                        System.err.println(String.format(t.getName() + " caught exception: %s %s", t, e));
-                    }
+                    (t, e) -> System.err.println(String.format(t.getName() + " caught exception: %s %s", t, e))
                 ).build();
     }
 }
