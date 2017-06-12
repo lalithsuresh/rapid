@@ -21,16 +21,16 @@ import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
 import io.grpc.ServerInterceptor;
 import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
+import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 import static org.junit.Assert.assertEquals;
@@ -49,7 +49,12 @@ public class MessagingTest {
     private static final String LOCALHOST_IP = "127.0.0.1";
     private final List<RpcServer> rpcServers = new ArrayList<>();
     private final List<MembershipService> services = new ArrayList<>();
-    private final ExecutorService protocolExecutor = Executors.newSingleThreadScheduledExecutor();
+    @Nullable private SharedResources resources = null;
+
+    @Before
+    public void prepare() throws InterruptedException {
+        resources = new SharedResources(HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE));
+    }
 
     @After
     public void cleanup() throws InterruptedException {
@@ -59,6 +64,9 @@ public class MessagingTest {
             service.shutdown();
         }
         services.clear();
+        if (resources != null) {
+            resources.shutdown();
+        }
     }
 
     /**
@@ -246,7 +254,7 @@ public class MessagingTest {
         final HostAndPort serverAddr2 = HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE + 1);
         final UUID nodeIdentifier1 = UUID.randomUUID();
         final UUID nodeIdentifier2 = UUID.randomUUID();
-        final RpcServer rpcServer = new RpcServer(serverAddr2, protocolExecutor);
+        final RpcServer rpcServer = new RpcServer(serverAddr2, resources);
         rpcServer.startServer();
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr1, nodeIdentifier1);
@@ -298,9 +306,9 @@ public class MessagingTest {
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, UUID.randomUUID());
         final MembershipService service =
-                new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView, protocolExecutor)
+                new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView, resources)
                                     .build();
-        final RpcServer rpcServer = new RpcServer(serverAddr, protocolExecutor);
+        final RpcServer rpcServer = new RpcServer(serverAddr, resources);
         rpcServer.setMembershipService(service);
         rpcServer.startServer();
         rpcServers.add(rpcServer);
@@ -318,9 +326,9 @@ public class MessagingTest {
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, UUID.randomUUID());
         final MembershipService service =
-                new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView, protocolExecutor)
+                new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView, resources)
                         .build();
-        final RpcServer rpcServer = new RpcServer(serverAddr, protocolExecutor);
+        final RpcServer rpcServer = new RpcServer(serverAddr, resources);
         rpcServer.setMembershipService(service);
         rpcServer.startServer(interceptors);
         rpcServers.add(rpcServer);
@@ -337,9 +345,9 @@ public class MessagingTest {
             throws IOException {
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
         final MembershipService service =
-                new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView, protocolExecutor)
+                new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView, resources)
                         .build();
-        final RpcServer rpcServer = new RpcServer(serverAddr, protocolExecutor);
+        final RpcServer rpcServer = new RpcServer(serverAddr, resources);
         rpcServer.setMembershipService(service);
         rpcServer.startServer(interceptors);
         rpcServers.add(rpcServer);

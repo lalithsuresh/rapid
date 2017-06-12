@@ -34,8 +34,6 @@ import io.grpc.inprocess.InProcessServerBuilder;
 import io.grpc.netty.NettyServerBuilder;
 import io.grpc.stub.StreamObserver;
 import io.netty.channel.EventLoopGroup;
-import io.netty.channel.nio.NioEventLoopGroup;
-import io.netty.util.concurrent.DefaultThreadFactory;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -44,7 +42,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 
@@ -54,27 +51,26 @@ import java.util.concurrent.TimeUnit;
  */
 final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     @VisibleForTesting static boolean USE_IN_PROCESS_SERVER = false;
-    private final ExecutorService grpcExecutor = Executors.newFixedThreadPool(1,
-                                                  new DefaultThreadFactory("server-exec", true));
+    private final ExecutorService grpcExecutor;
     @Nullable private EventLoopGroup eventLoopGroup = null;
     private static final ProbeResponse BOOTSTRAPPING_MESSAGE =
             ProbeResponse.newBuilder().setStatus(NodeStatus.BOOTSTRAPPING).build();
     private final HostAndPort address;
     @Nullable private MembershipService membershipService;
     @Nullable private Server server;
-    private final ExecutorService executor;
+    private final ExecutorService protocolExecutor;
 
     // Used to queue messages in the RPC layer until we are ready with
     // a MembershipService object
     private final DeferredReceiveInterceptor deferringInterceptor = new DeferredReceiveInterceptor();
 
     RpcServer(final HostAndPort address,
-              final ExecutorService executorService) {
+              final SharedResources sharedResources) {
         this.address = address;
-        this.executor = executorService;
+        this.protocolExecutor = sharedResources.getProtocolExecutor();
+        this.grpcExecutor = sharedResources.getServerExecutor();
         if (!USE_IN_PROCESS_SERVER) {
-            this.eventLoopGroup = new NioEventLoopGroup(1,
-                                  new DefaultThreadFactory("server-elg", true));
+            this.eventLoopGroup = sharedResources.getEventLoopGroup();
         }
     }
 
@@ -85,7 +81,7 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     public void receiveLinkUpdateMessage(final BatchedLinkUpdateMessage request,
                                          final StreamObserver<Response> responseObserver) {
         assert membershipService != null;
-        executor.execute(() -> membershipService.processLinkUpdateMessage(request));
+        protocolExecutor.execute(() -> membershipService.processLinkUpdateMessage(request));
         responseObserver.onNext(Response.getDefaultInstance());
         responseObserver.onCompleted();
     }
@@ -97,7 +93,7 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     public void receiveConsensusProposal(final ConsensusProposal request,
                                          final StreamObserver<ConsensusProposalResponse> responseObserver) {
         assert membershipService != null;
-        executor.execute(() -> membershipService.processConsensusProposal(request));
+        protocolExecutor.execute(() -> membershipService.processConsensusProposal(request));
         responseObserver.onNext(ConsensusProposalResponse.getDefaultInstance());
         responseObserver.onCompleted();
     }
@@ -109,7 +105,7 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     public void receiveJoinMessage(final JoinMessage joinMessage,
                                    final StreamObserver<JoinResponse> responseObserver) {
         assert membershipService != null;
-        executor.execute(() -> membershipService.processJoinMessage(joinMessage, responseObserver));
+        protocolExecutor.execute(() -> membershipService.processJoinMessage(joinMessage, responseObserver));
     }
 
     /**
@@ -119,7 +115,7 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     public void receiveJoinPhase2Message(final JoinMessage joinMessage,
                                          final StreamObserver<JoinResponse> responseObserver) {
         assert membershipService != null;
-        executor.execute(() -> membershipService.processJoinPhaseTwoMessage(joinMessage, responseObserver));
+        protocolExecutor.execute(() -> membershipService.processJoinPhaseTwoMessage(joinMessage, responseObserver));
     }
 
     /**
@@ -129,7 +125,7 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     public void receiveProbe(final ProbeMessage probeMessage,
                              final StreamObserver<ProbeResponse> probeResponseObserver) {
         if (membershipService != null) {
-            executor.execute(() -> membershipService.processProbeMessage(probeMessage, probeResponseObserver));
+            protocolExecutor.execute(() -> membershipService.processProbeMessage(probeMessage, probeResponseObserver));
         }
         else {
             /*
@@ -208,7 +204,7 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
             }
             server.shutdown();
             server.awaitTermination(1, TimeUnit.SECONDS);
-            executor.shutdownNow();
+            protocolExecutor.shutdownNow();
             if (eventLoopGroup != null) {
                 eventLoopGroup.shutdownGracefully();
             }
