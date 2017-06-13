@@ -22,6 +22,7 @@ import com.vrg.rapid.monitoring.ILinkFailureDetector;
 import com.vrg.rapid.pb.NodeStatus;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
+import io.grpc.StatusRuntimeException;
 import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -121,9 +122,13 @@ public class PingPongFailureDetector implements ILinkFailureDetector {
     // Executed at monitoree
     public void handleProbeMessage(final ProbeMessage probeMessage,
                                    final StreamObserver<ProbeResponse> probeResponseStreamObserver) {
-        LOG.trace("handleProbeMessage at {} from {}", address, probeMessage.getSender());
-        probeResponseStreamObserver.onNext(ProbeResponse.getDefaultInstance());
-        probeResponseStreamObserver.onCompleted();
+        try {
+            LOG.trace("handleProbeMessage at {} from {}", address, probeMessage.getSender());
+            probeResponseStreamObserver.onNext(ProbeResponse.getDefaultInstance());
+            probeResponseStreamObserver.onCompleted();
+        } catch (final StatusRuntimeException e) {
+            LOG.trace("StreamObserver.onNext() for message {} received StatusRuntimeException", probeMessage);
+        }
     }
 
     private class ProbeCallback implements FutureCallback<ProbeResponse> {

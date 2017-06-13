@@ -45,7 +45,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -96,7 +95,7 @@ final class MembershipService {
     private final ScheduledExecutorService backgroundTasksExecutor;
     private final ScheduledFuture<?> linkUpdateBatcherJob;
     private final ScheduledFuture<?> failureDetectorJob;
-    private final ExecutorService protocolExecutor;
+    private final SharedResources sharedResources;
 
     // Fields used by consensus protocol
     private final Map<List<String>, AtomicInteger> votesPerProposal = new HashMap<>();
@@ -147,7 +146,7 @@ final class MembershipService {
         this.myAddr = builder.myAddr;
         this.membershipView = builder.membershipView;
         this.watermarkBuffer = builder.watermarkBuffer;
-        this.protocolExecutor = builder.sharedResources.getProtocolExecutor();
+        this.sharedResources = builder.sharedResources;
         this.metadataManager = new MetadataManager();
         this.metadataManager.addMetadata(builder.metadata);
         this.rpcClient = builder.rpcClient != null ? builder.rpcClient : new RpcClient(myAddr);
@@ -507,7 +506,7 @@ final class MembershipService {
      */
     private void linkFailureNotification(final HostAndPort monitoree, final long configurationId) {
         // TODO: race condition: the notification may be processed by protocolExecutor after a membership change.
-        protocolExecutor.execute(() -> {
+        sharedResources.getProtocolExecutor().execute(() -> {
                 if (configurationId != membershipView.getCurrentConfigurationId()) {
                     LOG.debug("Ignoring failure notification from old configuration" +
                                     " {monitoree:{}, monitor:{}, config:{}, oldConfiguration:{}}",
