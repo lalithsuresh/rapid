@@ -31,7 +31,6 @@ import com.vrg.rapid.pb.ProbeResponse;
 import com.vrg.rapid.pb.Response;
 import io.grpc.Channel;
 import io.grpc.ClientInterceptor;
-import io.grpc.ClientInterceptors;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import io.grpc.inprocess.InProcessChannelBuilder;
@@ -59,6 +58,7 @@ import java.util.function.Supplier;
  */
 final class RpcClient {
     private static final Logger LOG = LoggerFactory.getLogger(RpcClient.class);
+    private static final int DEFAULT_BUF_SIZE = 4096;
     static boolean USE_IN_PROCESS_CHANNEL = false;
     private final HostAndPort address;
     private final List<ClientInterceptor> interceptors;
@@ -273,13 +273,7 @@ final class RpcClient {
     }
 
     private MembershipServiceFutureStub getFutureStub(final HostAndPort remote) {
-        // TODO: allow configuring SSL/TLS
-        Channel channel = channelMap.computeIfAbsent(remote, this::getChannel);
-
-        if (interceptors.size() > 0) {
-            channel = ClientInterceptors.intercept(channel, interceptors);
-        }
-
+        final Channel channel = channelMap.computeIfAbsent(remote, this::getChannel);
         return MembershipServiceGrpc.newFutureStub(channel);
     }
 
@@ -306,10 +300,13 @@ final class RpcClient {
             channel = NettyChannelBuilder
                     .forAddress(remote.getHost(), remote.getPort())
                     .executor(grpcExecutor)
+                    .intercept(interceptors)
                     .eventLoopGroup(eventLoopGroup)
-                    .withOption(ChannelOption.SO_REUSEADDR, true)
                     .usePlaintext(true)
                     .idleTimeout(10, TimeUnit.SECONDS)
+                    .withOption(ChannelOption.SO_REUSEADDR, true)
+                    .withOption(ChannelOption.SO_SNDBUF, DEFAULT_BUF_SIZE)
+                    .withOption(ChannelOption.SO_RCVBUF, DEFAULT_BUF_SIZE)
                     .build();
         }
 
