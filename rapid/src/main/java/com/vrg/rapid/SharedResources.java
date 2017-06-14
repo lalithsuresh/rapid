@@ -19,6 +19,7 @@ import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.util.concurrent.DefaultThreadFactory;
 
+import javax.annotation.Nullable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
@@ -28,15 +29,15 @@ import java.util.concurrent.ThreadFactory;
  */
 class SharedResources {
     private static final int DEFAULT_THREADS = 1;
-    private final EventLoopGroup eventLoopGroup;
+    @Nullable private EventLoopGroup eventLoopGroup = null;
     private final ExecutorService backgroundExecutor;
     private final ExecutorService serverExecutor;
     private final ExecutorService clientChannelExecutor;
     private final ExecutorService protocolExecutor;
+    private final HostAndPort address;
 
     SharedResources(final HostAndPort address) {
-        this.eventLoopGroup = new NioEventLoopGroup(DEFAULT_THREADS,
-                                                    newFastLocalThreadFactory("elg", address));
+        this.address = address;
         this.serverExecutor = Executors.newFixedThreadPool(DEFAULT_THREADS,
                                                     newFastLocalThreadFactory("server-exec", address));
         this.clientChannelExecutor = Executors.newFixedThreadPool(DEFAULT_THREADS,
@@ -49,7 +50,11 @@ class SharedResources {
     /**
      * The ELG used by RpcClient and RpcServer
      */
-    EventLoopGroup getEventLoopGroup() {
+    synchronized EventLoopGroup getEventLoopGroup() {
+        // Lazily initialized because this is not required for tests that use InProcessChannel/Server.
+        if (eventLoopGroup == null) {
+            eventLoopGroup = new NioEventLoopGroup(DEFAULT_THREADS, newFastLocalThreadFactory("elg", address));
+        }
         return eventLoopGroup;
     }
 
@@ -84,10 +89,12 @@ class SharedResources {
     /**
      * Shuts down resources. TODO: resolve the interactions between the sequence of resource shutdowns.
      */
-    void shutdown() {
+    synchronized void shutdown() {
         serverExecutor.shutdownNow();
         protocolExecutor.shutdownNow();
-        eventLoopGroup.shutdownGracefully();
+        if (eventLoopGroup != null) {
+            eventLoopGroup.shutdownGracefully();
+        }
     }
 
     /**
