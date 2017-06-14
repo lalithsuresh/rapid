@@ -41,6 +41,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -52,6 +54,8 @@ import static org.junit.Assert.fail;
  * Test public API
  */
 public class ClusterTest {
+    private static final Logger GRPC_LOGGER;
+    private static final Logger NETTY_LOGGER;
     private final Map<HostAndPort, Cluster> instances = new ConcurrentHashMap<>();
     private final Map<HostAndPort, StaticFailureDetector> staticFds = new ConcurrentHashMap<>();
     private final Map<HostAndPort, List<ServerInterceptor>> serverInterceptors = new ConcurrentHashMap<>();
@@ -63,6 +67,14 @@ public class ClusterTest {
     private int basePort;
     @Nullable private AtomicInteger portCounter = null;
     private RpcClient.Conf clientConf = new RpcClient.Conf();
+
+    static {
+        // gRPC and netty logs clutter the test output
+        GRPC_LOGGER = Logger.getLogger("io.grpc");
+        GRPC_LOGGER.setLevel(Level.OFF);
+        NETTY_LOGGER = Logger.getLogger("io.grpc.netty.NettyServerHandler");
+        NETTY_LOGGER.setLevel(Level.OFF);
+    }
 
     @Rule
     public final TestWatcher testWatcher = new TestWatcher() {
