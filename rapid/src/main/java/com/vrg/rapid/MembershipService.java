@@ -350,10 +350,9 @@ final class MembershipService {
         final AtomicInteger proposalsReceived = votesPerProposal.computeIfAbsent(proposalMessage.getHostsList(),
                                                                             (k) -> new AtomicInteger(0));
         final int count = proposalsReceived.incrementAndGet();
-        final int F = (int) Math.ceil(((double) membershipSize - 1) / 4.0); // Fast Paxos resiliency.
-        final boolean bootstrapping = membershipSize < 5;
-        if (votesReceived.size() >= (membershipSize - F) || bootstrapping) {
-            if (count >= (membershipSize - F)) {
+        final int F = (int) Math.floor((membershipSize - 1) / 4.0); // Fast Paxos resiliency.
+        if (votesReceived.size() >= membershipSize - F) {
+            if (count >= membershipSize - F) {
                 LOG.trace("{} has decided on a view change: {}", myAddr, proposalMessage.getHostsList());
                 // We have a successful proposal. Consume it.
                 decideViewChange(proposalMessage.getHostsList()
@@ -505,10 +504,9 @@ final class MembershipService {
      * @param monitoree The monitoree that has failed.
      */
     private void linkFailureNotification(final HostAndPort monitoree, final long configurationId) {
-        // TODO: race condition: the notification may be processed by protocolExecutor after a membership change.
         sharedResources.getProtocolExecutor().execute(() -> {
                 if (configurationId != membershipView.getCurrentConfigurationId()) {
-                    LOG.debug("Ignoring failure notification from old configuration" +
+                    LOG.info("Ignoring failure notification from old configuration" +
                                     " {monitoree:{}, monitor:{}, config:{}, oldConfiguration:{}}",
                             monitoree, myAddr, membershipView.getCurrentConfigurationId(), configurationId);
                     return;
