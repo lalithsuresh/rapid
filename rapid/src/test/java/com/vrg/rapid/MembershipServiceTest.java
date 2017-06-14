@@ -46,7 +46,7 @@ public class MembershipServiceTest {
     @Parameters(method = "fastQuorumTestNoConflictsData")
     @TestCaseName("{method}[N={0},Q={1}]")
     public void fastQuorumTestNoConflicts(final int N, final int quorum) throws InterruptedException, IOException,
-            MembershipView.NodeAlreadyInRingException, ExecutionException {
+                                                                                ExecutionException {
         final int serverPort = 1234;
         final HostAndPort node = HostAndPort.fromParts("127.0.0.1", serverPort);
         final HostAndPort proposalNode = HostAndPort.fromParts("127.0.0.1", serverPort + 1);
@@ -70,6 +70,65 @@ public class MembershipServiceTest {
                 {6, 5}, {48, 37}, {50, 38}, {100, 76}, {102, 77}, // Even N
                 {5, 4}, {51, 39}, {49, 37}, {99, 75}, {101, 76}   // Odd N
         });
+    }
+
+
+    /**
+     * Verifies that a node makes a decision only after |quorum| identical proposals are received.
+     * This test generates conflicting proposals.
+     */
+    @Test
+    @Parameters(method = "fastQuorumTestWithConflicts")
+    @TestCaseName("{method}[N={0},Q={1},Conflicts={2},ShouldChange={3}]")
+    public void fastQuorumTestWithConflicts(final int N, final int quorum, final int numConflicts,
+                                            final boolean changeExpected)
+            throws InterruptedException, IOException, ExecutionException {
+        final int serverPort = 1234;
+        final HostAndPort node = HostAndPort.fromParts("127.0.0.1", serverPort);
+        final HostAndPort proposalNode = HostAndPort.fromParts("127.0.0.1", serverPort + 1);
+        final HostAndPort proposalNodeConflict = HostAndPort.fromParts("127.0.0.1", serverPort + 2);
+        final MembershipView view = createView(serverPort, N);
+        final MembershipService service = createAndStartMembershipService(node, view);
+        assertEquals(N, service.getMembershipSize());
+        final long currentId = view.getCurrentConfigurationId();
+
+        final ConsensusProposal.Builder proposal =
+                getProposal(currentId, Collections.singletonList(proposalNode));
+        final ConsensusProposal.Builder proposalConflict =
+                getProposal(currentId, Collections.singletonList(proposalNodeConflict));
+        for (int i = 0; i < numConflicts; i++) {
+            service.processConsensusProposal(proposalConflict.setSender(addrForBase(i).toString()).build());
+            assertEquals(N, service.getMembershipSize());
+        }
+        final int nonConflictCount = Math.min(numConflicts + quorum - 1, N - 1);
+        for (int i = numConflicts; i < nonConflictCount; i++) {
+            service.processConsensusProposal(proposal.setSender(addrForBase(i).toString()).build());
+            assertEquals(N, service.getMembershipSize());
+        }
+        service.processConsensusProposal(proposal.setSender(addrForBase(nonConflictCount)
+                                                 .toString()).build());
+        assertEquals(changeExpected ? N - 1 : N, service.getMembershipSize());
+    }
+
+    public static Iterable<Object[]> fastQuorumTestWithConflicts() {
+        // Format: (N, quorum size, number of conflicts, should-membership-change)
+        // One conflicting message. Must lead to decision.
+        final List<Object[]> oneConflictArray = Arrays.asList(new Object[][] {
+                {6, 5, 1, true}, {48, 37, 1, true},  {50, 38, 1, true},  {100, 76, 1, true},  {102, 77, 1, true},
+        });
+        // Boundary case: F conflicts, and N-F non-conflicts. Must lead to decisions.
+        final List<Object[]> boundaryCase = Arrays.asList(new Object[][] {
+                                 {48, 37, 11, true}, {50, 38, 12, true}, {100, 76, 24, true}, {102, 77, 25, true},
+        });
+        // More conflicts than Fast Paxos quorum size. These must not lead to decisions.
+        final List<Object[]> tooManyConflicts = Arrays.asList(new Object[][] {
+                {6, 5, 2, false}, {48, 37, 14, false}, {50, 38, 13, false}, {100, 76, 25, false}, {102, 77, 26, false},
+        });
+        final ArrayList<Object[]> params = new ArrayList<>();
+        params.addAll(oneConflictArray);
+        params.addAll(boundaryCase);
+        params.addAll(tooManyConflicts);
+        return params;
     }
 
     /**
