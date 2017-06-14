@@ -4,7 +4,6 @@
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <jacoco.reportPath>${project.basedir}/../target/jacoco.exec</jacoco.reportPath>
     </properties>
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.vrg</groupId>
@@ -27,7 +26,7 @@
                 <version>3.0.4</version>
                 <dependencies>
                     <dependency>
-                        <groupId>com.vrg.rapid</groupId>
+                        <groupId>com.vrg</groupId>
                         <artifactId>build-common</artifactId>
                         <version>1.0</version>
                     </dependency>
@@ -68,7 +67,7 @@
                 <version>2.17</version>
                 <dependencies>
                     <dependency>
-                        <groupId>com.vrg.rapid</groupId>
+                        <groupId>com.vrg</groupId>
                         <artifactId>build-common</artifactId>
                         <version>1.0</version>
                     </dependency>
@@ -106,7 +105,6 @@
                 </executions>
                 <configuration>
                     <append>true</append>
-                    <destFile>${jacoco.reportPath}</destFile>
                     <excludes>
                         <exclude>**/pb/*.class</exclude>
                     </excludes>
