@@ -42,14 +42,11 @@ class LinkFailureDetectorRunner implements Runnable {
     private static final Logger LOG = LoggerFactory.getLogger(LinkFailureDetectorRunner.class);
     @GuardedBy("this") private Set<HostAndPort> monitorees = Collections.emptySet();
     private final ILinkFailureDetector linkFailureDetector;
-    private final RpcClient rpcClient;
     private final List<BiConsumer<HostAndPort, Long>> linkFailureSubscriptions = new ArrayList<>();
     private long currentConfigurationId = -1;
 
-    LinkFailureDetectorRunner(final ILinkFailureDetector linkFailureDetector,
-                              final RpcClient rpcClient) {
+    LinkFailureDetectorRunner(final ILinkFailureDetector linkFailureDetector) {
         this.linkFailureDetector = linkFailureDetector;
-        this.rpcClient = rpcClient;
     }
 
     /**

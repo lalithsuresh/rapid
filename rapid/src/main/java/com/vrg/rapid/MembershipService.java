@@ -169,7 +169,7 @@ final class MembershipService {
         final ILinkFailureDetector fd  = builder.linkFailureDetector != null
                                         ? builder.linkFailureDetector
                                         : new PingPongFailureDetector(myAddr, this.rpcClient);
-        this.linkFailureDetectorRunner = new LinkFailureDetectorRunner(fd, rpcClient);
+        this.linkFailureDetectorRunner = new LinkFailureDetectorRunner(fd);
         this.linkFailureDetectorRunner.registerSubscription(this::linkFailureNotification);
 
         // This primes the link failure detector with the initial set of monitorees.
