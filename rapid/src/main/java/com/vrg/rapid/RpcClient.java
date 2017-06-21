@@ -293,6 +293,7 @@ final class RpcClient {
             channel = InProcessChannelBuilder
                     .forName(remote.toString())
                     .executor(grpcExecutor)
+                    .intercept(interceptors)
                     .usePlaintext(true)
                     .idleTimeout(10, TimeUnit.SECONDS)
                     .build();
