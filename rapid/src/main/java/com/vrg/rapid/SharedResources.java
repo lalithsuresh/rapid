@@ -22,6 +22,7 @@ import io.netty.util.concurrent.DefaultThreadFactory;
 import javax.annotation.Nullable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 
 /**
@@ -34,6 +35,7 @@ class SharedResources {
     private final ExecutorService serverExecutor;
     private final ExecutorService clientChannelExecutor;
     private final ExecutorService protocolExecutor;
+    private final ScheduledExecutorService scheduledTasksExecutor;
     private final HostAndPort address;
 
     SharedResources(final HostAndPort address) {
@@ -45,6 +47,8 @@ class SharedResources {
         this.backgroundExecutor = Executors.newFixedThreadPool(DEFAULT_THREADS,
                                                     newNamedThreadFactory("bg", address));
         this.protocolExecutor = Executors.newSingleThreadExecutor(newNamedThreadFactory("protocol", address));
+        this.scheduledTasksExecutor = Executors.newSingleThreadScheduledExecutor(
+                                                    newNamedThreadFactory("msbg", address));
     }
 
     /**
@@ -84,6 +88,13 @@ class SharedResources {
      */
     ExecutorService getProtocolExecutor() {
         return protocolExecutor;
+    }
+
+    /**
+     * Executes periodic background tasks in MembershipService.
+     */
+    ScheduledExecutorService getScheduledTasksExecutor() {
+        return scheduledTasksExecutor;
     }
 
     /**

@@ -14,7 +14,6 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.vrg.rapid.monitoring.ILinkFailureDetector;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
@@ -45,7 +44,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
@@ -155,11 +153,7 @@ final class MembershipService {
         Arrays.stream(ClusterEvents.values()).forEach(event -> this.subscriptions.put(event, new ArrayList<>(1)));
 
         // Schedule background jobs
-        this.backgroundTasksExecutor = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder()
-                .setNameFormat("msbg-" + myAddr + "-%d")
-                .setUncaughtExceptionHandler(
-                (t, e) -> System.err.println(String.format("backgroundTasksExecutor caught exception: %s %s", t, e))
-            ).build());
+        this.backgroundTasksExecutor = builder.sharedResources.getScheduledTasksExecutor();
         linkUpdateBatcherJob = this.backgroundTasksExecutor.scheduleAtFixedRate(new LinkUpdateBatcher(),
                 0, BATCHING_WINDOW_IN_MS, TimeUnit.MILLISECONDS);
 
