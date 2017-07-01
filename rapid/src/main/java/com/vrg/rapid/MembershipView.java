@@ -16,6 +16,7 @@ package com.vrg.rapid;
 import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.JoinStatusCode;
+import com.vrg.rapid.pb.NodeId;
 import net.openhft.hashing.LongHashFunction;
 
 import javax.annotation.concurrent.GuardedBy;
@@ -32,7 +33,6 @@ import java.util.NavigableSet;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.UUID;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -47,7 +47,7 @@ final class MembershipView {
     private final int K;
     private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
     @GuardedBy("rwLock") private final Map<Integer, NavigableSet<HostAndPort>> rings;
-    @GuardedBy("rwLock") private final Set<UUID> identifiersSeen = new TreeSet<>();
+    @GuardedBy("rwLock") private final Set<NodeId> identifiersSeen = new TreeSet<>(new NodeIdComparator());
     @GuardedBy("rwLock") private long currentConfigurationId = -1;
     @GuardedBy("rwLock") private boolean shouldUpdateConfigurationId = true;
 
@@ -63,7 +63,7 @@ final class MembershipView {
     /**
      * Used to bootstrap a membership view from the fields of a MembershipView.Configuration object.
      */
-    MembershipView(final int K, final Collection<UUID> uuids,
+    MembershipView(final int K, final Collection<NodeId> nodeIds,
                    final Collection<HostAndPort> hostAndPorts) {
         assert K > 0;
         this.K = K;
@@ -72,7 +72,7 @@ final class MembershipView {
             this.rings.put(k, new TreeSet<>(new AddressComparator(k)));
             this.rings.get(k).addAll(hostAndPorts);
         }
-        this.identifiersSeen.addAll(uuids);
+        this.identifiersSeen.addAll(nodeIds);
     }
 
     /**
@@ -84,7 +84,7 @@ final class MembershipView {
      *         UUID_ALREADY_IN_RING if the {@code uuid} is already seen before.
      *         SAFE_TO_JOIN otherwise.
      */
-    JoinStatusCode isSafeToJoin(final HostAndPort node, final UUID uuid) {
+    JoinStatusCode isSafeToJoin(final HostAndPort node, final NodeId uuid) {
         rwLock.readLock().lock();
         try {
             if (rings.get(0).contains(node)) {
@@ -105,14 +105,14 @@ final class MembershipView {
      * Add a node to all K rings and records its unique identifier
      *
      * @param node the node to be added
-     * @param uuid the logical identifier of the node being added
+     * @param nodeId the logical identifier of the node being added
      */
-    void ringAdd(final HostAndPort node, final UUID uuid) {
+    void ringAdd(final HostAndPort node, final NodeId nodeId) {
         Objects.requireNonNull(node);
-        Objects.requireNonNull(uuid);
+        Objects.requireNonNull(nodeId);
 
-        if (isIdentifierPresent(uuid)) {
-            throw new UUIDAlreadySeenException(node, uuid);
+        if (isIdentifierPresent(nodeId)) {
+            throw new UUIDAlreadySeenException(node, nodeId);
         }
 
         rwLock.writeLock().lock();
@@ -125,7 +125,7 @@ final class MembershipView {
                 rings.get(k).add(node);
             }
 
-            identifiersSeen.add(uuid);
+            identifiersSeen.add(nodeId);
             shouldUpdateConfigurationId = true;
         } finally {
             rwLock.writeLock().unlock();
@@ -284,7 +284,7 @@ final class MembershipView {
      * @param identifier the identifier to query for
      * @return True if the identifier has been seen before and false otherwise.
      */
-    boolean isIdentifierPresent(final UUID identifier) {
+    boolean isIdentifierPresent(final NodeId identifier) {
         rwLock.readLock().lock();
         try {
             return identifiersSeen.contains(identifier);
@@ -416,6 +416,19 @@ final class MembershipView {
         }
     }
 
+    private static final class NodeIdComparator implements Comparator<NodeId>, Serializable {
+        private static final long serialVersionUID = -4891729395L;
+
+        @Override
+        public int compare(final NodeId o1, final NodeId o2) {
+            return (o1.getHigh() < o2.getHigh() ? -1 :
+                    (o1.getHigh() > o2.getHigh() ? 1 :
+                     (o1.getLow() < o2.getLow() ? -1 :
+                      (o1.getLow() > o2.getLow() ? 1 :
+                        0))));
+        }
+    }
+
     static class NodeAlreadyInRingException extends RuntimeException {
         NodeAlreadyInRingException(final HostAndPort node) {
             super(node.toString());
@@ -429,9 +442,9 @@ final class MembershipView {
     }
 
     static class UUIDAlreadySeenException extends RuntimeException {
-        UUIDAlreadySeenException(final HostAndPort node, final UUID uuid) {
+        UUIDAlreadySeenException(final HostAndPort node, final NodeId nodeId) {
             super("Host add attempt with identifier already seen:" +
-                    " {host: " + node + ", identifier: " + uuid + "}:");
+                    " {host: " + node + ", identifier: " + nodeId + "}:");
         }
     }
 
@@ -441,11 +454,11 @@ final class MembershipView {
      * to bootstrap an identical MembershipView object.
      */
     static class Configuration {
-        final List<UUID> uuids;
+        final List<NodeId> nodeIds;
         final List<HostAndPort> hostAndPorts;
 
-        public Configuration(final Set<UUID> uuids, final Set<HostAndPort> hostAndPorts) {
-            this.uuids = ImmutableList.copyOf(uuids);
+        public Configuration(final Set<NodeId> nodeIds, final Set<HostAndPort> hostAndPorts) {
+            this.nodeIds = ImmutableList.copyOf(nodeIds);
             this.hostAndPorts = ImmutableList.copyOf(hostAndPorts);
         }
 
@@ -455,13 +468,13 @@ final class MembershipView {
          * @return a configuration identifier.
          */
         public long getConfigurationId() {
-            return getConfigurationId(this.uuids, this.hostAndPorts);
+            return getConfigurationId(this.nodeIds, this.hostAndPorts);
         }
 
-        static long getConfigurationId(final Collection<UUID> identifiers,
+        static long getConfigurationId(final Collection<NodeId> identifiers,
                                        final Collection<HostAndPort> hostAndPorts) {
             int hash = 1;
-            for (final UUID id: identifiers) {
+            for (final NodeId id: identifiers) {
                 hash = hash * 37 + id.hashCode();
             }
             for (final HostAndPort hostAndPort: hostAndPorts) {

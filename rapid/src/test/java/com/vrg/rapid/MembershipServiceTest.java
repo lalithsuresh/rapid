@@ -151,7 +151,7 @@ public class MembershipServiceTest {
     private MembershipView createView(final int basePort, final int N) {
         final MembershipView view = new MembershipView(K);
         for (int i = basePort; i < basePort + N; i++) {
-            view.ringAdd(HostAndPort.fromParts("127.0.0.1", i), UUID.randomUUID());
+            view.ringAdd(HostAndPort.fromParts("127.0.0.1", i), Utils.nodeIdFromUUID(UUID.randomUUID()));
         }
         return view;
     }

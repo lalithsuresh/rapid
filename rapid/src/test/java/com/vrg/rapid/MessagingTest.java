@@ -16,6 +16,7 @@ package com.vrg.rapid;
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
+import com.vrg.rapid.pb.NodeId;
 import com.vrg.rapid.pb.NodeStatus;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
@@ -83,7 +84,8 @@ public class MessagingTest {
 
         final HostAndPort clientAddr = HostAndPort.fromParts(LOCALHOST_IP, clientPort);
         final RpcClient client = new RpcClient(clientAddr);
-        final JoinResponse result = client.sendJoinMessage(serverAddr, clientAddr, UUID.randomUUID()).get();
+        final JoinResponse result = client.sendJoinMessage(serverAddr, clientAddr,
+                                                           Utils.nodeIdFromUUID(UUID.randomUUID())).get();
         assertNotNull(result);
         assertEquals(JoinStatusCode.SAFE_TO_JOIN, result.getStatusCode());
         assertEquals(K, result.getHostsCount());
@@ -97,7 +99,7 @@ public class MessagingTest {
     public void joinFirstNodeRetryWithErrors()
             throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException, ExecutionException {
         final int serverPort = 1234;
-        final UUID nodeIdentifier = UUID.randomUUID();
+        final NodeId nodeIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
         final HostAndPort serverAddr = HostAndPort.fromParts(LOCALHOST_IP, serverPort);
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, nodeIdentifier);
@@ -106,7 +108,8 @@ public class MessagingTest {
         // Try with the same host details as the server
         final HostAndPort clientAddr1 = HostAndPort.fromParts(LOCALHOST_IP, serverPort);
         final RpcClient client1 = new RpcClient(clientAddr1);
-        final JoinResponse result1 = client1.sendJoinMessage(serverAddr, clientAddr1, UUID.randomUUID()).get();
+        final JoinResponse result1 = client1.sendJoinMessage(serverAddr, clientAddr1,
+                                                             Utils.nodeIdFromUUID(UUID.randomUUID())).get();
         assertNotNull(result1);
         assertEquals(JoinStatusCode.HOSTNAME_ALREADY_IN_RING, result1.getStatusCode());
         assertEquals(K, result1.getHostsCount());
@@ -132,13 +135,14 @@ public class MessagingTest {
     @Test
     public void joinWithMultipleNodesCheckConfiguration()
             throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException, ExecutionException {
-        final UUID nodeIdentifier = UUID.randomUUID();
+        final NodeId nodeIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
         final int numNodes = 1000;
         final HostAndPort serverAddr = HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE);
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, nodeIdentifier);
         for (int i = 1; i < numNodes; i++) {
-            membershipView.ringAdd(HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE + i), UUID.randomUUID());
+            membershipView.ringAdd(HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE + i),
+                                   Utils.nodeIdFromUUID(UUID.randomUUID()));
         }
         createAndStartMembershipService(serverAddr, new ArrayList<>(), membershipView);
 
@@ -146,7 +150,8 @@ public class MessagingTest {
         final HostAndPort joinerAddr = HostAndPort.fromParts(LOCALHOST_IP, clientPort);
         final RpcClient joinerClient = new RpcClient(joinerAddr);
         final JoinResponse phaseOneResult = joinerClient.sendJoinMessage(serverAddr,
-                                                                         joinerAddr, UUID.randomUUID()).get();
+                                                                         joinerAddr,
+                                                                         Utils.nodeIdFromUUID(UUID.randomUUID())).get();
         assertNotNull(phaseOneResult);
         assertEquals(JoinStatusCode.SAFE_TO_JOIN, phaseOneResult.getStatusCode());
         assertEquals(K, phaseOneResult.getHostsCount()); // this is the monitor list
@@ -170,7 +175,7 @@ public class MessagingTest {
     @Test
     public void joinWithSingleNodeBootstrap()
             throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException, ExecutionException {
-        final UUID nodeIdentifier = UUID.randomUUID();
+        final NodeId nodeIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
         final HostAndPort serverAddr = HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE);
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, nodeIdentifier);
@@ -180,7 +185,7 @@ public class MessagingTest {
         final int clientPort = SERVER_PORT_BASE - 1;
         final HostAndPort joinerAddress = HostAndPort.fromParts(LOCALHOST_IP, clientPort);
         final RpcClient joinerRpcClient = new RpcClient(joinerAddress);
-        final UUID joinerUuid = UUID.randomUUID();
+        final NodeId joinerUuid = Utils.nodeIdFromUUID(UUID.randomUUID());
         final JoinResponse response = joinerRpcClient.sendJoinMessage(serverAddr, joinerAddress, joinerUuid).get();
         assertNotNull(response);
         assertEquals(JoinStatusCode.SAFE_TO_JOIN, response.getStatusCode());
@@ -206,7 +211,7 @@ public class MessagingTest {
     @Test
     public void bootstrapAndThenProbeTest()
             throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException, ExecutionException {
-        final UUID nodeIdentifier = UUID.randomUUID();
+        final NodeId nodeIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
         final HostAndPort serverAddr = HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE);
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, nodeIdentifier);
@@ -216,7 +221,7 @@ public class MessagingTest {
         final int clientPort = SERVER_PORT_BASE - 1;
         final HostAndPort joinerAddress = HostAndPort.fromParts(LOCALHOST_IP, clientPort);
         final RpcClient joinerRpcClient = new RpcClient(joinerAddress);
-        final UUID joinerUuid = UUID.randomUUID();
+        final NodeId joinerUuid = Utils.nodeIdFromUUID(UUID.randomUUID());
         final JoinResponse response = joinerRpcClient.sendJoinMessage(serverAddr, joinerAddress, joinerUuid).get();
         assertNotNull(response);
         assertEquals(JoinStatusCode.SAFE_TO_JOIN, response.getStatusCode());
@@ -252,8 +257,8 @@ public class MessagingTest {
             throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException, ExecutionException {
         final HostAndPort serverAddr1 = HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE);
         final HostAndPort serverAddr2 = HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE + 1);
-        final UUID nodeIdentifier1 = UUID.randomUUID();
-        final UUID nodeIdentifier2 = UUID.randomUUID();
+        final NodeId nodeIdentifier1 = Utils.nodeIdFromUUID(UUID.randomUUID());
+        final NodeId nodeIdentifier2 = Utils.nodeIdFromUUID(UUID.randomUUID());
         final RpcServer rpcServer = new RpcServer(serverAddr2, resources);
         rpcServer.startServer();
         final MembershipView membershipView = new MembershipView(K);
@@ -304,7 +309,7 @@ public class MessagingTest {
             throws IOException, MembershipView.NodeAlreadyInRingException {
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
         final MembershipView membershipView = new MembershipView(K);
-        membershipView.ringAdd(serverAddr, UUID.randomUUID());
+        membershipView.ringAdd(serverAddr, Utils.nodeIdFromUUID(UUID.randomUUID()));
         final MembershipService service =
                 new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView, resources)
                                     .build();
@@ -324,7 +329,7 @@ public class MessagingTest {
             throws IOException, MembershipView.NodeAlreadyInRingException {
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
         final MembershipView membershipView = new MembershipView(K);
-        membershipView.ringAdd(serverAddr, UUID.randomUUID());
+        membershipView.ringAdd(serverAddr, Utils.nodeIdFromUUID(UUID.randomUUID()));
         final MembershipService service =
                 new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView, resources)
                         .build();

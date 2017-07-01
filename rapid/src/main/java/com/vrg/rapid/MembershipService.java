@@ -23,6 +23,7 @@ import com.vrg.rapid.pb.JoinStatusCode;
 import com.vrg.rapid.pb.LinkStatus;
 import com.vrg.rapid.pb.LinkUpdateMessage;
 import com.vrg.rapid.pb.Metadata;
+import com.vrg.rapid.pb.NodeId;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
 import io.grpc.StatusRuntimeException;
@@ -42,7 +43,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -75,7 +75,7 @@ final class MembershipService {
     private final IBroadcaster broadcaster;
     private final Map<HostAndPort, LinkedBlockingDeque<StreamObserver<JoinResponse>>> joinersToRespondTo =
             new ConcurrentHashMap<>();
-    private final Map<HostAndPort, UUID> joinerUuid = new HashMap<>();
+    private final Map<HostAndPort, NodeId> joinerUuid = new HashMap<>();
     private final Map<HostAndPort, Metadata> joinerMetadata = new HashMap<>();
     private final LinkFailureDetectorRunner linkFailureDetectorRunner;
     private final RpcClient rpcClient;
@@ -181,8 +181,7 @@ final class MembershipService {
     void processJoinMessage(final JoinMessage joinMessage,
                             final StreamObserver<JoinResponse> responseObserver) {
         final HostAndPort joiningHost = HostAndPort.fromString(joinMessage.getSender());
-        final UUID uuid = UUID.fromString(joinMessage.getUuid());
-        final JoinStatusCode statusCode = membershipView.isSafeToJoin(joiningHost, uuid);
+        final JoinStatusCode statusCode = membershipView.isSafeToJoin(joiningHost, joinMessage.getNodeId());
         final JoinResponse.Builder builder = JoinResponse.newBuilder()
                 .setSender(this.myAddr.toString())
                 .setConfigurationId(membershipView.getCurrentConfigurationId())
@@ -224,7 +223,7 @@ final class MembershipService {
                     .setLinkDst(joinMessage.getSender())
                     .setLinkStatus(LinkStatus.UP)
                     .setConfigurationId(currentConfiguration)
-                    .setUuid(joinMessage.getUuid())
+                    .setNodeId(joinMessage.getNodeId())
                     .addAllRingNumber(joinMessage.getRingNumberList())
                     .setMetadata(joinMessage.getMetadata())
                     .build();
@@ -239,9 +238,8 @@ final class MembershipService {
             JoinResponse.Builder responseBuilder = JoinResponse.newBuilder()
                     .setSender(this.myAddr.toString())
                     .setConfigurationId(configuration.getConfigurationId());
-
             if (membershipView.isHostPresent(HostAndPort.fromString(joinMessage.getSender()))
-                    && membershipView.isIdentifierPresent(UUID.fromString(joinMessage.getUuid()))) {
+                    && membershipView.isIdentifierPresent(joinMessage.getNodeId())) {
 
                 // Race condition where a monitor already crossed H messages for the joiner and changed
                 // the configuration, but the JoinPhase2 messages show up at the monitor
@@ -252,10 +250,7 @@ final class MembershipService {
                                 .stream()
                                 .map(HostAndPort::toString)
                                 .collect(Collectors.toList()))
-                        .addAllIdentifiers(configuration.uuids
-                                .stream()
-                                .map(UUID::toString)
-                                .collect(Collectors.toList()));
+                        .addAllIdentifiers(configuration.nodeIds);
             } else {
                 responseBuilder = responseBuilder.setStatusCode(JoinStatusCode.CONFIG_CHANGED);
                 LOG.info("Returning CONFIG_CHANGED for {sender:{}, monitor:{}, config:{}, size:{}}",
@@ -394,8 +389,8 @@ final class MembershipService {
                 }
                 else {
                     assert joinerUuid.containsKey(node);
-                    final UUID uuid = joinerUuid.remove(node);
-                    membershipView.ringAdd(node, uuid);
+                    final NodeId nodeId = joinerUuid.remove(node);
+                    membershipView.ringAdd(node, nodeId);
                     final Metadata metadata = joinerMetadata.remove(node);
                     if (metadata.getMetadataCount() > 0) {
                         metadataManager.addMetadata(Collections.singletonMap(node.toString(), metadata));
@@ -434,7 +429,7 @@ final class MembershipService {
         }
 
         assert configuration.hostAndPorts.size() > 0;
-        assert configuration.uuids.size() > 0;
+        assert configuration.nodeIds.size() > 0;
 
         final JoinResponse response = JoinResponse.newBuilder()
                 .setSender(this.myAddr.toString())
@@ -444,10 +439,7 @@ final class MembershipService {
                         .stream()
                         .map(HostAndPort::toString)
                         .collect(Collectors.toList()))
-                .addAllIdentifiers(configuration.uuids
-                        .stream()
-                        .map(UUID::toString)
-                        .collect(Collectors.toList()))
+                .addAllIdentifiers(configuration.nodeIds)
                 .putAllClusterMetadata(metadataManager.getAllMetadata())
                 .build();
 
@@ -665,7 +657,7 @@ final class MembershipService {
 
         if (linkUpdateMessage.getLinkStatus() == LinkStatus.UP) {
             // Both the UUID and Metadata are saved only after the node is done being added.
-            joinerUuid.put(destination, UUID.fromString(linkUpdateMessage.getUuid()));
+            joinerUuid.put(destination, linkUpdateMessage.getNodeId());
             joinerMetadata.put(destination, linkUpdateMessage.getMetadata());
         }
         return true;
