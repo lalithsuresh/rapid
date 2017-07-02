@@ -17,11 +17,17 @@ service MembershipService {
 
 // ******* Join protocol messages *******
 
+message NodeId
+{
+   int64 high = 1;
+   int64 low = 2;
+}
+
 // TODO: JoinMessage and JoinResponse are overloaded because they are being used for phase 1 and 2 of the bootstrap.
 message JoinMessage
 {
    string sender = 1;
-   string uuid = 2;
+   NodeId nodeId = 2;
    repeated int32 ringNumber = 3;
    int64 configurationId = 4;
    Metadata metadata = 5;
@@ -33,7 +39,7 @@ message JoinResponse
    JoinStatusCode statusCode = 2;
    int64 configurationId = 3;
    repeated string hosts = 4;
-   repeated string identifiers = 5;
+   repeated NodeId identifiers = 5;
    map<string, Metadata> clusterMetadata = 6;
 }
 
@@ -60,8 +66,8 @@ message LinkUpdateMessage
     LinkStatus linkStatus = 3;
     int64 configurationId = 4;
     repeated int32 ringNumber = 5;
-    string uuid = 6;                      // Required only for join protocol
-    Metadata metadata = 7;     // Required only for join protocol
+    NodeId nodeId = 6;                      // Required only for join protocol
+    Metadata metadata = 7;                // Required only for join protocol
 }
 
 enum LinkStatus {

@@ -26,6 +26,7 @@ import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.MembershipServiceGrpc;
 import com.vrg.rapid.pb.MembershipServiceGrpc.MembershipServiceFutureStub;
+import com.vrg.rapid.pb.NodeId;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
 import com.vrg.rapid.pb.Response;
@@ -46,7 +47,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -110,15 +110,15 @@ final class RpcClient {
      */
     ListenableFuture<JoinResponse> sendJoinMessage(final HostAndPort remote,
                                                    final HostAndPort sender,
-                                                   final UUID uuid) {
+                                                   final NodeId nodeId) {
         Objects.requireNonNull(remote);
         Objects.requireNonNull(sender);
-        Objects.requireNonNull(uuid);
+        Objects.requireNonNull(nodeId);
 
         final JoinMessage.Builder builder = JoinMessage.newBuilder();
         final JoinMessage msg = builder.setSender(sender.toString())
-                .setUuid(uuid.toString())
-                .build();
+                                       .setNodeId(nodeId)
+                                       .build();
         final Supplier<ListenableFuture<JoinResponse>> call = () -> {
             final MembershipServiceFutureStub stub = getFutureStub(remote)
                     .withDeadlineAfter(conf.RPC_TIMEOUT_MS * 5,

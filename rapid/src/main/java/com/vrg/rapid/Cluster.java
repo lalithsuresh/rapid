@@ -22,6 +22,7 @@ import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
 import com.vrg.rapid.pb.Metadata;
+import com.vrg.rapid.pb.NodeId;
 import io.grpc.ClientInterceptor;
 import io.grpc.ExperimentalApi;
 import io.grpc.Internal;
@@ -175,7 +176,7 @@ public final class Cluster {
                @Nullable final ILinkFailureDetector linkFailureDetector, final Metadata metadata,
                final List<ServerInterceptor> serverInterceptors, final List<ClientInterceptor> clientInterceptors,
                final RpcClient.Conf conf) throws IOException, InterruptedException {
-        UUID currentIdentifier = UUID.randomUUID();
+        NodeId currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
         final SharedResources sharedResources = new SharedResources(listenAddress);
         final RpcServer server = new RpcServer(listenAddress, sharedResources);
         final RpcClient joinerClient = new RpcClient(listenAddress, clientInterceptors, sharedResources, conf);
@@ -196,7 +197,7 @@ public final class Cluster {
             switch (joinPhaseOneResult.getStatusCode()) {
                 case CONFIG_CHANGED:
                 case UUID_ALREADY_IN_RING:
-                    currentIdentifier = UUID.randomUUID();
+                    currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
                     continue;
                 case MEMBERSHIP_REJECTED:
                     LOG.error("Membership rejected by {}. Quitting.", joinPhaseOneResult.getSender());
@@ -242,7 +243,7 @@ public final class Cluster {
             for (final Map.Entry<HostAndPort, List<Integer>> entry: ringNumbersPerMonitor.entrySet()) {
                 final JoinMessage msg = JoinMessage.newBuilder()
                                                    .setSender(listenAddress.toString())
-                                                   .setUuid(currentIdentifier.toString())
+                                                   .setNodeId(currentIdentifier)
                                                    .setMetadata(metadata)
                                                    .setConfigurationId(configurationToJoin)
                                                    .addAllRingNumber(entry.getValue()).build();
@@ -275,9 +276,7 @@ public final class Cluster {
                         final List<HostAndPort> allHosts = response.getHostsList().stream()
                                 .map(HostAndPort::fromString)
                                 .collect(Collectors.toList());
-                        final List<UUID> identifiersSeen = response.getIdentifiersList().stream()
-                                .map(UUID::fromString)
-                                .collect(Collectors.toList());
+                        final List<NodeId> identifiersSeen = response.getIdentifiersList();
 
                         final Map<String, Metadata> allMetadata = response.getClusterMetadataMap();
 
@@ -333,7 +332,7 @@ public final class Cluster {
         final SharedResources sharedResources = new SharedResources(listenAddress);
         final RpcServer rpcServer = new RpcServer(listenAddress, sharedResources);
         final RpcClient rpcClient = new RpcClient(listenAddress, Collections.emptyList(), sharedResources, conf);
-        final UUID currentIdentifier = UUID.randomUUID();
+        final NodeId currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
         final MembershipView membershipView = new MembershipView(K, Collections.singletonList(currentIdentifier),
                                                                  Collections.singletonList(listenAddress));
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);

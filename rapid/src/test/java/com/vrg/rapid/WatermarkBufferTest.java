@@ -260,7 +260,7 @@ public class WatermarkBufferTest {
         for (int i = 0; i < numNodes; i++) {
             final HostAndPort node = HostAndPort.fromParts("127.0.0.2", 2 + i);
             hostAndPorts.add(node);
-            mView.ringAdd(node, UUID.randomUUID());
+            mView.ringAdd(node, Utils.nodeIdFromUUID(UUID.randomUUID()));
         }
 
         final HostAndPort dst = hostAndPorts.get(0);
