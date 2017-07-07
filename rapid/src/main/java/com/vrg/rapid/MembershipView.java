@@ -45,6 +45,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 @ThreadSafe
 final class MembershipView {
     private final int K;
+    private static final LongHashFunction HASH_FUNCTION = LongHashFunction.xx(0);
     private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
     @GuardedBy("rwLock") private final Map<Integer, NavigableSet<HostAndPort>> rings;
     @GuardedBy("rwLock") private final Set<NodeId> identifiersSeen = new TreeSet<>(new NodeIdComparator());
@@ -473,12 +474,14 @@ final class MembershipView {
 
         static long getConfigurationId(final Collection<NodeId> identifiers,
                                        final Collection<HostAndPort> hostAndPorts) {
-            int hash = 1;
+            long hash = 1;
             for (final NodeId id: identifiers) {
-                hash = hash * 37 + id.hashCode();
+                hash = hash * 37 + HASH_FUNCTION.hashLong(id.getHigh());
+                hash = hash * 37 + HASH_FUNCTION.hashLong(id.getLow());
             }
             for (final HostAndPort hostAndPort: hostAndPorts) {
-                hash = hash * 37 + hostAndPort.hashCode();
+                hash = hash * 37 + HASH_FUNCTION.hashChars(hostAndPort.getHost());
+                hash = hash * 37 + HASH_FUNCTION.hashInt(hostAndPort.getPort());
             }
             return hash;
         }
