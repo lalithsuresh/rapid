@@ -48,7 +48,7 @@ final class MembershipView {
     private static final LongHashFunction HASH_FUNCTION = LongHashFunction.xx(0);
     private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
     @GuardedBy("rwLock") private final Map<Integer, NavigableSet<HostAndPort>> rings;
-    @GuardedBy("rwLock") private final Set<NodeId> identifiersSeen = new TreeSet<>(new NodeIdComparator());
+    @GuardedBy("rwLock") private final Set<NodeId> identifiersSeen = new TreeSet<>(NodeIdComparator.INSTANCE);
     @GuardedBy("rwLock") private long currentConfigurationId = -1;
     @GuardedBy("rwLock") private boolean shouldUpdateConfigurationId = true;
 
@@ -57,7 +57,7 @@ final class MembershipView {
         this.K = K;
         this.rings = new HashMap<>(K);
         for (int k = 0; k < K; k++) {
-            this.rings.put(k, new TreeSet<>(new AddressComparator(k)));
+            this.rings.put(k, new TreeSet<>(AddressComparator.getComparatorWithSeed(k)));
         }
     }
 
@@ -70,7 +70,7 @@ final class MembershipView {
         this.K = K;
         this.rings = new HashMap<>(K);
         for (int k = 0; k < K; k++) {
-            this.rings.put(k, new TreeSet<>(new AddressComparator(k)));
+            this.rings.put(k, new TreeSet<>(AddressComparator.getComparatorWithSeed(k)));
             this.rings.get(k).addAll(hostAndPorts);
         }
         this.identifiersSeen.addAll(nodeIds);
@@ -404,6 +404,7 @@ final class MembershipView {
      */
     private static final class AddressComparator implements Comparator<HostAndPort>, Serializable {
         private static final long serialVersionUID = -4891729390L;
+        private static final Map<Integer, AddressComparator> INSTANCES = new HashMap<>();
         private final LongHashFunction hashFunction;
 
         AddressComparator(final int seed) {
@@ -415,10 +416,18 @@ final class MembershipView {
             final long hash2 = hashFunction.hashChars(c2.getHost()) * 31 + hashFunction.hashInt(c2.getPort());
             return Long.compare(hash1, hash2);
         }
+
+        static synchronized AddressComparator getComparatorWithSeed(final int seed) {
+            return INSTANCES.computeIfAbsent(seed, AddressComparator::new);
+        }
     }
 
     private static final class NodeIdComparator implements Comparator<NodeId>, Serializable {
         private static final long serialVersionUID = -4891729395L;
+        private static final NodeIdComparator INSTANCE = new NodeIdComparator();
+
+        private NodeIdComparator() {
+        }
 
         @Override
         public int compare(final NodeId o1, final NodeId o2) {

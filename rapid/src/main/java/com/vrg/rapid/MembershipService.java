@@ -43,7 +43,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
@@ -74,7 +73,7 @@ final class MembershipService {
     private final HostAndPort myAddr;
     private final IBroadcaster broadcaster;
     private final Map<HostAndPort, LinkedBlockingDeque<StreamObserver<JoinResponse>>> joinersToRespondTo =
-            new ConcurrentHashMap<>();
+            new HashMap<>();
     private final Map<HostAndPort, NodeId> joinerUuid = new HashMap<>();
     private final Map<HostAndPort, Metadata> joinerMetadata = new HashMap<>();
     private final LinkFailureDetectorRunner linkFailureDetectorRunner;
