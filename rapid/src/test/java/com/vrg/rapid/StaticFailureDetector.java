@@ -33,8 +33,8 @@ class StaticFailureDetector implements ILinkFailureDetector {
     }
 
     @Override
-    public boolean hasFailed(final HostAndPort monitorees) {
-        return failedNodes.contains(monitorees);
+    public boolean hasFailed(final HostAndPort monitoree) {
+        return failedNodes.contains(monitoree);
     }
 
     @Override

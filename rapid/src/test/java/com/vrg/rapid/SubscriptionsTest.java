@@ -1,19 +1,29 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
+import com.vrg.rapid.pb.LinkStatus;
+import com.vrg.rapid.pb.Metadata;
 import org.junit.Test;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.Set;
 import java.util.function.Consumer;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 /**
  * Tests whether subscription callbacks are invoked on cluster starts/joins
  */
 public class SubscriptionsTest {
+
+    /**
+     * Two node cluster, one subscription each.
+     */
     @Test(timeout = 5000)
     public void testSubscriptionOnJoin() throws IOException, InterruptedException {
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
@@ -33,11 +43,18 @@ public class SubscriptionsTest {
 
         assertEquals(2, seedCb.numTimesCalled());
         assertEquals(1, joinCb.numTimesCalled());
+        assertEquals(2, seedCb.getNotificationLog().size());
+        assertEquals(1, joinCb.getNotificationLog().size());
+        testNodeStatus(seedCb.getNotificationLog(), LinkStatus.UP);
+        testNodeStatus(joinCb.getNotificationLog(), LinkStatus.UP);
 
         seedCluster.shutdown();
         nonSeed.shutdown();
     }
 
+    /**
+     * Two node cluster, two subscriptions each.
+     */
     @Test(timeout = 5000)
     public void testMultipleSubscriptionsOnJoin() throws IOException, InterruptedException {
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
@@ -63,11 +80,18 @@ public class SubscriptionsTest {
         assertEquals(2, seedCb2.numTimesCalled());
         assertEquals(1, joinCb1.numTimesCalled());
         assertEquals(1, joinCb2.numTimesCalled());
+        testNodeStatus(seedCb1.getNotificationLog(), LinkStatus.UP);
+        testNodeStatus(seedCb2.getNotificationLog(), LinkStatus.UP);
+        testNodeStatus(joinCb1.getNotificationLog(), LinkStatus.UP);
+        testNodeStatus(joinCb2.getNotificationLog(), LinkStatus.UP);
 
         seedCluster.shutdown();
         nonSeed.shutdown();
     }
 
+    /**
+     * Two node cluster, seed adds a subscription after initialization.
+     */
     @Test(timeout = 5000)
     public void testSubscriptionPostJoin() throws IOException, InterruptedException {
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
@@ -83,29 +107,122 @@ public class SubscriptionsTest {
         seedCluster.registerSubscription(ClusterEvents.VIEW_CHANGE, seedCb2);
 
         // Initialize joiner
-        final TestCallback consumer1 = new TestCallback();
+        final TestCallback joinCb1 = new TestCallback();
         final Cluster nonSeed = new Cluster.Builder(joiner)
-                .addSubscription(ClusterEvents.VIEW_CHANGE, consumer1)
+                .addSubscription(ClusterEvents.VIEW_CHANGE, joinCb1)
                 .join(seedHost);
 
         assertEquals(2, seedCb1.numTimesCalled());
         assertEquals(1, seedCb2.numTimesCalled());
-        assertEquals(1, consumer1.numTimesCalled());
+        assertEquals(1, joinCb1.numTimesCalled());
+        testNodeStatus(seedCb1.getNotificationLog(), LinkStatus.UP);
+        testNodeStatus(seedCb2.getNotificationLog(), LinkStatus.UP);
+        testNodeStatus(joinCb1.getNotificationLog(), LinkStatus.UP);
 
         seedCluster.shutdown();
         nonSeed.shutdown();
     }
 
+    /**
+     * Initialized 6 node cluster, then fail the seed node. Verify that the node that joined last
+     * gets the notification about the failure, including the metadata about the seed node.
+     */
+    @Test(timeout = 10000)
+    public void testSubscriptionWithFailure() throws IOException, InterruptedException {
+        final List<StaticFailureDetector> fds = new ArrayList<>();
+        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
+
+        // Initialize seed
+        final TestCallback seedCb1 = new TestCallback();
+        final StaticFailureDetector fd = new StaticFailureDetector(new HashSet<>());
+        final Cluster seedCluster = new Cluster.Builder(seedHost)
+                .addSubscription(ClusterEvents.VIEW_CHANGE, seedCb1)
+                .setLinkFailureDetector(fd)
+                .setMetadata(Collections.singletonMap("role", "seed"))
+                .start();
+        fds.add(fd);
+
+        // Initialize joiners
+        final List<Cluster> joiners = new ArrayList<>();
+        final List<TestCallback> callbacks = new ArrayList<>();
+        final int numNodes = 5;
+        for (int i = 0; i < numNodes; i++) {
+            final HostAndPort joiner = HostAndPort.fromParts("127.0.0.1", 1235 + i);
+            final StaticFailureDetector fdJoiner = new StaticFailureDetector(new HashSet<>());
+            final TestCallback joinerCb1 = new TestCallback();
+            joiners.add(new Cluster.Builder(joiner)
+                    .addSubscription(ClusterEvents.VIEW_CHANGE, joinerCb1)
+                    .setLinkFailureDetector(fdJoiner)
+                    .join(seedHost));
+            fds.add(fdJoiner);
+            callbacks.add(joinerCb1);
+        }
+
+        // Each node will hear a number of notifications equal to the number of nodes that joined
+        // after it, as well as the notification from its own initialization
+        assertEquals(numNodes + 1, seedCb1.numTimesCalled());
+        testNodeStatus(seedCb1.getNotificationLog(), LinkStatus.UP);
+        for (int i = 0; i < numNodes; i++) {
+            assertEquals(numNodes - i, callbacks.get(i).numTimesCalled());
+            assertEquals(numNodes - i, callbacks.get(i).getNotificationLog().size());
+            testNodeStatus(callbacks.get(i).getNotificationLog(), LinkStatus.UP);
+        }
+
+        // Fail the seed node and wait for the dissemination to kick in
+        seedCluster.shutdown();
+        final Set<HostAndPort> failedNodes = new HashSet<>();
+        failedNodes.add(seedHost);
+        fds.forEach(e -> e.addFailedNodes(failedNodes));
+        Thread.sleep(2000);
+
+        // All joiners should receive one more event that includes the seed host having failed. This event
+        // should be of type LinkStatus.DOWN, and should also include the metadata about the seed node
+        for (int i = 0; i < numNodes; i++) {
+            assertEquals(numNodes - i + 1, callbacks.get(i).getNotificationLog().size());
+            final List<NodeStatusChange> lastNotification = callbacks.get(i).getNotificationLog().get(numNodes - i);
+            assertEquals(1, lastNotification.size());
+            assertEquals(LinkStatus.DOWN, lastNotification.get(0).getStatus());
+            assertEquals(seedHost, lastNotification.get(0).getHostAndPort());
+
+            // Now verify metadata
+            final Metadata metadata = lastNotification.get(0).getMetadata();
+            assertEquals(1, metadata.getMetadataCount());
+            assertTrue(metadata.getMetadataMap().containsKey("role"));
+            assertTrue(metadata.getMetadataMap().get("role").equals("seed"));
+        }
+        for (final Cluster cluster: joiners) {
+            cluster.shutdown();
+        }
+    }
+
+    /**
+     * Helper that scans a notification log and checks whether all values match a given expectedValue.
+     */
+    private void testNodeStatus(final List<List<NodeStatusChange>> log, final LinkStatus expectedValue) {
+        for (final List<NodeStatusChange> entry: log) {
+            for (final NodeStatusChange status: entry) {
+                assertEquals(expectedValue, status.getStatus());
+            }
+        }
+    }
+
+    /**
+     * Encapsulates a NodeStatusChange callback and counts the number of times it was invoked
+     */
     private static class TestCallback implements Consumer<List<NodeStatusChange>> {
-        private final AtomicInteger counter = new AtomicInteger(0);
+        private final List<List<NodeStatusChange>> notificationLog = new ArrayList<>();
 
         @Override
         public void accept(final List<NodeStatusChange> nodeStatusChanges) {
-            counter.incrementAndGet();
+            notificationLog.add(nodeStatusChanges);
         }
 
         int numTimesCalled() {
-            return counter.get();
+            return notificationLog.size();
+        }
+
+        List<List<NodeStatusChange>> getNotificationLog() {
+            return notificationLog;
         }
     }
 }
