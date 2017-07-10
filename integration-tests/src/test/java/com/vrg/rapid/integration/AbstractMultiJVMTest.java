@@ -13,9 +13,12 @@
 
 package com.vrg.rapid.integration;
 
+import com.google.common.io.Files;
 import com.vrg.standalone.StandaloneAgent;
-import lombok.Getter;
-import lombok.experimental.Accessors;
+import org.junit.After;
+import org.junit.AfterClass;
+import org.junit.Assert;
+import org.junit.Before;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -23,23 +26,14 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-
 import java.nio.file.Paths;
-
-import static java.nio.file.Files.write;
-
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-import com.google.common.io.Files;
-
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.Assert;
+import static java.nio.file.Files.write;
 
 /**
  * AbstractMultiJVMTest for running rapid agents.
@@ -63,7 +57,6 @@ public class AbstractMultiJVMTest {
         rapidNodeRunners = new HashSet<>();
     }
 
-    @Getter
     private static File OUTPUT_LOG_DIR;
 
     @Before
@@ -115,7 +108,6 @@ public class AbstractMultiJVMTest {
      * RapidNodeRunner
      * To manage and run rapid processes.
      */
-    @Accessors(chain = true)
     class RapidNodeRunner {
 
         private final String seed;
@@ -123,7 +115,6 @@ public class AbstractMultiJVMTest {
         private final String role;
         private final String clusterName;
 
-        @Getter
         private Process rapidProcess;
 
         private boolean isKilled = false;
@@ -194,6 +185,13 @@ public class AbstractMultiJVMTest {
             rapidNodeRunners.add(this);
 
             return this;
+        }
+
+        /**
+         * Returns the Rapid process
+         */
+        Process getRapidProcess() {
+            return rapidProcess;
         }
 
         /**
