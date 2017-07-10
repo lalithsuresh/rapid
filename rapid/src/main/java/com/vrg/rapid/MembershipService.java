@@ -187,7 +187,7 @@ final class MembershipService {
                 FAILURE_DETECTOR_INITIAL_DELAY_IN_MS, FAILURE_DETECTOR_INTERVAL_IN_MS, TimeUnit.MILLISECONDS);
 
         // Execute all VIEW_CHANGE callbacks. This informs applications that a start/join has successfully completed.
-        final List<NodeStatusChange> nodeStatusChanges = createNodeStatusChangeList(membershipView.getRing(0));
+        final List<NodeStatusChange> nodeStatusChanges = getInitialViewChange();
         subscriptions.get(ClusterEvents.VIEW_CHANGE).forEach(cb -> cb.accept(nodeStatusChanges));
     }
 
@@ -605,6 +605,21 @@ final class MembershipService {
         }
         return list;
     }
+
+    /**
+     * Prepares a view change notification for a node that has just become part of a cluster. This is invoked when the
+     * membership service is first initialized by a new node, which only happens on a Cluster.join() or Cluster.start().
+     * Therefore, all LinkStatus values will be UP.
+     */
+    private List<NodeStatusChange> getInitialViewChange() {
+        final List<NodeStatusChange> list = new ArrayList<>(membershipView.getMembershipSize());
+        for (final HostAndPort node: membershipView.getRing(0)) {
+            final LinkStatus status = LinkStatus.UP;
+            list.add(new NodeStatusChange(node, status, metadataManager.get(node)));
+        }
+        return list;
+    }
+
 
     /**
      * Batches outgoing LinkUpdateMessages into a single BatchLinkUpdateMessage.
