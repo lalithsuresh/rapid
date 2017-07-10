@@ -125,6 +125,17 @@ public final class Cluster {
         }
 
         /**
+         * This is used to register subscriptions for different events
+         */
+        @ExperimentalApi
+        public Builder addSubscription(final ClusterEvents event,
+                                       final Consumer<List<NodeStatusChange>> callback) {
+            this.subscriptions.computeIfAbsent(event, (k) -> new ArrayList<>());
+            this.subscriptions.get(event).add(callback);
+            return this;
+        }
+
+        /**
          * This is used by tests to inject message drop interceptors at the RpcServer.
          */
         @Internal
@@ -148,17 +159,6 @@ public final class Cluster {
         @Internal
         Builder setRpcClientConf(final RpcClient.Conf conf) {
             this.conf = conf;
-            return this;
-        }
-
-        /**
-         * This is used to register subscriptions for different events
-         */
-        @ExperimentalApi
-        Builder addSubscription(final ClusterEvents event,
-                                final Consumer<List<NodeStatusChange>> callback) {
-            this.subscriptions.computeIfAbsent(event, (k) -> new ArrayList<>());
-            this.subscriptions.get(event).add(callback);
             return this;
         }
 
