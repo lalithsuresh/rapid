@@ -88,6 +88,7 @@ public final class Cluster {
         private List<ServerInterceptor> serverInterceptors = Collections.emptyList();
         private List<ClientInterceptor> clientInterceptors = Collections.emptyList();
         private RpcClient.Conf conf = new RpcClient.Conf();
+        private Map<ClusterEvents, List<Consumer<List<NodeStatusChange>>>> subscriptions = new HashMap<>();
 
         /**
          * Instantiates a builder for a Rapid Cluster node that will listen on the given {@code listenAddress}
@@ -151,6 +152,17 @@ public final class Cluster {
         }
 
         /**
+         * This is used to register subscriptions for different events
+         */
+        @ExperimentalApi
+        Builder addSubscription(final ClusterEvents event,
+                                final Consumer<List<NodeStatusChange>> callback) {
+            this.subscriptions.computeIfAbsent(event, (k) -> new ArrayList<>());
+            this.subscriptions.get(event).add(callback);
+            return this;
+        }
+
+        /**
          * Joins an existing cluster, using {@code seedAddress} to bootstrap.
          *
          * @param seedAddress Seed node for the bootstrap protocol
@@ -158,7 +170,7 @@ public final class Cluster {
          */
         public Cluster join(final HostAndPort seedAddress) throws IOException, InterruptedException {
             return joinCluster(seedAddress, this.listenAddress, this.linkFailureDetector, this.metadata,
-                               this.serverInterceptors, this.clientInterceptors, this.conf);
+                               this.serverInterceptors, this.clientInterceptors, this.conf, this.subscriptions);
         }
 
         /**
@@ -168,14 +180,16 @@ public final class Cluster {
          */
         public Cluster start() throws IOException {
             return startCluster(this.listenAddress, this.linkFailureDetector, this.metadata, this.serverInterceptors,
-                                this.conf);
+                                this.conf, this.subscriptions);
         }
     }
 
     private static Cluster joinCluster(final HostAndPort seedAddress, final HostAndPort listenAddress,
                @Nullable final ILinkFailureDetector linkFailureDetector, final Metadata metadata,
                final List<ServerInterceptor> serverInterceptors, final List<ClientInterceptor> clientInterceptors,
-               final RpcClient.Conf conf) throws IOException, InterruptedException {
+               final RpcClient.Conf conf,
+               final Map<ClusterEvents, List<Consumer<List<NodeStatusChange>>>> subscriptions)
+                throws IOException, InterruptedException {
         NodeId currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
         final SharedResources sharedResources = new SharedResources(listenAddress);
         final RpcServer server = new RpcServer(listenAddress, sharedResources);
@@ -294,6 +308,7 @@ public final class Cluster {
                         }
                         final MembershipService membershipService = msBuilder.setRpcClient(joinerClient)
                                                                              .setMetadata(allMetadata)
+                                                                             .setSubscriptions(subscriptions)
                                                                              .build();
                         server.setMembershipService(membershipService);
                         if (LOG.isTraceEnabled()) {
@@ -325,7 +340,9 @@ public final class Cluster {
     static Cluster startCluster(final HostAndPort listenAddress,
                                 @Nullable final ILinkFailureDetector linkFailureDetector,
                                 final Metadata metadata, final List<ServerInterceptor> interceptors,
-                                final RpcClient.Conf conf) throws IOException {
+                                final RpcClient.Conf conf,
+                                final Map<ClusterEvents, List<Consumer<List<NodeStatusChange>>>> subscriptions)
+                                 throws IOException {
         Objects.requireNonNull(listenAddress);
 
         // This is the single-threaded protocolExecutor that handles all the protocol messaging.
@@ -338,7 +355,8 @@ public final class Cluster {
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
         MembershipService.Builder builder = new MembershipService.Builder(listenAddress, watermarkBuffer,
                                                                           membershipView, sharedResources)
-                                                                 .setRpcClient(rpcClient);
+                                                                 .setRpcClient(rpcClient)
+                                                                 .setSubscriptions(subscriptions);
         // If linkFailureDetector == null, the system defaults to using the PingPongFailureDetector
         if (linkFailureDetector != null) {
             builder = builder.setLinkFailureDetector(linkFailureDetector);

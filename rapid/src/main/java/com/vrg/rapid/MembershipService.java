@@ -36,6 +36,7 @@ import javax.annotation.concurrent.GuardedBy;
 import javax.annotation.concurrent.NotThreadSafe;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -108,6 +109,7 @@ final class MembershipService {
         private Map<String, Metadata> metadata = Collections.emptyMap();
         @Nullable private ILinkFailureDetector linkFailureDetector = null;
         @Nullable private RpcClient rpcClient = null;
+        @Nullable private Map<ClusterEvents, List<Consumer<List<NodeStatusChange>>>> subscriptions = null;
 
         Builder(final HostAndPort myAddr,
                 final WatermarkBuffer watermarkBuffer,
@@ -134,6 +136,11 @@ final class MembershipService {
             return this;
         }
 
+        Builder setSubscriptions(final Map<ClusterEvents, List<Consumer<List<NodeStatusChange>>>> subscriptions) {
+            this.subscriptions = subscriptions;
+            return this;
+        }
+
         MembershipService build() {
             return new MembershipService(this);
         }
@@ -148,8 +155,16 @@ final class MembershipService {
         this.metadataManager.addMetadata(builder.metadata);
         this.rpcClient = builder.rpcClient != null ? builder.rpcClient : new RpcClient(myAddr);
         this.broadcaster = new UnicastToAllBroadcaster(rpcClient);
-        this.subscriptions = new HashMap<>(ClusterEvents.values().length); // One for each event.
-        Arrays.stream(ClusterEvents.values()).forEach(event -> this.subscriptions.put(event, new ArrayList<>(1)));
+        if (builder.subscriptions == null) {
+            this.subscriptions = new HashMap<>(ClusterEvents.values().length); // One for each event.
+            Arrays.stream(ClusterEvents.values()).forEach(event ->
+                    this.subscriptions.put(event, new ArrayList<>(1)));
+        }
+        else {
+            this.subscriptions = builder.subscriptions;
+            Arrays.stream(ClusterEvents.values()).forEach(event ->
+                    this.subscriptions.computeIfAbsent(event, (k) -> new ArrayList<>(1)));
+        }
 
         // Schedule background jobs
         this.backgroundTasksExecutor = builder.sharedResources.getScheduledTasksExecutor();
@@ -170,6 +185,10 @@ final class MembershipService {
                                                    membershipView.getCurrentConfigurationId());
         failureDetectorJob = this.backgroundTasksExecutor.scheduleAtFixedRate(linkFailureDetectorRunner,
                 FAILURE_DETECTOR_INITIAL_DELAY_IN_MS, FAILURE_DETECTOR_INTERVAL_IN_MS, TimeUnit.MILLISECONDS);
+
+        // Execute all VIEW_CHANGE callbacks. This informs applications that a start/join has successfully completed.
+        final List<NodeStatusChange> nodeStatusChanges = createNodeStatusChangeList(membershipView.getRing(0));
+        subscriptions.get(ClusterEvents.VIEW_CHANGE).forEach(cb -> cb.accept(nodeStatusChanges));
     }
 
     /**
@@ -578,7 +597,7 @@ final class MembershipService {
     /**
      * Formats a proposal or a view change for application subscriptions.
      */
-    private List<NodeStatusChange> createNodeStatusChangeList(final Set<HostAndPort> proposal) {
+    private List<NodeStatusChange> createNodeStatusChangeList(final Collection<HostAndPort> proposal) {
         final List<NodeStatusChange> list = new ArrayList<>(proposal.size());
         for (final HostAndPort node: proposal) {
             final LinkStatus status = membershipView.isHostPresent(node) ? LinkStatus.DOWN : LinkStatus.UP;

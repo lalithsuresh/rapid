@@ -381,7 +381,6 @@ public class ClusterTest {
         verifyNumClusterInstances(3);
     }
 
-
     /**
      * Shutdown a node and rejoin multiple times.
      */
@@ -401,7 +400,6 @@ public class ClusterTest {
             waitAndVerifyAgreement(10, 20, 500, seedHost);
         }
     }
-
 
     /**
      * Shutdown a node and rejoin before the failure detectors kick it out
