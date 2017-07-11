@@ -9,4 +9,8 @@
         <Class name="com.vrg.rapid.ClusterTest" />
         <Bug pattern="ST_WRITE_TO_STATIC_FROM_INSTANCE_METHOD" />
     </Match>
+    <Match>
+        <Class name="com.vrg.rapid.SubscriptionsTest" />
+        <Bug pattern="UC_USELESS_OBJECT" />
+    </Match>
 </FindBugsFilter>
