@@ -14,6 +14,11 @@
 package com.vrg.rapid;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
+import com.google.common.cache.LoadingCache;
+import com.google.common.cache.RemovalListener;
+import com.google.common.cache.RemovalListeners;
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
@@ -46,9 +51,7 @@ import org.slf4j.LoggerFactory;
 import javax.annotation.Nullable;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
@@ -63,7 +66,7 @@ final class RpcClient {
     static boolean USE_IN_PROCESS_CHANNEL = false;
     private final HostAndPort address;
     private final List<ClientInterceptor> interceptors;
-    private final Map<HostAndPort, Channel> channelMap = new ConcurrentHashMap<>();
+    private final LoadingCache<HostAndPort, Channel> channelMap;
     private final ExecutorService grpcExecutor;
     private final ExecutorService backgroundExecutor;
     @Nullable private EventLoopGroup eventLoopGroup = null;
@@ -84,6 +87,17 @@ final class RpcClient {
         if (!USE_IN_PROCESS_CHANNEL) {
             this.eventLoopGroup = sharedResources.getEventLoopGroup();
         }
+        final RemovalListener<HostAndPort, Channel> removalListener =
+                removal -> shutdownChannel((ManagedChannelImpl) removal.getValue());
+        this.channelMap = CacheBuilder.newBuilder()
+                .expireAfterAccess(30, TimeUnit.SECONDS)
+                .removalListener(RemovalListeners.asynchronous(removalListener, backgroundExecutor))
+                .build(new CacheLoader<HostAndPort, Channel>() {
+                    @Override
+                    public Channel load(final HostAndPort hostAndPort) throws Exception {
+                        return getChannel(hostAndPort);
+                    }
+                });
     }
 
     /**
@@ -192,7 +206,7 @@ final class RpcClient {
      */
     void shutdown() {
         shuttingDown = true;
-        channelMap.keySet().forEach(this::shutdownChannel);
+        channelMap.invalidateAll();
     }
 
     /**
@@ -260,7 +274,7 @@ final class RpcClient {
         // from it . We therefore shutdown the channel, and subsequent calls will try to re-establish it.
         if (t instanceof StatusRuntimeException) {
             if (((StatusRuntimeException) t).getStatus().getCode().equals(Status.Code.UNAVAILABLE)) {
-                shutdownChannel(remote);
+                channelMap.invalidate(remote);
             }
         }
 
@@ -272,15 +286,12 @@ final class RpcClient {
     }
 
     private MembershipServiceFutureStub getFutureStub(final HostAndPort remote) {
-        final Channel channel = channelMap.computeIfAbsent(remote, this::getChannel);
+        final Channel channel = channelMap.getUnchecked(remote);
         return MembershipServiceGrpc.newFutureStub(channel);
     }
 
-    private void shutdownChannel(final HostAndPort remote) {
-        final ManagedChannelImpl channel = (ManagedChannelImpl) channelMap.remove(remote);
-        if (channel != null) {
-            channel.shutdown();
-        }
+    private void shutdownChannel(final ManagedChannelImpl channel) {
+        channel.shutdown();
     }
 
     private Channel getChannel(final HostAndPort remote) {
