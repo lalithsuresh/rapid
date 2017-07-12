@@ -52,7 +52,7 @@ import java.util.concurrent.TimeUnit;
 final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     @VisibleForTesting static boolean USE_IN_PROCESS_SERVER = false;
     private final ExecutorService grpcExecutor;
-    @Nullable private EventLoopGroup eventLoopGroup = null;
+    @Nullable private final EventLoopGroup eventLoopGroup;
     private static final ProbeResponse BOOTSTRAPPING_MESSAGE =
             ProbeResponse.newBuilder().setStatus(NodeStatus.BOOTSTRAPPING).build();
     private final HostAndPort address;
@@ -69,9 +69,7 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
         this.address = address;
         this.protocolExecutor = sharedResources.getProtocolExecutor();
         this.grpcExecutor = sharedResources.getServerExecutor();
-        if (!USE_IN_PROCESS_SERVER) {
-            this.eventLoopGroup = sharedResources.getEventLoopGroup();
-        }
+        this.eventLoopGroup = USE_IN_PROCESS_SERVER ? null : sharedResources.getEventLoopGroup();
     }
 
     /**
