@@ -69,7 +69,7 @@ final class RpcClient {
     private final LoadingCache<HostAndPort, Channel> channelMap;
     private final ExecutorService grpcExecutor;
     private final ExecutorService backgroundExecutor;
-    @Nullable private EventLoopGroup eventLoopGroup = null;
+    @Nullable private final EventLoopGroup eventLoopGroup;
     private boolean shuttingDown = false;
     private final Conf conf;
 
@@ -84,9 +84,7 @@ final class RpcClient {
         this.conf = conf;
         this.grpcExecutor = sharedResources.getClientChannelExecutor();
         this.backgroundExecutor = sharedResources.getBackgroundExecutor();
-        if (!USE_IN_PROCESS_CHANNEL) {
-            this.eventLoopGroup = sharedResources.getEventLoopGroup();
-        }
+        this.eventLoopGroup = USE_IN_PROCESS_CHANNEL ? null : sharedResources.getEventLoopGroup();
         final RemovalListener<HostAndPort, Channel> removalListener =
                 removal -> shutdownChannel((ManagedChannelImpl) removal.getValue());
         this.channelMap = CacheBuilder.newBuilder()
