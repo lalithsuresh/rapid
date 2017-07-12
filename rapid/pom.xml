@@ -83,7 +83,7 @@
             </extension>
         </extensions>
         <plugins>
-            <!-- Protobuf compiler -->
+            <!-- Protobuf and grpc compiler -->
             <plugin>
                 <groupId>org.xolstice.maven.plugins</groupId>
                 <artifactId>protobuf-maven-plugin</artifactId>
@@ -103,16 +103,37 @@
                     </execution>
                 </executions>
             </plugin>
+            <!-- Add @Generated annotation to generated protobuf code for error-prone to ignore -->
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.6.1</version>
+                <groupId>com.google.code.maven-replacer-plugin</groupId>
+                <artifactId>replacer</artifactId>
+                <version>1.5.3</version>
+                <executions>
+                    <execution>
+                        <phase>process-sources</phase>
+                        <goals>
+                            <goal>replace</goal>
+                        </goals>
+                    </execution>
+                </executions>
                 <configuration>
-                    <source>1.8</source>
-                    <target>1.8</target>
-                    <compilerArgs>
-                        <arg>-Xlint:all,-options,-path</arg>
-                    </compilerArgs>
+                    <includes>
+                        <include>${basedir}/target/generated-sources/protobuf/java/**/*.java</include>
+                    </includes>
+                    <replacements>
+                        <replacement>
+                            <token>\npublic final class</token>
+                            <value>@javax.annotation.Generated("protoc") public final class</value>
+                        </replacement>
+                        <replacement>
+                            <token>\npublic  final class</token>
+                            <value>@javax.annotation.Generated("protoc") public  final class</value>
+                        </replacement>
+                        <replacement>
+                            <token>\npublic enum</token>
+                            <value>@javax.annotation.Generated("protoc") public enum</value>
+                        </replacement>
+                    </replacements>
                 </configuration>
             </plugin>
             <!-- Test runner -->

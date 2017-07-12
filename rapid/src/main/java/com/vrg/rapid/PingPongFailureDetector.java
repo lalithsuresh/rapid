@@ -120,6 +120,7 @@ public class PingPongFailureDetector implements ILinkFailureDetector {
     }
 
     // Executed at monitoree
+    @Override
     public void handleProbeMessage(final ProbeMessage probeMessage,
                                    final StreamObserver<ProbeResponse> probeResponseStreamObserver) {
         try {

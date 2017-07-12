@@ -24,6 +24,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Holds all executors and ELGs that are shared across a single instance of Rapid.
@@ -104,7 +105,7 @@ class SharedResources {
         serverExecutor.shutdownNow();
         protocolExecutor.shutdownNow();
         if (eventLoopGroup != null) {
-            eventLoopGroup.shutdownGracefully();
+            eventLoopGroup.shutdownGracefully().awaitUninterruptibly(0, TimeUnit.SECONDS);
         }
     }
 

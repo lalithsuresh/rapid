@@ -411,6 +411,7 @@ final class MembershipView {
             this.hashFunction = LongHashFunction.xx(seed);
         }
 
+        @Override
         public final int compare(final HostAndPort c1, final HostAndPort c2) {
             final long hash1 = hashFunction.hashChars(c1.getHost()) * 31 + hashFunction.hashInt(c1.getPort());
             final long hash2 = hashFunction.hashChars(c2.getHost()) * 31 + hashFunction.hashInt(c2.getPort());

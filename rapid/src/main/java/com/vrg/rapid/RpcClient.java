@@ -19,6 +19,7 @@ import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
+import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
 import com.vrg.rapid.pb.ConsensusProposalResponse;
@@ -191,9 +192,6 @@ final class RpcClient {
      */
     void shutdown() {
         shuttingDown = true;
-        if (eventLoopGroup != null) {
-            eventLoopGroup.shutdownGracefully();
-        }
         channelMap.keySet().forEach(this::shutdownChannel);
     }
 
@@ -208,6 +206,7 @@ final class RpcClient {
      * @param <T> The type of the response.
      * @return Returns a ListenableFuture of type T, that hosts the result of the supplied {@code call}.
      */
+    @CanIgnoreReturnValue
     private <T> ListenableFuture<T> callWithRetries(final Supplier<ListenableFuture<T>> call,
                                                     final HostAndPort remote,
                                                     final int retries) {

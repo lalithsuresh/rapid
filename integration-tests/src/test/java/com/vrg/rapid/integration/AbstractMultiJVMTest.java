@@ -26,6 +26,8 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
+import java.nio.charset.Charset;
 import java.nio.file.Paths;
 import java.util.HashSet;
 import java.util.Set;
@@ -138,15 +140,21 @@ public class AbstractMultiJVMTest {
 
             @Override
             public void run() {
-                new BufferedReader(new InputStreamReader(inputStream)).lines()
-                        .forEach((x) -> {
-                                    try {
-                                        write(Paths.get(logfile), x.getBytes());
-                                    } catch (final IOException e) {
-                                        e.printStackTrace();
-                                    }
-                                }
-                        );
+                try (final BufferedReader br = new BufferedReader(new InputStreamReader(inputStream,
+                                                                                        Charset.defaultCharset()))) {
+                    br.lines().forEach((x) -> {
+                            try {
+                                write(Paths.get(logfile), x.getBytes(Charset.defaultCharset()));
+                            } catch (final IOException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                    );
+                } catch (final IOException e) {
+                    e.printStackTrace();
+                } catch (final UncheckedIOException ignored) {
+                    // Thrown by br.lines() when a process is killed abruptly
+                }
             }
         }
 
@@ -179,7 +187,7 @@ public class AbstractMultiJVMTest {
             final Process rapidProcess = builder.start();
             final OutputLogger outputLogger =
                     new OutputLogger(rapidProcess.getInputStream(), outputLogFile.getAbsolutePath());
-            Executors.newSingleThreadExecutor().submit(outputLogger);
+            Executors.newSingleThreadExecutor().execute(outputLogger);
             this.rapidProcess = rapidProcess;
             isKilled = false;
             rapidNodeRunners.add(this);
