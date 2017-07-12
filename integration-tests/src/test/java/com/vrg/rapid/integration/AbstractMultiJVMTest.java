@@ -177,8 +177,8 @@ public class AbstractMultiJVMTest {
                     " --seedAddress " + this.seed +
                     " --role " + this.role +
                     " --cluster " + this.clusterName;
-
             final File outputLogFile = new File(OUTPUT_LOG_DIR + File.separator + UUID.randomUUID().toString());
+            outputLogFile.deleteOnExit();
             System.out.println("Output for listenAddress:" +
                     listenAddress + " logged : " + outputLogFile.getAbsolutePath());
 
