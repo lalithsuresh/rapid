@@ -17,6 +17,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
+import com.google.protobuf.ByteString;
 import com.vrg.rapid.monitoring.ILinkFailureDetector;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
@@ -106,7 +107,7 @@ public final class Cluster {
          * @param metadata A map specifying a set of key-value tags.
          */
         @ExperimentalApi
-        public Builder setMetadata(final Map<String, String> metadata) {
+        public Builder setMetadata(final Map<String, ByteString> metadata) {
             Objects.requireNonNull(metadata);
             this.metadata = Metadata.newBuilder().putAllMetadata(metadata).build();
             return this;

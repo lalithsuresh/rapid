@@ -1,11 +1,13 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
+import com.google.protobuf.ByteString;
 import com.vrg.rapid.pb.LinkStatus;
 import com.vrg.rapid.pb.Metadata;
 import org.junit.Test;
 
 import java.io.IOException;
+import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -135,10 +137,11 @@ public class SubscriptionsTest {
         // Initialize seed
         final TestCallback seedCb1 = new TestCallback();
         final StaticFailureDetector fd = new StaticFailureDetector(new HashSet<>());
+        final ByteString byteString = ByteString.copyFrom("seed", Charset.defaultCharset());
         final Cluster seedCluster = new Cluster.Builder(seedHost)
                 .addSubscription(ClusterEvents.VIEW_CHANGE, seedCb1)
                 .setLinkFailureDetector(fd)
-                .setMetadata(Collections.singletonMap("role", "seed"))
+                .setMetadata(Collections.singletonMap("role", byteString))
                 .start();
         fds.add(fd);
 
@@ -188,7 +191,8 @@ public class SubscriptionsTest {
             final Metadata metadata = lastNotification.get(0).getMetadata();
             assertEquals(1, metadata.getMetadataCount());
             assertTrue(metadata.getMetadataMap().containsKey("role"));
-            assertTrue(metadata.getMetadataMap().get("role").equals("seed"));
+            assertTrue(metadata.getMetadataMap().get("role").equals(ByteString.copyFrom("seed",
+                                                                    Charset.defaultCharset())));
         }
         for (final Cluster cluster: joiners) {
             cluster.shutdown();

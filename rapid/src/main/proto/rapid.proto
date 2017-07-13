@@ -96,7 +96,7 @@ message ConsensusProposalResponse
 // ******* Node Metadata *********
 message Metadata
 {
-    map<string, string> metadata = 1;
+    map<string, bytes> metadata = 1;
 }
 
 

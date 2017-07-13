@@ -14,6 +14,7 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
+import com.google.protobuf.ByteString;
 import com.vrg.rapid.pb.MembershipServiceGrpc;
 import io.grpc.ClientInterceptor;
 import io.grpc.MethodDescriptor;
@@ -27,6 +28,7 @@ import org.junit.runner.Description;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
+import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -715,7 +717,8 @@ public class ClusterTest {
             builder = builder.setClientInterceptors(clientInterceptors.get(host));
         }
         if (addMetadata) {
-            builder = builder.setMetadata(Collections.singletonMap("Key", host.toString()));
+            final ByteString byteString = ByteString.copyFrom(host.toString(), Charset.defaultCharset());
+            builder = builder.setMetadata(Collections.singletonMap("Key", byteString));
         }
         return builder;
     }
