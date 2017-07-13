@@ -59,7 +59,7 @@ public class ClusterTest {
     private static final Logger GRPC_LOGGER;
     private static final Logger NETTY_LOGGER;
     private final Map<HostAndPort, Cluster> instances = new ConcurrentHashMap<>();
-    private final Map<HostAndPort, StaticFailureDetector> staticFds = new ConcurrentHashMap<>();
+    private final Map<HostAndPort, StaticFailureDetector.Factory> staticFds = new ConcurrentHashMap<>();
     private final Map<HostAndPort, List<ServerInterceptor>> serverInterceptors = new ConcurrentHashMap<>();
     private final Map<HostAndPort, List<ClientInterceptor>> clientInterceptors = new ConcurrentHashMap<>();
     private boolean useStaticFd = false;
@@ -254,28 +254,30 @@ public class ClusterTest {
     }
 
     /**
-     * This test starts with a 50 node cluster. We then fail 16 nodes to see if the monitoring mechanism
+     * This test starts with a 50 node cluster. We then fail 12 nodes to see if the monitoring mechanism
      * identifies the crashed nodes, and arrives at a decision.
      *
      */
     @Test(timeout = 30000)
-    public void twelveFailuresOutOfFiftyNodes() throws IOException, InterruptedException {
-        useFastFailureDetectionTimeouts();
+    public void failRandomQuarterOfNodes() throws IOException, InterruptedException {
+        useStaticFd = true;
         final int numNodes = 50;
-        final int failingNodes = 12;
+        final int numFailingNodes = 12;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         createCluster(numNodes, seedHost);
         verifyCluster(numNodes, seedHost);
-        failSomeNodes(IntStream.range(basePort + 2, basePort + 2 + failingNodes)
-                .mapToObj(i -> HostAndPort.fromParts("127.0.0.1", i))
-                .collect(Collectors.toList()));
-        waitAndVerifyAgreement(numNodes - failingNodes, 30, 1000, seedHost);
-        verifyNumClusterInstances(numNodes - failingNodes);
+        // Fail the first 3 nodes.
+        final Set<HostAndPort> failingNodes = getRandomHosts(numFailingNodes);
+        staticFds.values().forEach(e -> e.addFailedNodes(failingNodes));
+        waitAndVerifyAgreement(numNodes - failingNodes.size(), 20, 1000, seedHost);
+        // Nodes do not actually shutdown(), but are detected faulty. The faulty nodes have active
+        // cluster instances and identify themselves as kicked out.
+        verifyNumClusterInstances(numNodes);
     }
 
     /**
      * This test starts with a 50 node cluster. We then use the static failure detector to fail
-     * all edges to 3 nodes.
+     * all edges to 10 nodes.
      */
     @Test(timeout = 30000)
     public void failTenRandomNodes() throws IOException, InterruptedException {
@@ -690,9 +692,9 @@ public class ClusterTest {
     private Cluster.Builder buildCluster(final HostAndPort host) {
         Cluster.Builder builder = new Cluster.Builder(host).setRpcClientConf(clientConf);
         if (useStaticFd) {
-            final StaticFailureDetector fd = new StaticFailureDetector(new HashSet<>());
-            builder = builder.setLinkFailureDetector(fd);
-            staticFds.put(host, fd);
+            final StaticFailureDetector.Factory fdFactory = new StaticFailureDetector.Factory(new HashSet<>());
+            builder = builder.setLinkFailureDetectorFactory(fdFactory);
+            staticFds.put(host, fdFactory);
         }
         if (serverInterceptors.containsKey(host)) {
             builder = builder.setServerInterceptors(serverInterceptors.get(host));

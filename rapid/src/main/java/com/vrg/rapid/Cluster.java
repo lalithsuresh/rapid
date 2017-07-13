@@ -18,7 +18,7 @@ import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.protobuf.ByteString;
-import com.vrg.rapid.monitoring.ILinkFailureDetector;
+import com.vrg.rapid.monitoring.ILinkFailureDetectorFactory;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
@@ -85,7 +85,7 @@ public final class Cluster {
 
     public static class Builder {
         private final HostAndPort listenAddress;
-        @Nullable private ILinkFailureDetector linkFailureDetector = null;
+        @Nullable private ILinkFailureDetectorFactory linkFailureDetector = null;
         private Metadata metadata = Metadata.getDefaultInstance();
         private List<ServerInterceptor> serverInterceptors = Collections.emptyList();
         private List<ClientInterceptor> clientInterceptors = Collections.emptyList();
@@ -121,7 +121,7 @@ public final class Cluster {
          * @param linkFailureDetector A link failure detector used as input for Rapid's failure detection.
          */
         @ExperimentalApi
-        public Builder setLinkFailureDetector(final ILinkFailureDetector linkFailureDetector) {
+        public Builder setLinkFailureDetectorFactory(final ILinkFailureDetectorFactory linkFailureDetector) {
             Objects.requireNonNull(linkFailureDetector);
             this.linkFailureDetector = linkFailureDetector;
             return this;
@@ -188,10 +188,12 @@ public final class Cluster {
     }
 
     private static Cluster joinCluster(final HostAndPort seedAddress, final HostAndPort listenAddress,
-               @Nullable final ILinkFailureDetector linkFailureDetector, final Metadata metadata,
-               final List<ServerInterceptor> serverInterceptors, final List<ClientInterceptor> clientInterceptors,
-               final RpcClient.Conf conf,
-               final Map<ClusterEvents, List<Consumer<List<NodeStatusChange>>>> subscriptions)
+                                       @Nullable final ILinkFailureDetectorFactory linkFailureDetector,
+                                       final Metadata metadata,
+                                       final List<ServerInterceptor> serverInterceptors,
+                                       final List<ClientInterceptor> clientInterceptors,
+                                       final RpcClient.Conf conf,
+                                       final Map<ClusterEvents, List<Consumer<List<NodeStatusChange>>>> subscriptions)
                 throws IOException, InterruptedException {
         NodeId currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
         final SharedResources sharedResources = new SharedResources(listenAddress);
@@ -341,7 +343,7 @@ public final class Cluster {
      */
     @VisibleForTesting
     static Cluster startCluster(final HostAndPort listenAddress,
-                                @Nullable final ILinkFailureDetector linkFailureDetector,
+                                @Nullable final ILinkFailureDetectorFactory linkFailureDetector,
                                 final Metadata metadata, final List<ServerInterceptor> interceptors,
                                 final RpcClient.Conf conf,
                                 final Map<ClusterEvents, List<Consumer<List<NodeStatusChange>>>> subscriptions)

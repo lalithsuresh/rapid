@@ -1,48 +1,50 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
-import com.google.common.util.concurrent.Futures;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.vrg.rapid.monitoring.ILinkFailureDetector;
-import com.vrg.rapid.pb.ProbeMessage;
-import com.vrg.rapid.pb.ProbeResponse;
-import io.grpc.stub.StreamObserver;
+import com.vrg.rapid.monitoring.ILinkFailureDetectorFactory;
 
-import java.util.List;
 import java.util.Set;
 
 /**
  * Used for testing.
  */
-class StaticFailureDetector implements ILinkFailureDetector {
+class StaticFailureDetector implements Runnable {
     private final Set<HostAndPort> failedNodes;
+    private final HostAndPort monitoree;
+    private final Runnable notifier;
 
-    StaticFailureDetector(final Set<HostAndPort> blackList) {
+    StaticFailureDetector(final HostAndPort monitoree, final Runnable notifier,
+                          final Set<HostAndPort> blackList) {
+        this.monitoree = monitoree;
+        this.notifier = notifier;
         this.failedNodes = blackList;
     }
 
-    @Override
-    public ListenableFuture<Void> checkMonitoree(final HostAndPort monitoree) {
-        return Futures.immediateFuture(null);
-    }
-
-    @Override
-    public void handleProbeMessage(final ProbeMessage probeMessage,
-                                   final StreamObserver<ProbeResponse> probeResponseStreamObserver) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public boolean hasFailed(final HostAndPort monitoree) {
+    private boolean hasFailed() {
         return failedNodes.contains(monitoree);
     }
 
     @Override
-    public void onMembershipChange(final List<HostAndPort> monitorees) {
-
+    public void run() {
+        if (hasFailed()) {
+            notifier.run();
+        }
     }
 
-    public void addFailedNodes(final Set<HostAndPort> nodes) {
-        failedNodes.addAll(nodes);
+    static class Factory implements ILinkFailureDetectorFactory {
+        private final Set<HostAndPort> blackList;
+
+        Factory(final Set<HostAndPort> blackList) {
+            this.blackList = blackList;
+        }
+
+        @Override
+        public Runnable createInstance(final HostAndPort monitor, final Runnable notification) {
+            return new StaticFailureDetector(monitor, notification, blackList);
+        }
+
+        void addFailedNodes(final Set<HostAndPort> nodes) {
+            blackList.addAll(nodes);
+        }
     }
 }

@@ -14,7 +14,7 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
-import com.vrg.rapid.monitoring.ILinkFailureDetector;
+import com.vrg.rapid.monitoring.ILinkFailureDetectorFactory;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
 import com.vrg.rapid.pb.JoinMessage;
@@ -78,7 +78,6 @@ final class MembershipService {
             new HashMap<>();
     private final Map<HostAndPort, NodeId> joinerUuid = new HashMap<>();
     private final Map<HostAndPort, Metadata> joinerMetadata = new HashMap<>();
-    private final LinkFailureDetectorRunner linkFailureDetectorRunner;
     private final RpcClient rpcClient;
     private final MetadataManager metadataManager;
 
@@ -93,8 +92,11 @@ final class MembershipService {
     private final Lock batchSchedulerLock = new ReentrantLock();
     private final ScheduledExecutorService backgroundTasksExecutor;
     private final ScheduledFuture<?> linkUpdateBatcherJob;
-    private final ScheduledFuture<?> failureDetectorJob;
+    private final List<ScheduledFuture<?>> failureDetectorJobs;
     private final SharedResources sharedResources;
+
+    // Failure detector
+    private final ILinkFailureDetectorFactory fdFactory;
 
     // Fields used by consensus protocol
     private final Map<List<String>, AtomicInteger> votesPerProposal = new HashMap<>();
@@ -108,7 +110,7 @@ final class MembershipService {
         private final HostAndPort myAddr;
         private final SharedResources sharedResources;
         private Map<String, Metadata> metadata = Collections.emptyMap();
-        @Nullable private ILinkFailureDetector linkFailureDetector = null;
+        @Nullable private ILinkFailureDetectorFactory linkFailureDetector = null;
         @Nullable private RpcClient rpcClient = null;
         @Nullable private Map<ClusterEvents, List<Consumer<List<NodeStatusChange>>>> subscriptions = null;
 
@@ -127,7 +129,7 @@ final class MembershipService {
             return this;
         }
 
-        Builder setLinkFailureDetector(final ILinkFailureDetector linkFailureDetector) {
+        Builder setLinkFailureDetector(final ILinkFailureDetectorFactory linkFailureDetector) {
             this.linkFailureDetector = linkFailureDetector;
             return this;
         }
@@ -175,17 +177,11 @@ final class MembershipService {
         this.broadcaster.setMembership(membershipView.getRing(0));
         // this::linkFailureNotification is invoked by the failure detector whenever an edge
         // to a monitor is marked faulty.
-        final ILinkFailureDetector fd  = builder.linkFailureDetector != null
-                                        ? builder.linkFailureDetector
-                                        : new PingPongFailureDetector(myAddr, this.rpcClient);
-        this.linkFailureDetectorRunner = new LinkFailureDetectorRunner(fd);
-        this.linkFailureDetectorRunner.registerSubscription(this::linkFailureNotification);
-
-        // This primes the link failure detector with the initial set of monitorees.
-        linkFailureDetectorRunner.updateMembership(membershipView.getMonitoreesOf(myAddr),
-                                                   membershipView.getCurrentConfigurationId());
-        failureDetectorJob = this.backgroundTasksExecutor.scheduleAtFixedRate(linkFailureDetectorRunner,
-                FAILURE_DETECTOR_INITIAL_DELAY_IN_MS, FAILURE_DETECTOR_INTERVAL_IN_MS, TimeUnit.MILLISECONDS);
+        this.fdFactory  = builder.linkFailureDetector != null
+                        ? builder.linkFailureDetector
+                        : new PingPongFailureDetector.Factory(myAddr, this.rpcClient);
+        this.failureDetectorJobs = new ArrayList<>();
+        createFailureDetectorsForCurrentConfiguration();
 
         // Execute all VIEW_CHANGE callbacks. This informs applications that a start/join has successfully completed.
         final List<NodeStatusChange> nodeStatusChanges = getInitialViewChange();
@@ -312,7 +308,7 @@ final class MembershipService {
 
         // If we have a proposal for this stage, start an instance of consensus on it.
         if (!proposal.isEmpty()) {
-            LOG.debug("Node {} has a proposal of size {}: {}", myAddr, proposal.size(), proposal);
+            LOG.info("Node {} has a proposal of size {}: {}", myAddr, proposal.size(), proposal);
             announcedProposal = true;
 
             if (subscriptions.containsKey(ClusterEvents.VIEW_CHANGE_PROPOSAL)) {
@@ -394,6 +390,9 @@ final class MembershipService {
      * and any node that is currently in the membership list will be removed from it.
      */
     private void decideViewChange(final List<HostAndPort> proposal) {
+        // The first step is to disable our failure detectors in anticipation of new ones to be created.
+        cancelFailureDetectorJobs();
+
         final List<NodeStatusChange> statusChanges = new ArrayList<>(proposal.size());
         synchronized (membershipUpdateLock) {
             for (final HostAndPort node : proposal) {
@@ -436,14 +435,13 @@ final class MembershipService {
 
         // Inform LinkFailureDetector about membership change
         if (membershipView.isHostPresent(myAddr)) {
-            final List<HostAndPort> newMonitorees = membershipView.getMonitoreesOf(myAddr);
-            linkFailureDetectorRunner.updateMembership(newMonitorees, configuration.getConfigurationId());
+            createFailureDetectorsForCurrentConfiguration();
         }
         else {
             // We need to gracefully exit by calling a user handler and invalidating
             // the current session.
             LOG.trace("{} got kicked out and is shutting down.", myAddr);
-            linkFailureDetectorRunner.updateMembership(Collections.emptyList(), configuration.getConfigurationId());
+            // TODO: invoke KICKED
             return;
         }
 
@@ -487,7 +485,13 @@ final class MembershipService {
      */
     void processProbeMessage(final ProbeMessage probeMessage,
                              final StreamObserver<ProbeResponse> probeResponseObserver) {
-        linkFailureDetectorRunner.handleProbeMessage(probeMessage, probeResponseObserver);
+        try {
+            LOG.trace("handleProbeMessage at {} from {}", myAddr, probeMessage.getSender());
+            probeResponseObserver.onNext(ProbeResponse.getDefaultInstance());
+            probeResponseObserver.onCompleted();
+        } catch (final StatusRuntimeException e) {
+            LOG.trace("StreamObserver.onNext() for message {} received StatusRuntimeException", probeMessage);
+        }
     }
 
 
@@ -574,7 +578,7 @@ final class MembershipService {
      */
     void shutdown() {
         linkUpdateBatcherJob.cancel(true);
-        failureDetectorJob.cancel(true);
+        failureDetectorJobs.forEach(k -> k.cancel(true));
         rpcClient.shutdown();
     }
 
@@ -636,12 +640,12 @@ final class MembershipService {
                         && (System.currentTimeMillis() - lastEnqueueTimestamp) > BATCH_WINDOW_IN_MS) {
                     LOG.trace("{}'s scheduler is sending out {} messages", myAddr, sendQueue.size());
                     final ArrayList<LinkUpdateMessage> messages = new ArrayList<>(sendQueue.size());
-                    sendQueue.drainTo(messages);
+                    final int numDrained = sendQueue.drainTo(messages);
+                    assert numDrained > 0;
                     final BatchedLinkUpdateMessage batched = BatchedLinkUpdateMessage.newBuilder()
                             .setSender(myAddr.toString())
                             .addAllMessages(messages)
                             .build();
-                    // TODO: for the time being, we perform an all-to-all broadcast. Will be replaced with gossip.
                     broadcaster.broadcast(batched);
                 }
             }
@@ -694,5 +698,32 @@ final class MembershipService {
             joinerMetadata.put(destination, linkUpdateMessage.getMetadata());
         }
         return true;
+    }
+
+    /**
+     * Invoked by link failure detectors to notify MembershipService of failed nodes
+     */
+    private Runnable createNotifierForMonitoree(final HostAndPort monitoree) {
+        return () -> linkFailureNotification(monitoree, membershipView.getCurrentConfigurationId());
+    }
+
+    /**
+     * Invoked by link failure detectors to notify MembershipService of failed nodes
+     */
+    private void createFailureDetectorsForCurrentConfiguration() {
+        failureDetectorJobs.addAll(membershipView.getMonitoreesOf(myAddr).stream().map(monitoree ->
+                this.backgroundTasksExecutor.scheduleAtFixedRate(
+                        this.fdFactory.createInstance(monitoree, createNotifierForMonitoree(monitoree)), // Runnable
+                        FAILURE_DETECTOR_INITIAL_DELAY_IN_MS,
+                        FAILURE_DETECTOR_INTERVAL_IN_MS,
+                        TimeUnit.MILLISECONDS))
+                .collect(Collectors.toList()));
+    }
+
+    /**
+     * Cancel any running failure detector tasks
+     */
+    private void cancelFailureDetectorJobs() {
+        failureDetectorJobs.forEach(future -> future.cancel(true));
     }
 }

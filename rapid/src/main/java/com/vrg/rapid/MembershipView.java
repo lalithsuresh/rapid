@@ -209,22 +209,10 @@ final class MembershipView {
                 throw new NodeNotInRingException(node);
             }
 
-            final List<HostAndPort> monitorees = new ArrayList<>();
             if (rings.get(0).size() <= 1) {
-                return monitorees;
+                return Collections.emptyList();
             }
-
-            for (int k = 0; k < K; k++) {
-                final NavigableSet<HostAndPort> list = rings.get(k);
-                final HostAndPort predecessor = list.lower(node);
-                if (predecessor == null) {
-                    monitorees.add(list.last());
-                }
-                else {
-                    monitorees.add(predecessor);
-                }
-            }
-            return monitorees;
+            return getPredecessorsOf(node);
         } finally {
             rwLock.readLock().unlock();
         }
@@ -245,23 +233,29 @@ final class MembershipView {
             if (rings.get(0).isEmpty()) {
                 return Collections.emptyList();
             }
-
-            final List<HostAndPort> monitorees = new ArrayList<>();
-
-            for (int k = 0; k < K; k++) {
-                final NavigableSet<HostAndPort> list = rings.get(k);
-                final HostAndPort predecessor = list.lower(node);
-                if (predecessor == null) {
-                    monitorees.add(list.last());
-                }
-                else {
-                    monitorees.add(predecessor);
-                }
-            }
-            return monitorees;
+            return getPredecessorsOf(node);
         } finally {
             rwLock.readLock().unlock();
         }
+    }
+
+    /**
+     * Used by getExpectedMonitorsOf() and getMonitorsOf().
+     */
+    private List<HostAndPort> getPredecessorsOf(final HostAndPort node) {
+        final List<HostAndPort> monitorees = new ArrayList<>();
+
+        for (int k = 0; k < K; k++) {
+            final NavigableSet<HostAndPort> list = rings.get(k);
+            final HostAndPort predecessor = list.lower(node);
+            if (predecessor == null) {
+                monitorees.add(list.last());
+            }
+            else {
+                monitorees.add(predecessor);
+            }
+        }
+        return monitorees;
     }
 
     /**
@@ -432,11 +426,22 @@ final class MembershipView {
 
         @Override
         public int compare(final NodeId o1, final NodeId o2) {
-            return (o1.getHigh() < o2.getHigh() ? -1 :
-                    (o1.getHigh() > o2.getHigh() ? 1 :
-                     (o1.getLow() < o2.getLow() ? -1 :
-                      (o1.getLow() > o2.getLow() ? 1 :
-                        0))));
+            // First, compare high bits
+            if (o1.getHigh() < o2.getHigh()) {
+                return -1;
+            }
+            if (o1.getHigh() > o2.getHigh()) {
+                return 1;
+            }
+            // High bits are equal, so compare low bits
+            if (o1.getLow() < o2.getLow()) {
+                return -1;
+            }
+            if (o1.getLow() > o2.getLow()) {
+                return 1;
+            }
+            // High and low bits are equal
+            return 0;
         }
     }
 

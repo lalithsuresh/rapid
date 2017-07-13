@@ -134,7 +134,7 @@ final class RpcClient {
                                        .build();
         final Supplier<ListenableFuture<JoinResponse>> call = () -> {
             final MembershipServiceFutureStub stub = getFutureStub(remote)
-                    .withDeadlineAfter(conf.RPC_TIMEOUT_MS * 5,
+                    .withDeadlineAfter(conf.RPC_TIMEOUT_MS * 5L,
                             TimeUnit.MILLISECONDS);
             return stub.receiveJoinMessage(msg);
         };

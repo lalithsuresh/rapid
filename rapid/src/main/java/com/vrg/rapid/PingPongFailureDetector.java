@@ -16,22 +16,15 @@ package com.vrg.rapid;
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.common.util.concurrent.SettableFuture;
-import com.vrg.rapid.monitoring.ILinkFailureDetector;
+import com.vrg.rapid.monitoring.ILinkFailureDetectorFactory;
 import com.vrg.rapid.pb.NodeStatus;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
-import io.grpc.StatusRuntimeException;
-import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.NotThreadSafe;
-import java.util.HashMap;
-import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -39,7 +32,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * but are still bootstrapping.
  */
 @NotThreadSafe
-public class PingPongFailureDetector implements ILinkFailureDetector {
+public class PingPongFailureDetector implements Runnable {
     private static final Logger LOG = LoggerFactory.getLogger(PingPongFailureDetector.class);
     private static final int FAILURE_THRESHOLD = 10;
 
@@ -47,128 +40,95 @@ public class PingPongFailureDetector implements ILinkFailureDetector {
     // treating that as a failure condition.
     private static final int BOOTSTRAP_COUNT_THRESHOLD = 30;
     private final HostAndPort address;
-    private final ConcurrentHashMap<HostAndPort, AtomicInteger> failureCount;
-    private final ConcurrentHashMap<HostAndPort, AtomicInteger> bootstrapResponseCount;
+    private final HostAndPort monitoree;
+    private final AtomicInteger failureCount;
+    private final AtomicInteger bootstrapResponseCount;
     private final RpcClient rpcClient;
+    private final Runnable notifier;
 
     // A cache for probe messages. Avoids creating an unnecessary copy of a probe message each time.
-    private final HashMap<HostAndPort, ProbeMessage> messageHashMap;
+    private final ProbeMessage probeMessage;
 
-    public PingPongFailureDetector(final HostAndPort address,
-                                   final RpcClient rpcClient) {
+    private PingPongFailureDetector(final HostAndPort address, final HostAndPort monitoree, final RpcClient rpcClient,
+                                    final Runnable notifier) {
         this.address = address;
-        this.failureCount = new ConcurrentHashMap<>();
-        this.bootstrapResponseCount = new ConcurrentHashMap<>();
-        this.messageHashMap = new HashMap<>();
+        this.monitoree = monitoree;
         this.rpcClient = rpcClient;
+        this.notifier = notifier;
+        this.failureCount = new AtomicInteger(0);
+        this.bootstrapResponseCount = new AtomicInteger(0);
+        this.probeMessage = ProbeMessage.newBuilder().setSender(address.toString()).build();
     }
 
     // Executed at monitor
-    @Override
-    public ListenableFuture<Void> checkMonitoree(final HostAndPort monitoree) {
-        LOG.trace("{} sending probe to {}", address, monitoree);
-        final ProbeMessage probeMessage = messageHashMap.get(monitoree);
-        final SettableFuture<Void> completionEvent = SettableFuture.create();
-        Futures.addCallback(rpcClient.sendProbeMessage(monitoree, probeMessage),
-                            new ProbeCallback(monitoree, completionEvent));
-        return completionEvent;
+    private boolean hasFailed() {
+        return failureCount.get() >= FAILURE_THRESHOLD;
     }
 
-    // Executed at monitor
     @Override
-    public void onMembershipChange(final List<HostAndPort> monitorees) {
-        failureCount.clear();
-        messageHashMap.clear();
-        // TODO: If a monitoree is part of both the old and new configuration, we shouldn't forget its failure count.
-        final ProbeMessage.Builder builder = ProbeMessage.newBuilder();
-        for (final HostAndPort node: monitorees) {
-            failureCount.put(node, new AtomicInteger(0));
-            messageHashMap.putIfAbsent(node, builder.setSender(address.toString()).build());
+    public void run() {
+        if (hasFailed()) {
+            notifier.run();
         }
-    }
-
-    // Executed at monitor
-    @Override
-    public boolean hasFailed(final HostAndPort monitoree) {
-        if (!failureCount.containsKey(monitoree)) {
-            LOG.trace("hasFailed at {} invoked for a node we are not assigned to ({})",
-                    address, monitoree);
-        }
-        final AtomicInteger counter = failureCount.get(monitoree);
-        return counter != null && counter.get() >= FAILURE_THRESHOLD;
-    }
-
-    // Executed at monitoree
-    @Override
-    public void handleProbeMessage(final ProbeMessage probeMessage,
-                                   final StreamObserver<ProbeResponse> probeResponseStreamObserver) {
-        try {
-            LOG.trace("handleProbeMessage at {} from {}", address, probeMessage.getSender());
-            probeResponseStreamObserver.onNext(ProbeResponse.getDefaultInstance());
-            probeResponseStreamObserver.onCompleted();
-        } catch (final StatusRuntimeException e) {
-            LOG.trace("StreamObserver.onNext() for message {} received StatusRuntimeException", probeMessage);
+        else {
+            LOG.trace("{} sending probe to {}", address, monitoree);
+            Futures.addCallback(rpcClient.sendProbeMessage(monitoree, probeMessage),
+                    new ProbeCallback(monitoree));
         }
     }
 
     private class ProbeCallback implements FutureCallback<ProbeResponse> {
         final HostAndPort monitoree;
-        final SettableFuture<Void> completionEvent;
 
-        ProbeCallback(final HostAndPort monitoree, final SettableFuture<Void> completionEvent) {
+        ProbeCallback(final HostAndPort monitoree) {
             this.monitoree = monitoree;
-            this.completionEvent = completionEvent;
         }
 
         @Override
         public void onSuccess(@Nullable final ProbeResponse probeResponse) {
-            try {
-                if (probeResponse == null) {
-                    handleProbeOnFailure(new RuntimeException("null probe response received"), monitoree);
+            if (probeResponse == null) {
+                handleProbeOnFailure(new RuntimeException("null probe response received"));
+                return;
+            }
+            if (probeResponse.getStatus().equals(NodeStatus.BOOTSTRAPPING)) {
+                final int numBootstrapResponses = bootstrapResponseCount.incrementAndGet();
+                if (numBootstrapResponses > BOOTSTRAP_COUNT_THRESHOLD) {
+                    handleProbeOnFailure(new RuntimeException("BOOTSTRAP_COUNT_THRESHOLD exceeded"));
                     return;
                 }
-                if (probeResponse.getStatus().equals(NodeStatus.BOOTSTRAPPING)) {
-                    final int numBootstrapResponses = bootstrapResponseCount.computeIfAbsent(monitoree,
-                            k -> new AtomicInteger(0)).incrementAndGet();
-                    if (numBootstrapResponses > BOOTSTRAP_COUNT_THRESHOLD) {
-                        handleProbeOnFailure(new RuntimeException("BOOTSTRAP_COUNT_THRESHOLD exceeded"), monitoree);
-                        return;
-                    }
-                }
-                handleProbeOnSuccess(monitoree);
-            } finally {
-                completionEvent.set(null);
             }
+            handleProbeOnSuccess();
         }
 
         @Override
         public void onFailure(final Throwable throwable) {
-            try {
-                handleProbeOnFailure(throwable, monitoree);
-            } finally {
-                completionEvent.set(null);
-            }
+            handleProbeOnFailure(throwable);
         }
 
         // Executed at monitor
-        private void handleProbeOnSuccess(final HostAndPort monitoree) {
-            if (!failureCount.containsKey(monitoree)) {
-                LOG.trace("handleProbeOnSuccess at {} for a node we are not assigned to ({})", address, monitoree);
-            }
+        private void handleProbeOnSuccess() {
             LOG.trace("handleProbeOnSuccess at {} from {}", address, monitoree);
         }
 
         // Executed at monitor
-        private void handleProbeOnFailure(final Throwable throwable,
-                                          final HostAndPort monitoree) {
-            if (!failureCount.containsKey(monitoree)) {
-                LOG.trace("handleProbeOnFailure at {} for a node we are not assigned to ({})", address, monitoree);
-            }
-            final AtomicInteger counter = failureCount.get(monitoree);
-            if (counter != null) {
-                counter.incrementAndGet();
-            }
+        private void handleProbeOnFailure(final Throwable throwable) {
+            failureCount.incrementAndGet();
             LOG.trace("handleProbeOnFailure at {} from {}: {}", address, monitoree, throwable.getLocalizedMessage());
+        }
+    }
+
+    static class Factory implements ILinkFailureDetectorFactory {
+        private final HostAndPort address;
+        private final RpcClient rpcClient;
+
+        Factory(final HostAndPort address, final RpcClient rpcClient) {
+            this.address = address;
+            this.rpcClient = rpcClient;
+        }
+
+        @Override
+        public Runnable createInstance(final HostAndPort monitoree, final Runnable notifier) {
+            return new PingPongFailureDetector(address, monitoree, rpcClient, notifier);
         }
     }
 }

@@ -131,19 +131,19 @@ public class SubscriptionsTest {
      */
     @Test(timeout = 10000)
     public void testSubscriptionWithFailure() throws IOException, InterruptedException {
-        final List<StaticFailureDetector> fds = new ArrayList<>();
+        final List<StaticFailureDetector.Factory> fds = new ArrayList<>();
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
 
         // Initialize seed
         final TestCallback seedCb1 = new TestCallback();
-        final StaticFailureDetector fd = new StaticFailureDetector(new HashSet<>());
+        final StaticFailureDetector.Factory fdFactory = new StaticFailureDetector.Factory(new HashSet<>());
         final ByteString byteString = ByteString.copyFrom("seed", Charset.defaultCharset());
         final Cluster seedCluster = new Cluster.Builder(seedHost)
                 .addSubscription(ClusterEvents.VIEW_CHANGE, seedCb1)
-                .setLinkFailureDetector(fd)
+                .setLinkFailureDetectorFactory(fdFactory)
                 .setMetadata(Collections.singletonMap("role", byteString))
                 .start();
-        fds.add(fd);
+        fds.add(fdFactory);
 
         // Initialize joiners
         final List<Cluster> joiners = new ArrayList<>();
@@ -151,11 +151,11 @@ public class SubscriptionsTest {
         final int numNodes = 5;
         for (int i = 0; i < numNodes; i++) {
             final HostAndPort joiner = HostAndPort.fromParts("127.0.0.1", 1235 + i);
-            final StaticFailureDetector fdJoiner = new StaticFailureDetector(new HashSet<>());
+            final StaticFailureDetector.Factory fdJoiner = new StaticFailureDetector.Factory(new HashSet<>());
             final TestCallback joinerCb1 = new TestCallback();
             joiners.add(new Cluster.Builder(joiner)
                     .addSubscription(ClusterEvents.VIEW_CHANGE, joinerCb1)
-                    .setLinkFailureDetector(fdJoiner)
+                    .setLinkFailureDetectorFactory(fdJoiner)
                     .join(seedHost));
             fds.add(fdJoiner);
             callbacks.add(joinerCb1);
