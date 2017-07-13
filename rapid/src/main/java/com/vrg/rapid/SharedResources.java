@@ -18,18 +18,24 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.util.concurrent.DefaultThreadFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 /**
  * Holds all executors and ELGs that are shared across a single instance of Rapid.
  */
 class SharedResources {
+    private static final Logger LOG = LoggerFactory.getLogger(SharedResources.class);
     private static final int DEFAULT_THREADS = 1;
     @Nullable private EventLoopGroup eventLoopGroup = null;
     private final ExecutorService backgroundExecutor;
@@ -45,8 +51,12 @@ class SharedResources {
                                                     newFastLocalThreadFactory("server-exec", address));
         this.clientChannelExecutor = Executors.newFixedThreadPool(DEFAULT_THREADS,
                                                     newFastLocalThreadFactory("client-exec", address));
-        this.backgroundExecutor = Executors.newFixedThreadPool(DEFAULT_THREADS,
-                                                    newNamedThreadFactory("bg", address));
+        final ThreadPoolExecutor tpe =  new ThreadPoolExecutor(DEFAULT_THREADS, DEFAULT_THREADS,
+                0L, TimeUnit.MILLISECONDS,
+                new LinkedBlockingQueue<>(),
+                newNamedThreadFactory("bg", address));
+        tpe.setRejectedExecutionHandler(new BackgroundExecutorRejectionHandler());
+        this.backgroundExecutor = tpe;
         this.protocolExecutor = Executors.newSingleThreadExecutor(newNamedThreadFactory("protocol", address));
         this.scheduledTasksExecutor = Executors.newSingleThreadScheduledExecutor(
                                                     newNamedThreadFactory("msbg", address));
@@ -104,6 +114,7 @@ class SharedResources {
     synchronized void shutdown() {
         serverExecutor.shutdownNow();
         protocolExecutor.shutdownNow();
+        backgroundExecutor.shutdownNow();
         if (eventLoopGroup != null) {
             eventLoopGroup.shutdownGracefully().awaitUninterruptibly(0, TimeUnit.SECONDS);
         }
@@ -128,5 +139,12 @@ class SharedResources {
                 .setUncaughtExceptionHandler(
                     (t, e) -> System.err.println(String.format(t.getName() + " caught exception: %s %s", t, e))
                 ).build();
+    }
+
+    public static class BackgroundExecutorRejectionHandler implements RejectedExecutionHandler {
+        @Override
+        public void rejectedExecution(final Runnable r, final ThreadPoolExecutor executor) {
+            LOG.info("Rejecting task on background executor");
+        }
     }
 }

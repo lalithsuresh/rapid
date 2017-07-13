@@ -574,7 +574,6 @@ final class MembershipService {
     void shutdown() {
         linkUpdateBatcherJob.cancel(true);
         failureDetectorJob.cancel(true);
-        backgroundTasksExecutor.shutdownNow();
         rpcClient.shutdown();
     }
 

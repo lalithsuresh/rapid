@@ -53,6 +53,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
@@ -246,18 +247,21 @@ final class RpcClient {
             return;
         }
 
-        Futures.addCallback(callFuture, new FutureCallback<T>() {
-            @Override
-            public void onSuccess(@Nullable final T result) {
-                signal.set(result);
-            }
+        try {
+            Futures.addCallback(callFuture, new FutureCallback<T>() {
+                @Override
+                public void onSuccess(@Nullable final T result) {
+                    signal.set(result);
+                }
 
-            @Override
-            public void onFailure(final Throwable throwable) {
-                LOG.trace("Retrying call {}");
-                handleFailure(call, remote, signal, retries, throwable);
-            }
-        }, backgroundExecutor);
+                @Override
+                public void onFailure(final Throwable throwable) {
+                    LOG.trace("Retrying call {}");
+                    handleFailure(call, remote, signal, retries, throwable);
+                }
+            }, backgroundExecutor);
+        } catch (final RejectedExecutionException ignored) {
+        }
     }
 
     /**
