@@ -53,7 +53,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
@@ -247,21 +246,18 @@ final class RpcClient {
             return;
         }
 
-        try {
-            Futures.addCallback(callFuture, new FutureCallback<T>() {
-                @Override
-                public void onSuccess(@Nullable final T result) {
-                    signal.set(result);
-                }
+        Futures.addCallback(callFuture, new FutureCallback<T>() {
+            @Override
+            public void onSuccess(@Nullable final T result) {
+                signal.set(result);
+            }
 
-                @Override
-                public void onFailure(final Throwable throwable) {
-                    LOG.trace("Retrying call {}");
-                    handleFailure(call, remote, signal, retries, throwable);
-                }
-            }, backgroundExecutor);
-        } catch (final RejectedExecutionException ignored) {
-        }
+            @Override
+            public void onFailure(final Throwable throwable) {
+                LOG.trace("Retrying call {}");
+                handleFailure(call, remote, signal, retries, throwable);
+            }
+        }, backgroundExecutor);
     }
 
     /**
@@ -274,10 +270,9 @@ final class RpcClient {
                                    final Throwable t) {
         // GRPC returns an UNAVAILABLE error when the TCP connection breaks and there is no way to recover
         // from it . We therefore shutdown the channel, and subsequent calls will try to re-establish it.
-        if (t instanceof StatusRuntimeException) {
-            if (((StatusRuntimeException) t).getStatus().getCode().equals(Status.Code.UNAVAILABLE)) {
-                channelMap.invalidate(remote);
-            }
+        if (t instanceof StatusRuntimeException
+            && ((StatusRuntimeException) t).getStatus().getCode().equals(Status.Code.UNAVAILABLE)) {
+            channelMap.invalidate(remote);
         }
 
         if (retries > 0) {

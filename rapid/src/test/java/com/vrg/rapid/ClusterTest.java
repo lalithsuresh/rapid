@@ -600,8 +600,6 @@ public class ClusterTest {
                         assertTrue(nodeToFail + " not in instances", instances.containsKey(nodeToFail));
                         instances.get(nodeToFail).shutdown();
                         instances.remove(nodeToFail);
-                    } catch (final InterruptedException e) {
-                        fail();
                     } finally {
                         latch.countDown();
                     }

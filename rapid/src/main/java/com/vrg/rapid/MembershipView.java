@@ -242,7 +242,7 @@ final class MembershipView {
         Objects.requireNonNull(node);
         rwLock.readLock().lock();
         try {
-            if (rings.get(0).size() == 0) {
+            if (rings.get(0).isEmpty()) {
                 return Collections.emptyList();
             }
 
@@ -342,7 +342,7 @@ final class MembershipView {
         try {
             // TODO: do this in one scan
             final List<HostAndPort> monitorees = getMonitoreesOf(monitor);
-            if (monitorees.size() == 0) {
+            if (monitorees.isEmpty()) {
                 return Collections.emptyList();
             }
 

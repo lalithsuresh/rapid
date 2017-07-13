@@ -28,7 +28,7 @@ public class StandaloneAgent {
     private static final int SLEEP_INTERVAL_MS = 1000;
     private static final int MAX_TRIES = 400;
 
-    public static void main(final String[] args) throws ParseException, IOException, InterruptedException {
+    public static void main(final String[] args) throws ParseException, InterruptedException {
         final OperatingSystemMXBean os = ManagementFactory.getOperatingSystemMXBean();
         if (os instanceof UnixOperatingSystemMXBean) {
             final UnixOperatingSystemMXBean bean = (UnixOperatingSystemMXBean) os;

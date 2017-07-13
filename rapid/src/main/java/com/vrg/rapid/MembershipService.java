@@ -38,6 +38,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -156,14 +157,14 @@ final class MembershipService {
         this.rpcClient = builder.rpcClient != null ? builder.rpcClient : new RpcClient(myAddr);
         this.broadcaster = new UnicastToAllBroadcaster(rpcClient);
         if (builder.subscriptions == null) {
-            this.subscriptions = new HashMap<>(ClusterEvents.values().length); // One for each event.
+            this.subscriptions = new EnumMap<>(ClusterEvents.class); // One for each event.
             Arrays.stream(ClusterEvents.values()).forEach(event ->
                     this.subscriptions.put(event, new ArrayList<>(1)));
         }
         else {
             this.subscriptions = builder.subscriptions;
             Arrays.stream(ClusterEvents.values()).forEach(event ->
-                    this.subscriptions.computeIfAbsent(event, (k) -> new ArrayList<>(1)));
+                    this.subscriptions.computeIfAbsent(event, k -> new ArrayList<>(1)));
         }
 
         // Schedule background jobs
@@ -234,7 +235,7 @@ final class MembershipService {
                     currentConfiguration, membershipView.getMembershipSize());
 
             joinersToRespondTo.computeIfAbsent(HostAndPort.fromString(joinMessage.getSender()),
-                    (k) -> new LinkedBlockingDeque<>()).add(responseObserver);
+                    k -> new LinkedBlockingDeque<>()).add(responseObserver);
 
             final LinkUpdateMessage msg = LinkUpdateMessage.newBuilder()
                     .setLinkSrc(this.myAddr.toString())
@@ -310,7 +311,7 @@ final class MembershipService {
         proposal.addAll(watermarkBuffer.invalidateFailingLinks(membershipView));
 
         // If we have a proposal for this stage, start an instance of consensus on it.
-        if (proposal.size() != 0) {
+        if (!proposal.isEmpty()) {
             LOG.debug("Node {} has a proposal of size {}: {}", myAddr, proposal.size(), proposal);
             announcedProposal = true;
 
@@ -355,7 +356,7 @@ final class MembershipService {
         }
         votesReceived.add(proposalMessage.getSender());
         final AtomicInteger proposalsReceived = votesPerProposal.computeIfAbsent(proposalMessage.getHostsList(),
-                                                                            (k) -> new AtomicInteger(0));
+                                                                            k -> new AtomicInteger(0));
         final int count = proposalsReceived.incrementAndGet();
         final int F = (int) Math.floor((membershipSize - 1) / 4.0); // Fast Paxos resiliency.
         if (votesReceived.size() >= membershipSize - F) {
@@ -446,8 +447,8 @@ final class MembershipService {
             return;
         }
 
-        assert configuration.hostAndPorts.size() > 0;
-        assert configuration.nodeIds.size() > 0;
+        assert !configuration.hostAndPorts.isEmpty();
+        assert !configuration.nodeIds.isEmpty();
 
         final JoinResponse response = JoinResponse.newBuilder()
                 .setSender(this.myAddr.toString())
@@ -631,7 +632,7 @@ final class MembershipService {
             batchSchedulerLock.lock();
             try {
                 // Wait one BATCH_WINDOW_IN_MS since last add before sending out
-                if (sendQueue.size() > 0 && lastEnqueueTimestamp > 0
+                if (!sendQueue.isEmpty() && lastEnqueueTimestamp > 0
                         && (System.currentTimeMillis() - lastEnqueueTimestamp) > BATCH_WINDOW_IN_MS) {
                     LOG.trace("{}'s scheduler is sending out {} messages", myAddr, sendQueue.size());
                     final ArrayList<LinkUpdateMessage> messages = new ArrayList<>(sendQueue.size());

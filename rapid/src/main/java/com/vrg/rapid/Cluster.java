@@ -35,6 +35,7 @@ import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -89,7 +90,8 @@ public final class Cluster {
         private List<ServerInterceptor> serverInterceptors = Collections.emptyList();
         private List<ClientInterceptor> clientInterceptors = Collections.emptyList();
         private RpcClient.Conf conf = new RpcClient.Conf();
-        private Map<ClusterEvents, List<Consumer<List<NodeStatusChange>>>> subscriptions = new HashMap<>();
+        private Map<ClusterEvents, List<Consumer<List<NodeStatusChange>>>> subscriptions =
+                new EnumMap<>(ClusterEvents.class);
 
         /**
          * Instantiates a builder for a Rapid Cluster node that will listen on the given {@code listenAddress}
@@ -131,7 +133,7 @@ public final class Cluster {
         @ExperimentalApi
         public Builder addSubscription(final ClusterEvents event,
                                        final Consumer<List<NodeStatusChange>> callback) {
-            this.subscriptions.computeIfAbsent(event, (k) -> new ArrayList<>());
+            this.subscriptions.computeIfAbsent(event, k -> new ArrayList<>());
             this.subscriptions.get(event).add(callback);
             return this;
         }
@@ -250,7 +252,7 @@ public final class Cluster {
             // Batch together requests to the same node.
             int ringNumber = 0;
             for (final HostAndPort monitor: monitorList) {
-                ringNumbersPerMonitor.computeIfAbsent(monitor, (k) -> new ArrayList<>()).add(ringNumber);
+                ringNumbersPerMonitor.computeIfAbsent(monitor, k -> new ArrayList<>()).add(ringNumber);
                 ringNumber++;
             }
 
@@ -295,8 +297,8 @@ public final class Cluster {
 
                         final Map<String, Metadata> allMetadata = response.getClusterMetadataMap();
 
-                        assert identifiersSeen.size() > 0;
-                        assert allHosts.size() > 0;
+                        assert !identifiersSeen.isEmpty();
+                        assert !allHosts.isEmpty();
 
                         final MembershipView membershipViewFinal =
                                 new MembershipView(K, identifiersSeen, allHosts);
@@ -411,8 +413,7 @@ public final class Cluster {
     /**
      * Shutdown the RpcServer
      */
-    public void shutdown() throws InterruptedException {
-        // TODO: this should probably be a "leave" method
+    public void shutdown() {
         LOG.debug("Shutting down RpcServer and MembershipService");
         rpcServer.stopServer();
         membershipService.shutdown();

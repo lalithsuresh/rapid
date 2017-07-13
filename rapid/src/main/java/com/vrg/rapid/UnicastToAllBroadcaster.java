@@ -53,6 +53,7 @@ final class UnicastToAllBroadcaster implements IBroadcaster {
 
     @Override
     public synchronized void setMembership(final List<HostAndPort> recipients) {
+        LOG.trace("setMembership {}", recipients);
         // Randomize the sequence of nodes that will receive a broadcast from this node for each configuration
         final List<HostAndPort> arr = new ArrayList<>(recipients);
         Collections.shuffle(arr, ThreadLocalRandom.current());

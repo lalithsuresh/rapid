@@ -75,27 +75,6 @@ public class PingPongFailureDetector implements ILinkFailureDetector {
     }
 
     // Executed at monitor
-    private void handleProbeOnSuccess(final HostAndPort monitoree) {
-        if (!failureCount.containsKey(monitoree)) {
-            LOG.trace("handleProbeOnSuccess at {} heard from a node we are not assigned to ({})", address, monitoree);
-        }
-        LOG.trace("handleProbeOnSuccess at {} from {}", address, monitoree);
-    }
-
-    // Executed at monitor
-    private void handleProbeOnFailure(final Throwable throwable,
-                                      final HostAndPort monitoree) {
-        if (!failureCount.containsKey(monitoree)) {
-            LOG.trace("handleProbeOnSuccess at {} heard from a node we are not assigned to ({})", address, monitoree);
-        }
-        final AtomicInteger counter = failureCount.get(monitoree);
-        if (counter != null) {
-            counter.incrementAndGet();
-        }
-        LOG.trace("handleProbeOnFailure at {} from {}: {}", address, monitoree, throwable.getLocalizedMessage());
-    }
-
-    // Executed at monitor
     @Override
     public void onMembershipChange(final List<HostAndPort> monitorees) {
         failureCount.clear();
@@ -112,7 +91,7 @@ public class PingPongFailureDetector implements ILinkFailureDetector {
     @Override
     public boolean hasFailed(final HostAndPort monitoree) {
         if (!failureCount.containsKey(monitoree)) {
-            LOG.trace("handleProbeOnSuccess at {} heard from a node we are not assigned to ({})",
+            LOG.trace("hasFailed at {} invoked for a node we are not assigned to ({})",
                     address, monitoree);
         }
         final AtomicInteger counter = failureCount.get(monitoree);
@@ -150,7 +129,7 @@ public class PingPongFailureDetector implements ILinkFailureDetector {
                 }
                 if (probeResponse.getStatus().equals(NodeStatus.BOOTSTRAPPING)) {
                     final int numBootstrapResponses = bootstrapResponseCount.computeIfAbsent(monitoree,
-                            (k) -> new AtomicInteger(0)).incrementAndGet();
+                            k -> new AtomicInteger(0)).incrementAndGet();
                     if (numBootstrapResponses > BOOTSTRAP_COUNT_THRESHOLD) {
                         handleProbeOnFailure(new RuntimeException("BOOTSTRAP_COUNT_THRESHOLD exceeded"), monitoree);
                         return;
@@ -169,6 +148,27 @@ public class PingPongFailureDetector implements ILinkFailureDetector {
             } finally {
                 completionEvent.set(null);
             }
+        }
+
+        // Executed at monitor
+        private void handleProbeOnSuccess(final HostAndPort monitoree) {
+            if (!failureCount.containsKey(monitoree)) {
+                LOG.trace("handleProbeOnSuccess at {} for a node we are not assigned to ({})", address, monitoree);
+            }
+            LOG.trace("handleProbeOnSuccess at {} from {}", address, monitoree);
+        }
+
+        // Executed at monitor
+        private void handleProbeOnFailure(final Throwable throwable,
+                                          final HostAndPort monitoree) {
+            if (!failureCount.containsKey(monitoree)) {
+                LOG.trace("handleProbeOnFailure at {} for a node we are not assigned to ({})", address, monitoree);
+            }
+            final AtomicInteger counter = failureCount.get(monitoree);
+            if (counter != null) {
+                counter.incrementAndGet();
+            }
+            LOG.trace("handleProbeOnFailure at {} from {}: {}", address, monitoree, throwable.getLocalizedMessage());
         }
     }
 }

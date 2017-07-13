@@ -83,7 +83,7 @@ class LinkFailureDetectorRunner implements Runnable {
     public synchronized void run() {
         try {
             assert currentConfigurationId != -1;
-            if (monitorees.size() == 0) {
+            if (monitorees.isEmpty()) {
                 return;
             }
             final List<ListenableFuture<Void>> healthChecks = new ArrayList<>();

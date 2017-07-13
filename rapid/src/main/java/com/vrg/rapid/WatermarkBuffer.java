@@ -92,7 +92,7 @@ final class WatermarkBuffer {
 
             final Map<Integer, HostAndPort> reportsForHost = reportsPerHost.computeIfAbsent(
                                                                  linkDst,
-                                                                 (k) -> new HashMap<>(K));
+                                                                 k -> new HashMap<>(K));
 
             if (reportsForHost.containsKey(ringNumber)) {
                 return Collections.emptyList();  // duplicate announcement, ignore.
