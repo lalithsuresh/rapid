@@ -158,16 +158,10 @@ final class MembershipService {
         this.metadataManager.addMetadata(builder.metadata);
         this.rpcClient = builder.rpcClient != null ? builder.rpcClient : new RpcClient(myAddr);
         this.broadcaster = new UnicastToAllBroadcaster(rpcClient);
-        if (builder.subscriptions == null) {
-            this.subscriptions = new EnumMap<>(ClusterEvents.class); // One for each event.
-            Arrays.stream(ClusterEvents.values()).forEach(event ->
-                    this.subscriptions.put(event, new ArrayList<>(1)));
-        }
-        else {
-            this.subscriptions = builder.subscriptions;
-            Arrays.stream(ClusterEvents.values()).forEach(event ->
-                    this.subscriptions.computeIfAbsent(event, k -> new ArrayList<>(1)));
-        }
+        this.subscriptions = builder.subscriptions == null ? new EnumMap<>(ClusterEvents.class) : builder.subscriptions;
+        // Make sure there is an empty list for every enum type
+        Arrays.stream(ClusterEvents.values()).forEach(event ->
+                this.subscriptions.computeIfAbsent(event, k -> new ArrayList<>(0)));
 
         // Schedule background jobs
         this.backgroundTasksExecutor = builder.sharedResources.getScheduledTasksExecutor();
