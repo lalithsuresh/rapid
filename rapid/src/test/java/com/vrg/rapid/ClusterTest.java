@@ -120,9 +120,6 @@ public class ClusterTest {
      */
     @Test(timeout = 30000)
     public void singleNodeJoinsThroughSeed() throws IOException, InterruptedException, ExecutionException {
-        RpcServer.USE_IN_PROCESS_SERVER = false;
-        RpcClient.USE_IN_PROCESS_CHANNEL = false;
-
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         createCluster(1, seedHost);
         verifyCluster(1, seedHost);
@@ -135,10 +132,6 @@ public class ClusterTest {
      */
     @Test(timeout = 30000)
     public void tenNodesJoinSequentially() throws IOException, InterruptedException {
-        // Explicitly test netty
-        RpcServer.USE_IN_PROCESS_SERVER = false;
-        RpcClient.USE_IN_PROCESS_CHANNEL = false;
-
         final int numNodes = 10;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         createCluster(1, seedHost); // Only bootstrap a seed.
@@ -154,10 +147,6 @@ public class ClusterTest {
      */
     @Test(timeout = 30000)
     public void twentyNodesJoinSequentially() throws IOException, InterruptedException {
-        // Explicitly test netty
-        RpcServer.USE_IN_PROCESS_SERVER = false;
-        RpcClient.USE_IN_PROCESS_CHANNEL = false;
-
         final int numNodes = 20;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         createCluster(1, seedHost); // Only bootstrap a seed.
@@ -191,9 +180,6 @@ public class ClusterTest {
      */
     @Test(timeout = 150000)
     public void fiftyNodesJoinTwentyNodeCluster() throws IOException, InterruptedException {
-        RpcServer.USE_IN_PROCESS_SERVER = true;
-        RpcClient.USE_IN_PROCESS_CHANNEL = true;
-
         final int numNodesPhase1 = 20;
         final int numNodesPhase2 = 50;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
