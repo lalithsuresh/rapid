@@ -419,19 +419,14 @@ final class MembershipService {
         }
 
         // Publish an event to the listeners.
-        subscriptions.get(ClusterEvents.VIEW_CHANGE)
-                .forEach(cb -> cb.accept(statusChanges));
+        subscriptions.get(ClusterEvents.VIEW_CHANGE).forEach(cb -> cb.accept(statusChanges));
 
         // Clear data structures for the next round.
         watermarkBuffer.clear();
         votesPerProposal.clear();
         votesReceived.clear();
         announcedProposal = false;
-
         broadcaster.setMembership(membershipView.getRing(0));
-
-        // This should yield the new configuration.
-        final MembershipView.Configuration configuration = membershipView.getConfiguration();
 
         // Inform LinkFailureDetector about membership change
         if (membershipView.isHostPresent(myAddr)) {
@@ -441,43 +436,11 @@ final class MembershipService {
             // We need to gracefully exit by calling a user handler and invalidating
             // the current session.
             LOG.trace("{} got kicked out and is shutting down.", myAddr);
-            // TODO: invoke KICKED
-            return;
+            subscriptions.get(ClusterEvents.KICKED).forEach(cb -> cb.accept(statusChanges));
         }
 
-        assert !configuration.hostAndPorts.isEmpty();
-        assert !configuration.nodeIds.isEmpty();
-
-        final JoinResponse response = JoinResponse.newBuilder()
-                .setSender(this.myAddr.toString())
-                .setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
-                .setConfigurationId(configuration.getConfigurationId())
-                .addAllHosts(configuration.hostAndPorts
-                        .stream()
-                        .map(HostAndPort::toString)
-                        .collect(Collectors.toList()))
-                .addAllIdentifiers(configuration.nodeIds)
-                .putAllClusterMetadata(metadataManager.getAllMetadata())
-                .build();
-
-        // Send out responses to all the nodes waiting to join.
-        for (final HostAndPort node: proposal) {
-            if (joinersToRespondTo.containsKey(node)) {
-                backgroundTasksExecutor.execute(
-                    () -> {
-                        joinersToRespondTo.get(node).forEach(observer -> {
-                            try {
-                                observer.onNext(response);
-                                observer.onCompleted();
-                            } catch (final StatusRuntimeException e) {
-                                LOG.warn("{} got a StatusRuntimeException {}", myAddr, e.getLocalizedMessage());
-                            }
-                        });
-                        joinersToRespondTo.remove(node);
-                    }
-                );
-            }
-        }
+        // Send new configuration to all nodes joining through us
+        respondToJoiners(proposal);
     }
 
     /**
@@ -701,14 +664,14 @@ final class MembershipService {
     }
 
     /**
-     * Invoked by link failure detectors to notify MembershipService of failed nodes
+     * Invoked eventually by link failure detectors to notify MembershipService of failed nodes
      */
     private Runnable createNotifierForMonitoree(final HostAndPort monitoree) {
         return () -> linkFailureNotification(monitoree, membershipView.getCurrentConfigurationId());
     }
 
     /**
-     * Invoked by link failure detectors to notify MembershipService of failed nodes
+     * Creates and schedules failure detector instances based on the fdFactory instance.
      */
     private void createFailureDetectorsForCurrentConfiguration() {
         failureDetectorJobs.addAll(membershipView.getMonitoreesOf(myAddr).stream().map(monitoree ->
@@ -721,9 +684,50 @@ final class MembershipService {
     }
 
     /**
-     * Cancel any running failure detector tasks
+     * Cancel all running failure detector tasks
      */
     private void cancelFailureDetectorJobs() {
         failureDetectorJobs.forEach(future -> future.cancel(true));
+    }
+
+    /**
+     * Respond with the current configuration to all nodes that attempted to join through this node.
+     */
+    private void respondToJoiners(final List<HostAndPort> proposal) {
+        // This should yield the new configuration.
+        final MembershipView.Configuration configuration = membershipView.getConfiguration();
+        assert !configuration.hostAndPorts.isEmpty();
+        assert !configuration.nodeIds.isEmpty();
+
+        final JoinResponse response = JoinResponse.newBuilder()
+                .setSender(this.myAddr.toString())
+                .setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
+                .setConfigurationId(configuration.getConfigurationId())
+                .addAllHosts(configuration.hostAndPorts
+                        .stream()
+                        .map(HostAndPort::toString)
+                        .collect(Collectors.toList()))
+                .addAllIdentifiers(configuration.nodeIds)
+                .putAllClusterMetadata(metadataManager.getAllMetadata())
+                .build();
+
+        // Send out responses to all the nodes waiting to join.
+        for (final HostAndPort node: proposal) {
+            if (joinersToRespondTo.containsKey(node)) {
+                backgroundTasksExecutor.execute(
+                        () -> {
+                            joinersToRespondTo.get(node).forEach(observer -> {
+                                try {
+                                    observer.onNext(response);
+                                    observer.onCompleted();
+                                } catch (final StatusRuntimeException e) {
+                                    LOG.warn("{} got a StatusRuntimeException {}", myAddr, e.getLocalizedMessage());
+                                }
+                            });
+                            joinersToRespondTo.remove(node);
+                        }
+                );
+            }
+        }
     }
 }
