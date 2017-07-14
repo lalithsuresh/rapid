@@ -90,7 +90,7 @@ public final class Cluster {
         private List<ServerInterceptor> serverInterceptors = Collections.emptyList();
         private List<ClientInterceptor> clientInterceptors = Collections.emptyList();
         private RpcClient.Conf conf = new RpcClient.Conf();
-        private Map<ClusterEvents, List<Consumer<List<NodeStatusChange>>>> subscriptions =
+        private final Map<ClusterEvents, List<Consumer<List<NodeStatusChange>>>> subscriptions =
                 new EnumMap<>(ClusterEvents.class);
 
         /**
