@@ -40,6 +40,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Consumer;
@@ -172,8 +173,7 @@ public final class Cluster {
          * @throws IOException Thrown if we cannot successfully start a server
          */
         public Cluster join(final HostAndPort seedAddress) throws IOException, InterruptedException {
-            return joinCluster(seedAddress, this.listenAddress, this.linkFailureDetector, this.metadata,
-                               this.serverInterceptors, this.clientInterceptors, this.conf, this.subscriptions);
+            return joinCluster(seedAddress);
         }
 
         /**
@@ -185,66 +185,98 @@ public final class Cluster {
             return startCluster(this.listenAddress, this.linkFailureDetector, this.metadata, this.serverInterceptors,
                                 this.conf, this.subscriptions);
         }
-    }
 
-    private static Cluster joinCluster(final HostAndPort seedAddress, final HostAndPort listenAddress,
-                                       @Nullable final ILinkFailureDetectorFactory linkFailureDetector,
-                                       final Metadata metadata,
-                                       final List<ServerInterceptor> serverInterceptors,
-                                       final List<ClientInterceptor> clientInterceptors,
-                                       final RpcClient.Conf conf,
-                                       final Map<ClusterEvents, List<Consumer<List<NodeStatusChange>>>> subscriptions)
+        private Cluster joinCluster(final HostAndPort seedAddress)
                 throws IOException, InterruptedException {
-        NodeId currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
-        final SharedResources sharedResources = new SharedResources(listenAddress);
-        final RpcServer server = new RpcServer(listenAddress, sharedResources);
-        final RpcClient joinerClient = new RpcClient(listenAddress, clientInterceptors, sharedResources, conf);
-        server.startServer(serverInterceptors);
-        boolean didPreviousJoinSucceed = false;
-        for (int attempt = 0; attempt < RETRIES; attempt++) {
-            // First, get the configuration ID and the monitors to contact from the seed node.
-            final JoinResponse joinPhaseOneResult;
-            try {
-                joinPhaseOneResult = joinerClient.sendJoinMessage(seedAddress,
-                        listenAddress, currentIdentifier).get();
-            } catch (final ExecutionException e) {
-                LOG.error("Join message to seed {} returned an exception: {}", seedAddress, e.getCause());
-                continue;
-            }
-            assert joinPhaseOneResult != null;
-
-            switch (joinPhaseOneResult.getStatusCode()) {
-                case CONFIG_CHANGED:
-                case UUID_ALREADY_IN_RING:
-                    currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
-                    continue;
-                case MEMBERSHIP_REJECTED:
-                    LOG.error("Membership rejected by {}. Quitting.", joinPhaseOneResult.getSender());
-                    throw new JoinException("Membership rejected");
-                case HOSTNAME_ALREADY_IN_RING:
+            NodeId currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
+            final SharedResources sharedResources = new SharedResources(listenAddress);
+            final RpcServer server = new RpcServer(listenAddress, sharedResources);
+            final RpcClient joinerClient = new RpcClient(listenAddress, clientInterceptors, sharedResources, conf);
+            server.startServer(serverInterceptors);
+            for (int attempt = 0; attempt < RETRIES; attempt++) {
+                try {
+                    return joinAttempt(seedAddress, currentIdentifier, attempt, server, joinerClient, sharedResources);
+                } catch (final ExecutionException | JoinPhaseTwoException e) {
+                    LOG.error("Join message to seed {} returned an exception: {}", seedAddress, e.getCause());
+                } catch (final JoinPhaseOneException e) {
                     /*
-                     * This is a special case. If the joinPhase2 request times out before the join confirmation
-                     * arrives from a monitor, a client may re-try a join by contacting the seed and get this response.
-                     * It should simply get the configuration streamed to it. To do that, that client retries the
-                     * join protocol but with a configuration id of -1.
+                     * These are all the responses from a seed node that warrant a retry.
                      */
-                    LOG.error("Hostname already in configuration {}", joinPhaseOneResult.getConfigurationId());
-                    didPreviousJoinSucceed = true;
-                    break;
-                case SAFE_TO_JOIN:
-                    break;
-                default:
-                    throw new JoinException("Unrecognized status code");
+                    final JoinResponse result = e.getJoinPhaseOneResult();
+                    switch (result.getStatusCode()) {
+                        case CONFIG_CHANGED:
+                        case UUID_ALREADY_IN_RING:
+                            currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
+                            break;
+                        case MEMBERSHIP_REJECTED:
+                            LOG.error("Membership rejected by {}. Quitting.", result.getSender());
+                            break;
+                        default:
+                            throw new JoinException("Unrecognized status code");
+                    }
+                }
+            }
+            server.stopServer();
+            throw new JoinException("Join attempt unsuccessful " + listenAddress);
+        }
+
+        /**
+         * A single attempt by a node to join a cluster. This includes phase one, where it contacts
+         * a seed node to receive a list of monitors to contact and the configuration to join. If successful,
+         * it triggers phase two where it contacts those monitors who then vouch for the joiner's admission
+         * into the cluster.
+         */
+        private Cluster joinAttempt(final HostAndPort seedAddress, final NodeId currentIdentifier, final int attempt,
+                            final RpcServer server, final RpcClient joinerClient, final SharedResources sharedResources)
+                                                                throws ExecutionException, InterruptedException {
+            // First, get the configuration ID and the monitors to contact from the seed node.
+            final JoinResponse joinPhaseOneResult = joinerClient.sendJoinMessage(seedAddress,
+                    listenAddress, currentIdentifier).get();
+
+            /*
+             * Either the seed node indicates it is safe to join, or it indicates that we're already
+             * part of the configuration (which happens due to a race condition where we retry a join
+             * after a timeout while the cluster has added us -- see below).
+             */
+            if (joinPhaseOneResult.getStatusCode() != JoinStatusCode.SAFE_TO_JOIN
+                    && joinPhaseOneResult.getStatusCode() != JoinStatusCode.HOSTNAME_ALREADY_IN_RING) {
+                throw new JoinPhaseOneException(joinPhaseOneResult);
             }
 
-            // -1 if we got a HOSTNAME_ALREADY_IN_RING status code in phase 1. This means we only need to ask
-            // monitors to stream us a configuration.
-            final long configurationToJoin = didPreviousJoinSucceed ? -1 : joinPhaseOneResult.getConfigurationId();
-            if (attempt > 0) {
-                LOG.info("{} is retrying a join under a new configuration {}",
-                        listenAddress, configurationToJoin);
-            }
+            /*
+             * HOSTNAME_ALREADY_IN_RING is a special case. If the joinPhase2 request times out before
+             * the join confirmation arrives from a monitor, a client may re-try a join by contacting
+             * the seed and get this response. It should simply get the configuration streamed to it.
+             * To do that, that client tries the join protocol but with a configuration id of -1.
+             */
+            final long configurationToJoin = joinPhaseOneResult.getStatusCode()
+                    == JoinStatusCode.HOSTNAME_ALREADY_IN_RING ? -1 : joinPhaseOneResult.getConfigurationId();
+            LOG.debug("{} is trying a join under configuration {} (attempt {})",
+                    listenAddress, configurationToJoin, attempt);
 
+            /*
+             * Phase one complete. Now send a phase two message to all our monitors, and if there is a valid
+             * response, construct a Cluster object based on it.
+             */
+            final Optional<JoinResponse> response = sendJoinPhase2Messages(joinPhaseOneResult,
+                    configurationToJoin, currentIdentifier, joinerClient)
+                    .stream()
+                    .filter(Objects::nonNull)
+                    .filter(r -> r.getStatusCode() == JoinStatusCode.SAFE_TO_JOIN)
+                    .filter(r -> r.getConfigurationId() != configurationToJoin)
+                    .findFirst();
+            if (response.isPresent()) {
+                return createClusterFromJoinResponse(response.get(), sharedResources, joinerClient, server);
+            }
+            throw new JoinPhaseTwoException();
+        }
+
+        /**
+         * Identifies the set of monitors to reach out to from the phase one message, and sends a join phase 2 message.
+         */
+        private List<JoinResponse> sendJoinPhase2Messages(final JoinResponse joinPhaseOneResult,
+                                        final long configurationToJoin, final NodeId currentIdentifier,
+                                        final RpcClient joinerClient) throws ExecutionException, InterruptedException {
             // We have the list of monitors. Now contact them as part of phase 2.
             final List<HostAndPort> monitorList = joinPhaseOneResult.getHostsList().stream()
                     .map(HostAndPort::fromString)
@@ -261,77 +293,59 @@ public final class Cluster {
             final List<ListenableFuture<JoinResponse>> responseFutures = new ArrayList<>();
             for (final Map.Entry<HostAndPort, List<Integer>> entry: ringNumbersPerMonitor.entrySet()) {
                 final JoinMessage msg = JoinMessage.newBuilder()
-                                                   .setSender(listenAddress.toString())
-                                                   .setNodeId(currentIdentifier)
-                                                   .setMetadata(metadata)
-                                                   .setConfigurationId(configurationToJoin)
-                                                   .addAllRingNumber(entry.getValue()).build();
+                        .setSender(listenAddress.toString())
+                        .setNodeId(currentIdentifier)
+                        .setMetadata(metadata)
+                        .setConfigurationId(configurationToJoin)
+                        .addAllRingNumber(entry.getValue()).build();
                 LOG.trace("{} is sending a join-p2 to {} for configuration {}",
                         listenAddress, entry.getKey(), configurationToJoin);
                 final ListenableFuture<JoinResponse> call = joinerClient.sendJoinPhase2Message(entry.getKey(), msg);
                 responseFutures.add(call);
             }
-
-            // The returned list of responses must contain the full configuration (hosts and identifiers) we just
-            // joined. Else, there's an error and we throw an exception.
-            try {
-                // Unsuccessful responses will be null.
-                final List<JoinResponse> responses = Futures.successfulAsList(responseFutures).get();
-
-                for (final JoinResponse response: responses) {
-                    if (response == null) {
-                        LOG.info("Received a null response.");
-                        continue;
-                    }
-                    if (response.getStatusCode() == JoinStatusCode.MEMBERSHIP_REJECTED) {
-                        LOG.info("Membership rejected by {}. Quitting.", response.getSender());
-                        continue;
-                    }
-
-                    if (response.getStatusCode() == JoinStatusCode.SAFE_TO_JOIN
-                            && response.getConfigurationId() != configurationToJoin) {
-                        // Safe to proceed. Extract the list of hosts and identifiers from the message,
-                        // assemble a MembershipService object and start an RpcServer.
-                        final List<HostAndPort> allHosts = response.getHostsList().stream()
-                                .map(HostAndPort::fromString)
-                                .collect(Collectors.toList());
-                        final List<NodeId> identifiersSeen = response.getIdentifiersList();
-
-                        final Map<String, Metadata> allMetadata = response.getClusterMetadataMap();
-
-                        assert !identifiersSeen.isEmpty();
-                        assert !allHosts.isEmpty();
-
-                        final MembershipView membershipViewFinal =
-                                new MembershipView(K, identifiersSeen, allHosts);
-                        final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
-                        MembershipService.Builder msBuilder =
-                                new MembershipService.Builder(listenAddress, watermarkBuffer, membershipViewFinal,
-                                                              sharedResources);
-                        if (linkFailureDetector != null) {
-                            msBuilder = msBuilder.setLinkFailureDetector(linkFailureDetector);
-                        }
-                        final MembershipService membershipService = msBuilder.setRpcClient(joinerClient)
-                                                                             .setMetadata(allMetadata)
-                                                                             .setSubscriptions(subscriptions)
-                                                                             .build();
-                        server.setMembershipService(membershipService);
-                        if (LOG.isTraceEnabled()) {
-                            LOG.trace("{} has monitors {}", listenAddress,
-                                    membershipViewFinal.getMonitorsOf(listenAddress));
-                            LOG.trace("{} has monitorees {}", listenAddress,
-                                    membershipViewFinal.getMonitorsOf(listenAddress));
-                        }
-                        return new Cluster(server, membershipService, sharedResources, listenAddress);
-                    }
-                }
-            } catch (final ExecutionException e) {
-                LOG.error("JoinPhaseTwo request by {} for configuration {} threw an exception. Retrying. {}",
-                        listenAddress, configurationToJoin, e.getMessage());
-            }
+            return Futures.successfulAsList(responseFutures).get();
         }
-        server.stopServer();
-        throw new JoinException("Join attempt unsuccessful " + listenAddress);
+
+        /**
+         * We have a valid JoinPhase2Response. Use the retrieved configuration to construct and return a Cluster object.
+         */
+        private Cluster createClusterFromJoinResponse(final JoinResponse response,
+                                                      final SharedResources sharedResources,
+                                                      final RpcClient joinerClient, final RpcServer server) {
+            // Safe to proceed. Extract the list of hosts and identifiers from the message,
+            // assemble a MembershipService object and start an RpcServer.
+            final List<HostAndPort> allHosts = response.getHostsList().stream()
+                    .map(HostAndPort::fromString)
+                    .collect(Collectors.toList());
+            final List<NodeId> identifiersSeen = response.getIdentifiersList();
+
+            final Map<String, Metadata> allMetadata = response.getClusterMetadataMap();
+
+            assert !identifiersSeen.isEmpty();
+            assert !allHosts.isEmpty();
+
+            final MembershipView membershipViewFinal =
+                    new MembershipView(K, identifiersSeen, allHosts);
+            final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
+            MembershipService.Builder msBuilder =
+                    new MembershipService.Builder(listenAddress, watermarkBuffer, membershipViewFinal,
+                            sharedResources);
+            if (linkFailureDetector != null) {
+                msBuilder = msBuilder.setLinkFailureDetector(linkFailureDetector);
+            }
+            final MembershipService membershipService = msBuilder.setRpcClient(joinerClient)
+                    .setMetadata(allMetadata)
+                    .setSubscriptions(subscriptions)
+                    .build();
+            server.setMembershipService(membershipService);
+            if (LOG.isTraceEnabled()) {
+                LOG.trace("{} has monitors {}", listenAddress,
+                        membershipViewFinal.getMonitorsOf(listenAddress));
+                LOG.trace("{} has monitorees {}", listenAddress,
+                        membershipViewFinal.getMonitorsOf(listenAddress));
+            }
+            return new Cluster(server, membershipService, sharedResources, listenAddress);
+        }
     }
 
     /**
@@ -431,5 +445,20 @@ public final class Cluster {
         JoinException(final String msg) {
             super(msg);
         }
+    }
+
+    static final class JoinPhaseOneException extends RuntimeException {
+        final JoinResponse joinPhaseOneResult;
+
+        JoinPhaseOneException(final JoinResponse joinPhaseOneResult) {
+            this.joinPhaseOneResult = joinPhaseOneResult;
+        }
+
+        private JoinResponse getJoinPhaseOneResult() {
+            return joinPhaseOneResult;
+        }
+    }
+
+    static final class JoinPhaseTwoException extends RuntimeException {
     }
 }
