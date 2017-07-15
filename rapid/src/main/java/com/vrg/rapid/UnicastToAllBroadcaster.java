@@ -14,14 +14,19 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
+import com.google.common.util.concurrent.ListenableFuture;
+import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
+import com.vrg.rapid.pb.ConsensusProposalResponse;
+import com.vrg.rapid.pb.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ThreadLocalRandom;
 
 
@@ -38,17 +43,31 @@ final class UnicastToAllBroadcaster implements IBroadcaster {
     }
 
     @Override
-    public synchronized void broadcast(final BatchedLinkUpdateMessage msg) {
+    @CanIgnoreReturnValue
+    public synchronized List<ListenableFuture<Response>> broadcast(final BatchedLinkUpdateMessage msg) {
+        final List<ListenableFuture<Response>> futures = new ArrayList<>(recipients.size());
         for (final HostAndPort recipient: recipients) {
-            rpcClient.sendLinkUpdateMessage(recipient, msg);
+            try {
+                futures.add(rpcClient.sendLinkUpdateMessage(recipient, msg));
+            } catch (final InterruptedException | ExecutionException e) {
+                LOG.error("sendLinkUpdateMessage failed with exception {}", e.getCause());
+            }
         }
+        return futures;
     }
 
     @Override
-    public synchronized void broadcast(final ConsensusProposal msg) {
+    @CanIgnoreReturnValue
+    public synchronized List<ListenableFuture<ConsensusProposalResponse>> broadcast(final ConsensusProposal msg) {
+        final List<ListenableFuture<ConsensusProposalResponse>> futures = new ArrayList<>(recipients.size());
         for (final HostAndPort recipient: recipients) {
-            rpcClient.sendConsensusProposal(recipient, msg);
+            try {
+                futures.add(rpcClient.sendConsensusProposal(recipient, msg));
+            } catch (final InterruptedException | ExecutionException e) {
+                LOG.error("sendConsensusProposal failed with exception {}", e.getCause());
+            }
         }
+        return futures;
     }
 
     @Override

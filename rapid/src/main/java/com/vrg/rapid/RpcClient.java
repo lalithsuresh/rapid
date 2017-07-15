@@ -52,6 +52,7 @@ import javax.annotation.Nullable;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
@@ -168,16 +169,18 @@ final class RpcClient {
      * @param remote Remote host to send the message to.
      * @param msg Consensus proposal message
      */
-    void sendConsensusProposal(final HostAndPort remote, final ConsensusProposal msg) {
+    ListenableFuture<ConsensusProposalResponse> sendConsensusProposal(final HostAndPort remote,
+                                                                      final ConsensusProposal msg)
+                                                                    throws ExecutionException, InterruptedException {
         Objects.requireNonNull(msg);
-        backgroundExecutor.execute(() -> {
+        return backgroundExecutor.submit(() -> {
             final Supplier<ListenableFuture<ConsensusProposalResponse>> call = () -> {
                 final MembershipServiceFutureStub stub = getFutureStub(remote)
                         .withDeadlineAfter(conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
                 return stub.receiveConsensusProposal(msg);
             };
-            callWithRetries(call, remote, conf.RPC_DEFAULT_RETRIES);
-        });
+            return callWithRetries(call, remote, conf.RPC_DEFAULT_RETRIES);
+        }).get();
     }
 
     /**
@@ -186,17 +189,17 @@ final class RpcClient {
      * @param remote Remote host to send the message to.
      * @param msg A BatchedLinkUpdateMessage that contains one or more LinkUpdateMessages
      */
-    void sendLinkUpdateMessage(final HostAndPort remote, final BatchedLinkUpdateMessage msg) {
+    ListenableFuture<Response> sendLinkUpdateMessage(final HostAndPort remote, final BatchedLinkUpdateMessage msg)
+                                                                    throws ExecutionException, InterruptedException {
         Objects.requireNonNull(msg);
-        backgroundExecutor.execute(() -> {
+        return backgroundExecutor.submit(() -> {
             final Supplier<ListenableFuture<Response>> call = () -> {
                 final MembershipServiceFutureStub stub = getFutureStub(remote)
                         .withDeadlineAfter(conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
                 return stub.receiveLinkUpdateMessage(msg);
             };
-
-            callWithRetries(call, remote, conf.RPC_DEFAULT_RETRIES);
-        });
+            return callWithRetries(call, remote, conf.RPC_DEFAULT_RETRIES);
+        }).get();
     }
 
     /**

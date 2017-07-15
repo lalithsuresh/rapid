@@ -14,6 +14,9 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
+import com.google.common.util.concurrent.ListenableFuture;
+import com.vrg.rapid.pb.ConsensusProposal;
+import com.vrg.rapid.pb.ConsensusProposalResponse;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
 import com.vrg.rapid.pb.NodeId;
@@ -300,6 +303,31 @@ public class MessagingTest {
             exceptionCaught = true;
         }
         assertTrue(exceptionCaught);
+    }
+
+    @Test
+    public void broadcasterTest() throws IOException, ExecutionException, InterruptedException {
+        final int N = 100;
+        final List<HostAndPort> hostList = new ArrayList<>(N);
+        final int serverPort = 1234;
+        for (int i = 0; i < N; i++) {
+            final HostAndPort serverAddr = HostAndPort.fromParts(LOCALHOST_IP, serverPort + i + 1);
+            createAndStartMembershipService(serverAddr);
+            hostList.add(serverAddr);
+        }
+        final HostAndPort clientAddr = HostAndPort.fromParts(LOCALHOST_IP, serverPort);
+        final RpcClient client = new RpcClient(clientAddr);
+        final UnicastToAllBroadcaster broadcaster = new UnicastToAllBroadcaster(client);
+        broadcaster.setMembership(hostList);
+        for (int i = 0; i < 10; i++) {
+            final List<ListenableFuture<ConsensusProposalResponse>> futures =
+                    broadcaster.broadcast(ConsensusProposal.getDefaultInstance());
+            for (final ListenableFuture<ConsensusProposalResponse> future : futures) {
+                assertNotNull(future);
+                final ConsensusProposalResponse response = future.get();
+                assertNotNull(response);
+            }
+        }
     }
 
     /**
