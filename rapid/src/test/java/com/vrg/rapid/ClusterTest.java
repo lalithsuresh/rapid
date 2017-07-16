@@ -96,10 +96,9 @@ public class ClusterTest {
         seed = ThreadLocalRandom.current().nextLong();
         random = new Random(seed);
         clientConf = new RpcClient.Conf();
+        clientConf.USE_IN_PROCESS_TRANSPORT = true;
 
         // Tests need to opt out of the in-process channel
-        RpcServer.USE_IN_PROCESS_SERVER = true;
-        RpcClient.USE_IN_PROCESS_CHANNEL = true;
         MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
         useStaticFd = false;
         addMetadata = true;
@@ -231,8 +230,7 @@ public class ClusterTest {
      */
     @Test(timeout = 30000)
     public void concurrentNodeJoinsNetty() throws IOException, InterruptedException {
-        RpcServer.USE_IN_PROCESS_SERVER = false;
-        RpcClient.USE_IN_PROCESS_CHANNEL = false;
+        clientConf.USE_IN_PROCESS_TRANSPORT = false;
         final int numNodes = 5;
         final int phaseOneJoiners = 6;
         final int phaseTwojoiners = 6;

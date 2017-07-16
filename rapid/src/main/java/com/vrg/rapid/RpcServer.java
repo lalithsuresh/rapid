@@ -13,7 +13,6 @@
 
 package com.vrg.rapid;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
@@ -50,7 +49,6 @@ import java.util.concurrent.TimeUnit;
  * host a MembershipService object.
  */
 final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
-    @VisibleForTesting static boolean USE_IN_PROCESS_SERVER = false;
     private final ExecutorService grpcExecutor;
     @Nullable private final EventLoopGroup eventLoopGroup;
     private static final ProbeResponse BOOTSTRAPPING_MESSAGE =
@@ -59,17 +57,20 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     @Nullable private MembershipService membershipService;
     @Nullable private Server server;
     private final ExecutorService protocolExecutor;
+    private final boolean useInProcessServer;
 
     // Used to queue messages in the RPC layer until we are ready with
     // a MembershipService object
     private final DeferredReceiveInterceptor deferringInterceptor = new DeferredReceiveInterceptor();
 
     RpcServer(final HostAndPort address,
-              final SharedResources sharedResources) {
+              final SharedResources sharedResources,
+              final boolean useInProcessTransport) {
         this.address = address;
         this.protocolExecutor = sharedResources.getProtocolExecutor();
         this.grpcExecutor = sharedResources.getServerExecutor();
-        this.eventLoopGroup = USE_IN_PROCESS_SERVER ? null : sharedResources.getEventLoopGroup();
+        this.eventLoopGroup = useInProcessTransport ? null : sharedResources.getEventLoopGroup();
+        this.useInProcessServer = useInProcessTransport;
     }
 
     /**
@@ -170,7 +171,7 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
         final List<ServerInterceptor> interceptorList = listBuilder.add(deferringInterceptor)
                                                                    .addAll(interceptors) // called first by grpc
                                                                    .build();
-        if (USE_IN_PROCESS_SERVER) {
+        if (useInProcessServer) {
             final ServerBuilder builder = InProcessServerBuilder.forName(address.toString());
             server = builder.addService(ServerInterceptors
                     .intercept(this, interceptorList))

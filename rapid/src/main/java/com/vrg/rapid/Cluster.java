@@ -178,7 +178,7 @@ public final class Cluster {
         public Cluster start() throws IOException {
             Objects.requireNonNull(listenAddress);
             sharedResources = new SharedResources(listenAddress);
-            rpcServer = new RpcServer(listenAddress, sharedResources);
+            rpcServer = new RpcServer(listenAddress, sharedResources, conf.USE_IN_PROCESS_TRANSPORT);
             rpcClient = new RpcClient(listenAddress, Collections.emptyList(), sharedResources, conf);
             final NodeId currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
             final MembershipView membershipView = new MembershipView(K, Collections.singletonList(currentIdentifier),
@@ -209,7 +209,7 @@ public final class Cluster {
         public Cluster join(final HostAndPort seedAddress) throws IOException, InterruptedException {
             NodeId currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
             sharedResources = new SharedResources(listenAddress);
-            rpcServer = new RpcServer(listenAddress, sharedResources);
+            rpcServer = new RpcServer(listenAddress, sharedResources, conf.USE_IN_PROCESS_TRANSPORT);
             rpcClient = new RpcClient(listenAddress, clientInterceptors, sharedResources, conf);
             rpcServer.startServer(serverInterceptors);
             for (int attempt = 0; attempt < RETRIES; attempt++) {
