@@ -15,8 +15,10 @@ package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.ListenableFuture;
+import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
 import com.vrg.rapid.pb.ConsensusProposalResponse;
+import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
 import com.vrg.rapid.pb.NodeId;
@@ -40,6 +42,7 @@ import java.util.stream.Collectors;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 /**
  * Tests to drive the messaging sub-system
@@ -305,6 +308,9 @@ public class MessagingTest {
         assertTrue(exceptionCaught);
     }
 
+    /**
+     * Tests our broadcaster to make sure it receives responses from all nodes it sends messages to.
+     */
     @Test
     public void broadcasterTest() throws IOException, ExecutionException, InterruptedException {
         final int N = 100;
@@ -329,6 +335,43 @@ public class MessagingTest {
             }
         }
     }
+
+    /**
+     * Tests all RpcClient request types to an endpoint that does not exist, checking if all calls fail.
+     */
+    @Test
+    public void rpcClientErrorHandling() throws InterruptedException {
+        final int basePort = 1234;
+        final HostAndPort clientAddr = HostAndPort.fromParts(LOCALHOST_IP, basePort);
+        final HostAndPort dst = HostAndPort.fromParts(LOCALHOST_IP, 4321);
+        final RpcClient client = new RpcClient(clientAddr);
+        try {
+            client.sendProbeMessage(dst, ProbeMessage.getDefaultInstance()).get();
+            fail("sendProbeMessage did not throw an exception");
+        } catch (final ExecutionException ignored) {
+        }
+        try {
+            client.sendJoinMessage(dst, clientAddr, Utils.nodeIdFromUUID(UUID.randomUUID())).get();
+            fail("sendJoinMessage did not throw an exception");
+        } catch (final ExecutionException ignored) {
+        }
+        try {
+            client.sendJoinPhase2Message(dst, JoinMessage.getDefaultInstance()).get();
+            fail("sendJoinPhase2Message did not throw an exception");
+        } catch (final ExecutionException ignored) {
+        }
+        try {
+            client.sendLinkUpdateMessage(dst, BatchedLinkUpdateMessage.getDefaultInstance()).get();
+            fail("sendLinkUpdateMessage did not throw an exception");
+        } catch (final ExecutionException ignored) {
+        }
+        try {
+            client.sendConsensusProposal(dst, ConsensusProposal.getDefaultInstance()).get();
+            fail("sendConsensusProposal did not throw an exception");
+        } catch (final ExecutionException ignored) {
+        }
+    }
+
 
     /**
      * Create a membership service listenting on serverAddr

@@ -111,8 +111,12 @@ final class RpcClient {
         Objects.requireNonNull(remote);
         Objects.requireNonNull(probeMessage);
 
-        final MembershipServiceFutureStub stub = getFutureStub(remote);
-        return stub.withDeadlineAfter(conf.RPC_PROBE_TIMEOUT, TimeUnit.MILLISECONDS).receiveProbe(probeMessage);
+        try {
+            final MembershipServiceFutureStub stub = getFutureStub(remote);
+            return stub.withDeadlineAfter(conf.RPC_PROBE_TIMEOUT, TimeUnit.MILLISECONDS).receiveProbe(probeMessage);
+        } catch (final ExecutionException e) {
+            return Futures.immediateFailedFuture(e);
+        }
     }
 
     /**
@@ -134,10 +138,14 @@ final class RpcClient {
                                        .setNodeId(nodeId)
                                        .build();
         final Supplier<ListenableFuture<JoinResponse>> call = () -> {
-            final MembershipServiceFutureStub stub = getFutureStub(remote)
-                    .withDeadlineAfter(conf.RPC_TIMEOUT_MS * 5L,
-                            TimeUnit.MILLISECONDS);
-            return stub.receiveJoinMessage(msg);
+            try {
+                final MembershipServiceFutureStub stub = getFutureStub(remote)
+                        .withDeadlineAfter(conf.RPC_TIMEOUT_MS * 5L,
+                                TimeUnit.MILLISECONDS);
+                return stub.receiveJoinMessage(msg);
+            } catch (final ExecutionException e) {
+                return Futures.immediateFailedFuture(e);
+            }
         };
         return callWithRetries(call, remote, conf.RPC_DEFAULT_RETRIES);
     }
@@ -155,10 +163,13 @@ final class RpcClient {
         Objects.requireNonNull(msg);
 
         final Supplier<ListenableFuture<JoinResponse>> call = () -> {
-            final MembershipServiceFutureStub stub = getFutureStub(remote)
-                    .withDeadlineAfter(conf.RPC_JOIN_PHASE_2_TIMEOUT,
-                            TimeUnit.MILLISECONDS);
-            return stub.receiveJoinPhase2Message(msg);
+            final MembershipServiceFutureStub stub;
+            try {
+                stub = getFutureStub(remote).withDeadlineAfter(conf.RPC_JOIN_PHASE_2_TIMEOUT, TimeUnit.MILLISECONDS);
+                return stub.receiveJoinPhase2Message(msg);
+            } catch (final ExecutionException e) {
+                return Futures.immediateFailedFuture(e);
+            }
         };
         return callWithRetries(call, remote, conf.RPC_DEFAULT_RETRIES);
     }
@@ -175,9 +186,13 @@ final class RpcClient {
         Objects.requireNonNull(msg);
         return backgroundExecutor.submit(() -> {
             final Supplier<ListenableFuture<ConsensusProposalResponse>> call = () -> {
-                final MembershipServiceFutureStub stub = getFutureStub(remote)
-                        .withDeadlineAfter(conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-                return stub.receiveConsensusProposal(msg);
+                try {
+                    final MembershipServiceFutureStub stub = getFutureStub(remote)
+                            .withDeadlineAfter(conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                    return stub.receiveConsensusProposal(msg);
+                } catch (final ExecutionException e) {
+                    return Futures.immediateFailedFuture(e);
+                }
             };
             return callWithRetries(call, remote, conf.RPC_DEFAULT_RETRIES);
         }).get();
@@ -194,9 +209,13 @@ final class RpcClient {
         Objects.requireNonNull(msg);
         return backgroundExecutor.submit(() -> {
             final Supplier<ListenableFuture<Response>> call = () -> {
-                final MembershipServiceFutureStub stub = getFutureStub(remote)
-                        .withDeadlineAfter(conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-                return stub.receiveLinkUpdateMessage(msg);
+                final MembershipServiceFutureStub stub;
+                try {
+                    stub = getFutureStub(remote).withDeadlineAfter(conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                    return stub.receiveLinkUpdateMessage(msg);
+                } catch (final ExecutionException e) {
+                    return Futures.immediateFailedFuture(e);
+                }
             };
             return callWithRetries(call, remote, conf.RPC_DEFAULT_RETRIES);
         }).get();
@@ -238,17 +257,10 @@ final class RpcClient {
                                         final HostAndPort remote,
                                         final SettableFuture<T> signal,
                                         final int retries) {
-        ListenableFuture<T> callFuture;
         if (shuttingDown || Thread.currentThread().isInterrupted()) {
             return;
         }
-        try {
-            callFuture = call.get();
-        } catch (final Exception e) {
-            handleFailure(call, remote, signal, retries, e);
-            return;
-        }
-
+        final ListenableFuture<T> callFuture = call.get();
         Futures.addCallback(callFuture, new FutureCallback<T>() {
             @Override
             public void onSuccess(@Nullable final T result) {
@@ -285,8 +297,8 @@ final class RpcClient {
         }
     }
 
-    private MembershipServiceFutureStub getFutureStub(final HostAndPort remote) {
-        final Channel channel = channelMap.getUnchecked(remote);
+    private MembershipServiceFutureStub getFutureStub(final HostAndPort remote) throws ExecutionException {
+        final Channel channel = channelMap.get(remote);
         return MembershipServiceGrpc.newFutureStub(channel);
     }
 
