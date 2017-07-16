@@ -144,7 +144,8 @@ class SharedResources {
     public static class BackgroundExecutorRejectionHandler implements RejectedExecutionHandler {
         @Override
         public void rejectedExecution(final Runnable r, final ThreadPoolExecutor executor) {
-            LOG.info("Rejecting task on background executor");
+            LOG.info("Running a task submitted to the background executor after it was shutdown()");
+            r.run();
         }
     }
 }

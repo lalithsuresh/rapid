@@ -22,12 +22,14 @@ import static org.junit.Assert.assertTrue;
  * Tests whether subscription callbacks are invoked on cluster starts/joins
  */
 public class SubscriptionsTest {
-
     /**
      * Two node cluster, one subscription each.
      */
     @Test(timeout = 5000)
     public void testSubscriptionOnJoin() throws IOException, InterruptedException {
+        final RpcClient.Conf conf = new RpcClient.Conf();
+        conf.USE_IN_PROCESS_TRANSPORT = true;
+
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
         final HostAndPort joiner = HostAndPort.fromParts("127.0.0.1", 1235);
 
@@ -35,12 +37,14 @@ public class SubscriptionsTest {
         final TestCallback seedCb = new TestCallback();
         final Cluster seedCluster = new Cluster.Builder(seedHost)
                                                .addSubscription(ClusterEvents.VIEW_CHANGE, seedCb)
+                                               .setRpcClientConf(conf)
                                                .start();
 
         // Initialize joiner
         final TestCallback joinCb = new TestCallback();
         final Cluster nonSeed = new Cluster.Builder(joiner)
                 .addSubscription(ClusterEvents.VIEW_CHANGE, joinCb)
+                .setRpcClientConf(conf)
                 .join(seedHost);
 
         assertEquals(2, seedCb.numTimesCalled());
@@ -59,6 +63,9 @@ public class SubscriptionsTest {
      */
     @Test(timeout = 5000)
     public void testMultipleSubscriptionsOnJoin() throws IOException, InterruptedException {
+        final RpcClient.Conf conf = new RpcClient.Conf();
+        conf.USE_IN_PROCESS_TRANSPORT = true;
+
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
         final HostAndPort joiner = HostAndPort.fromParts("127.0.0.1", 1235);
 
@@ -68,6 +75,7 @@ public class SubscriptionsTest {
         final Cluster seedCluster = new Cluster.Builder(seedHost)
                 .addSubscription(ClusterEvents.VIEW_CHANGE, seedCb1)
                 .addSubscription(ClusterEvents.VIEW_CHANGE, seedCb2)
+                .setRpcClientConf(conf)
                 .start();
 
         // Initialize joiner
@@ -76,6 +84,7 @@ public class SubscriptionsTest {
         final Cluster nonSeed = new Cluster.Builder(joiner)
                 .addSubscription(ClusterEvents.VIEW_CHANGE, joinCb1)
                 .addSubscription(ClusterEvents.VIEW_CHANGE, joinCb2)
+                .setRpcClientConf(conf)
                 .join(seedHost);
 
         assertEquals(2, seedCb1.numTimesCalled());
@@ -96,6 +105,9 @@ public class SubscriptionsTest {
      */
     @Test(timeout = 5000)
     public void testSubscriptionPostJoin() throws IOException, InterruptedException {
+        final RpcClient.Conf conf = new RpcClient.Conf();
+        conf.USE_IN_PROCESS_TRANSPORT = true;
+
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
         final HostAndPort joiner = HostAndPort.fromParts("127.0.0.1", 1235);
 
@@ -103,6 +115,7 @@ public class SubscriptionsTest {
         final TestCallback seedCb1 = new TestCallback();
         final Cluster seedCluster = new Cluster.Builder(seedHost)
                 .addSubscription(ClusterEvents.VIEW_CHANGE, seedCb1)
+                .setRpcClientConf(conf)
                 .start();
 
         final TestCallback seedCb2 = new TestCallback();
@@ -112,6 +125,7 @@ public class SubscriptionsTest {
         final TestCallback joinCb1 = new TestCallback();
         final Cluster nonSeed = new Cluster.Builder(joiner)
                 .addSubscription(ClusterEvents.VIEW_CHANGE, joinCb1)
+                .setRpcClientConf(conf)
                 .join(seedHost);
 
         assertEquals(2, seedCb1.numTimesCalled());
@@ -131,6 +145,9 @@ public class SubscriptionsTest {
      */
     @Test(timeout = 10000)
     public void testSubscriptionWithFailure() throws IOException, InterruptedException {
+        final RpcClient.Conf conf = new RpcClient.Conf();
+        conf.USE_IN_PROCESS_TRANSPORT = true;
+
         final List<StaticFailureDetector.Factory> fds = new ArrayList<>();
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
 
@@ -142,6 +159,7 @@ public class SubscriptionsTest {
                 .addSubscription(ClusterEvents.VIEW_CHANGE, seedCb1)
                 .setLinkFailureDetectorFactory(fdFactory)
                 .setMetadata(Collections.singletonMap("role", byteString))
+                .setRpcClientConf(conf)
                 .start();
         fds.add(fdFactory);
 
@@ -156,6 +174,7 @@ public class SubscriptionsTest {
             joiners.add(new Cluster.Builder(joiner)
                     .addSubscription(ClusterEvents.VIEW_CHANGE, joinerCb1)
                     .setLinkFailureDetectorFactory(fdJoiner)
+                    .setRpcClientConf(conf)
                     .join(seedHost));
             fds.add(fdJoiner);
             callbacks.add(joinerCb1);

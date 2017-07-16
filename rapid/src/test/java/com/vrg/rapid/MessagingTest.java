@@ -33,6 +33,7 @@ import org.junit.Test;
 import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.UUID;
@@ -322,7 +323,8 @@ public class MessagingTest {
             hostList.add(serverAddr);
         }
         final HostAndPort clientAddr = HostAndPort.fromParts(LOCALHOST_IP, serverPort);
-        final RpcClient client = new RpcClient(clientAddr);
+        final RpcClient.Conf conf = new RpcClient.Conf();
+        final RpcClient client = new RpcClient(clientAddr, Collections.emptyList(), resources, conf);
         final UnicastToAllBroadcaster broadcaster = new UnicastToAllBroadcaster(client);
         broadcaster.setMembership(hostList);
         for (int i = 0; i < 10; i++) {
@@ -334,7 +336,9 @@ public class MessagingTest {
                 assertNotNull(response);
             }
         }
+        client.shutdown();
     }
+
 
     /**
      * Tests all RpcClient request types to an endpoint that does not exist, checking if all calls fail.
@@ -344,7 +348,52 @@ public class MessagingTest {
         final int basePort = 1234;
         final HostAndPort clientAddr = HostAndPort.fromParts(LOCALHOST_IP, basePort);
         final HostAndPort dst = HostAndPort.fromParts(LOCALHOST_IP, 4321);
-        final RpcClient client = new RpcClient(clientAddr);
+        final RpcClient.Conf conf = new RpcClient.Conf();
+        final SharedResources resources = new SharedResources(clientAddr);
+        final RpcClient client = new RpcClient(clientAddr, Collections.emptyList(), resources, conf);
+        try {
+            client.sendProbeMessage(dst, ProbeMessage.getDefaultInstance()).get();
+            fail("sendProbeMessage did not throw an exception");
+        } catch (final ExecutionException ignored) {
+        }
+        try {
+            client.sendJoinMessage(dst, clientAddr, Utils.nodeIdFromUUID(UUID.randomUUID())).get();
+            fail("sendJoinMessage did not throw an exception");
+        } catch (final ExecutionException ignored) {
+        }
+        try {
+            client.sendJoinPhase2Message(dst, JoinMessage.getDefaultInstance()).get();
+            fail("sendJoinPhase2Message did not throw an exception");
+        } catch (final ExecutionException ignored) {
+        }
+        try {
+            client.sendLinkUpdateMessage(dst, BatchedLinkUpdateMessage.getDefaultInstance()).get();
+            fail("sendLinkUpdateMessage did not throw an exception");
+        } catch (final ExecutionException ignored) {
+        }
+        try {
+            client.sendConsensusProposal(dst, ConsensusProposal.getDefaultInstance()).get();
+            fail("sendConsensusProposal did not throw an exception");
+        } catch (final ExecutionException ignored) {
+        }
+        client.shutdown();
+        resources.shutdown();
+    }
+
+
+    /**
+     * Tests all RpcClient request types to an endpoint that exists, but after shutdown is invoked.
+     */
+    @Test
+    public void rpcClientErrorHandlingAfterShutdown() throws InterruptedException {
+        final int basePort = 1234;
+        final HostAndPort clientAddr = HostAndPort.fromParts(LOCALHOST_IP, basePort);
+        final HostAndPort dst = HostAndPort.fromParts(LOCALHOST_IP, 4321);
+        final SharedResources resources = new SharedResources(clientAddr);
+        final RpcClient.Conf conf = new RpcClient.Conf();
+        final RpcClient client = new RpcClient(clientAddr, Collections.emptyList(), resources, conf);
+        client.shutdown();
+        resources.shutdown();
         try {
             client.sendProbeMessage(dst, ProbeMessage.getDefaultInstance()).get();
             fail("sendProbeMessage did not throw an exception");

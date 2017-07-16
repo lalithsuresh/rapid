@@ -237,6 +237,7 @@ final class RpcClient {
                                         final SettableFuture<T> signal,
                                         final int retries) {
         if (shuttingDown || Thread.currentThread().isInterrupted()) {
+            signal.setException(new ShuttingDownException("RpcClient is shutting down or has been interrupted"));
             return;
         }
         final ListenableFuture<T> callFuture = call.get();
@@ -322,5 +323,11 @@ final class RpcClient {
         int RPC_DEFAULT_RETRIES = 5;
         int RPC_JOIN_PHASE_2_TIMEOUT = RPC_TIMEOUT_MS * 5;
         int RPC_PROBE_TIMEOUT = 1000;
+    }
+
+    static class ShuttingDownException extends RuntimeException {
+        ShuttingDownException(final String msg) {
+            super(msg);
+        }
     }
 }
