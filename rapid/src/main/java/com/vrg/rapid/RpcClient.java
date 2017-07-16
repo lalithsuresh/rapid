@@ -278,6 +278,9 @@ final class RpcClient {
     }
 
     private MembershipServiceFutureStub getFutureStub(final HostAndPort remote) {
+        if (shuttingDown) {
+            throw new ShuttingDownException("RpcClient is shutting down");
+        }
         final Channel channel = channelMap.getUnchecked(remote);
         return MembershipServiceGrpc.newFutureStub(channel);
     }

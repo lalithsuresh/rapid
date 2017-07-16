@@ -397,7 +397,7 @@ public class MessagingTest {
         try {
             client.sendProbeMessage(dst, ProbeMessage.getDefaultInstance()).get();
             fail("sendProbeMessage did not throw an exception");
-        } catch (final ExecutionException ignored) {
+        } catch (final ExecutionException | RpcClient.ShuttingDownException ignored) {
         }
         try {
             client.sendJoinMessage(dst, clientAddr, Utils.nodeIdFromUUID(UUID.randomUUID())).get();
