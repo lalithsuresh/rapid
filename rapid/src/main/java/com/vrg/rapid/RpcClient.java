@@ -55,6 +55,7 @@ import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
 
@@ -70,7 +71,7 @@ final class RpcClient {
     private final ExecutorService grpcExecutor;
     private final ExecutorService backgroundExecutor;
     @Nullable private final EventLoopGroup eventLoopGroup;
-    private boolean shuttingDown = false;
+    private AtomicBoolean isShuttingDown = new AtomicBoolean(false);
     private final Conf conf;
 
     RpcClient(final HostAndPort address) {
@@ -204,7 +205,7 @@ final class RpcClient {
      * Recover resources. For future use in case we provide custom grpcExecutor for the ManagedChannels.
      */
     void shutdown() {
-        shuttingDown = true;
+        isShuttingDown.set(true);
         channelMap.invalidateAll();
     }
 
@@ -236,7 +237,7 @@ final class RpcClient {
                                         final HostAndPort remote,
                                         final SettableFuture<T> signal,
                                         final int retries) {
-        if (shuttingDown || Thread.currentThread().isInterrupted()) {
+        if (isShuttingDown.get() || Thread.currentThread().isInterrupted()) {
             signal.setException(new ShuttingDownException("RpcClient is shutting down or has been interrupted"));
             return;
         }
@@ -278,7 +279,7 @@ final class RpcClient {
     }
 
     private MembershipServiceFutureStub getFutureStub(final HostAndPort remote) {
-        if (shuttingDown) {
+        if (isShuttingDown.get()) {
             throw new ShuttingDownException("RpcClient is shutting down");
         }
         final Channel channel = channelMap.getUnchecked(remote);
