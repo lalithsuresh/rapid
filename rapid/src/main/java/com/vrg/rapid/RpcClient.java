@@ -25,6 +25,7 @@ import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
+import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
 import com.vrg.rapid.pb.ConsensusProposalResponse;
@@ -62,7 +63,7 @@ import java.util.function.Supplier;
 /**
  * MessagingServiceGrpc client.
  */
-final class RpcClient {
+final class RpcClient implements IMessagingClient {
     private static final Logger LOG = LoggerFactory.getLogger(RpcClient.class);
     private static final int DEFAULT_BUF_SIZE = 4096;
     private final HostAndPort address;
@@ -106,8 +107,8 @@ final class RpcClient {
      * @param probeMessage Probing message for the remote node's failure detector module.
      * @return A future that returns a ProbeResponse if the call was successful.
      */
-    ListenableFuture<ProbeResponse> sendProbeMessage(final HostAndPort remote,
-                                                     final ProbeMessage probeMessage) {
+    @Override
+    public ListenableFuture<ProbeResponse> sendProbeMessage(final HostAndPort remote, final ProbeMessage probeMessage) {
         Objects.requireNonNull(remote);
         Objects.requireNonNull(probeMessage);
 
@@ -122,9 +123,9 @@ final class RpcClient {
      * @param sender The node sending the join message
      * @return A future that returns a JoinResponse if the call was successful.
      */
-    ListenableFuture<JoinResponse> sendJoinMessage(final HostAndPort remote,
-                                                   final HostAndPort sender,
-                                                   final NodeId nodeId) {
+    @Override
+    public ListenableFuture<JoinResponse> sendJoinMessage(final HostAndPort remote, final HostAndPort sender,
+                                                          final NodeId nodeId) {
         Objects.requireNonNull(remote);
         Objects.requireNonNull(sender);
         Objects.requireNonNull(nodeId);
@@ -149,8 +150,8 @@ final class RpcClient {
      * @param msg The JoinMessage for phase two.
      * @return A future that returns a JoinResponse if the call was successful.
      */
-    ListenableFuture<JoinResponse> sendJoinPhase2Message(final HostAndPort remote,
-                                                         final JoinMessage msg) {
+    @Override
+    public ListenableFuture<JoinResponse> sendJoinPhase2Message(final HostAndPort remote, final JoinMessage msg) {
         Objects.requireNonNull(remote);
         Objects.requireNonNull(msg);
 
@@ -168,18 +169,22 @@ final class RpcClient {
      * @param remote Remote host to send the message to.
      * @param msg Consensus proposal message
      */
-    ListenableFuture<ConsensusProposalResponse> sendConsensusProposal(final HostAndPort remote,
-                                                                      final ConsensusProposal msg)
-                                                                    throws ExecutionException, InterruptedException {
+    @Override
+    public ListenableFuture<ConsensusProposalResponse> sendConsensusProposal(final HostAndPort remote,
+                                                                             final ConsensusProposal msg) {
         Objects.requireNonNull(msg);
-        return backgroundExecutor.submit(() -> {
-            final Supplier<ListenableFuture<ConsensusProposalResponse>> call = () -> {
-                final MembershipServiceFutureStub stub = getFutureStub(remote)
-                        .withDeadlineAfter(conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-                return stub.receiveConsensusProposal(msg);
-            };
-            return callWithRetries(call, remote, conf.RPC_DEFAULT_RETRIES);
-        }).get();
+        try {
+            return backgroundExecutor.submit(() -> {
+                final Supplier<ListenableFuture<ConsensusProposalResponse>> call = () -> {
+                    final MembershipServiceFutureStub stub = getFutureStub(remote)
+                            .withDeadlineAfter(conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                    return stub.receiveConsensusProposal(msg);
+                };
+                return callWithRetries(call, remote, conf.RPC_DEFAULT_RETRIES);
+            }).get();
+        } catch (final InterruptedException | ExecutionException e) {
+            return Futures.immediateFailedFuture(e);
+        }
     }
 
     /**
@@ -188,23 +193,29 @@ final class RpcClient {
      * @param remote Remote host to send the message to.
      * @param msg A BatchedLinkUpdateMessage that contains one or more LinkUpdateMessages
      */
-    ListenableFuture<Response> sendLinkUpdateMessage(final HostAndPort remote, final BatchedLinkUpdateMessage msg)
-                                                                    throws ExecutionException, InterruptedException {
+    @Override
+    public ListenableFuture<Response> sendLinkUpdateMessage(final HostAndPort remote,
+                                                            final BatchedLinkUpdateMessage msg) {
         Objects.requireNonNull(msg);
-        return backgroundExecutor.submit(() -> {
-            final Supplier<ListenableFuture<Response>> call = () -> {
-                final MembershipServiceFutureStub stub;
-                stub = getFutureStub(remote).withDeadlineAfter(conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-                return stub.receiveLinkUpdateMessage(msg);
-            };
-            return callWithRetries(call, remote, conf.RPC_DEFAULT_RETRIES);
-        }).get();
+        try {
+            return backgroundExecutor.submit(() -> {
+                final Supplier<ListenableFuture<Response>> call = () -> {
+                    final MembershipServiceFutureStub stub;
+                    stub = getFutureStub(remote).withDeadlineAfter(conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                    return stub.receiveLinkUpdateMessage(msg);
+                };
+                return callWithRetries(call, remote, conf.RPC_DEFAULT_RETRIES);
+            }).get();
+        } catch (final InterruptedException | ExecutionException e) {
+            return Futures.immediateFailedFuture(e);
+        }
     }
 
     /**
      * Recover resources. For future use in case we provide custom grpcExecutor for the ManagedChannels.
      */
-    void shutdown() {
+    @Override
+    public void shutdown() {
         isShuttingDown.set(true);
         channelMap.invalidateAll();
     }

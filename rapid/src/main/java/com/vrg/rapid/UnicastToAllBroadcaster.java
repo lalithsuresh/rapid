@@ -16,6 +16,7 @@ package com.vrg.rapid;
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
+import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
 import com.vrg.rapid.pb.ConsensusProposalResponse;
@@ -26,7 +27,6 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ThreadLocalRandom;
 
 
@@ -35,11 +35,11 @@ import java.util.concurrent.ThreadLocalRandom;
  */
 final class UnicastToAllBroadcaster implements IBroadcaster {
     private static final Logger LOG = LoggerFactory.getLogger(UnicastToAllBroadcaster.class);
-    private final RpcClient rpcClient;
+    private final IMessagingClient messagingClient;
     private List<HostAndPort> recipients = Collections.emptyList();
 
-    public UnicastToAllBroadcaster(final RpcClient rpcClient) {
-        this.rpcClient = rpcClient;
+    UnicastToAllBroadcaster(final IMessagingClient messagingClient) {
+        this.messagingClient = messagingClient;
     }
 
     @Override
@@ -47,11 +47,7 @@ final class UnicastToAllBroadcaster implements IBroadcaster {
     public synchronized List<ListenableFuture<Response>> broadcast(final BatchedLinkUpdateMessage msg) {
         final List<ListenableFuture<Response>> futures = new ArrayList<>(recipients.size());
         for (final HostAndPort recipient: recipients) {
-            try {
-                futures.add(rpcClient.sendLinkUpdateMessage(recipient, msg));
-            } catch (final InterruptedException | ExecutionException e) {
-                LOG.error("sendLinkUpdateMessage failed with exception {}", e.toString());
-            }
+            futures.add(messagingClient.sendLinkUpdateMessage(recipient, msg));
         }
         return futures;
     }
@@ -61,11 +57,7 @@ final class UnicastToAllBroadcaster implements IBroadcaster {
     public synchronized List<ListenableFuture<ConsensusProposalResponse>> broadcast(final ConsensusProposal msg) {
         final List<ListenableFuture<ConsensusProposalResponse>> futures = new ArrayList<>(recipients.size());
         for (final HostAndPort recipient: recipients) {
-            try {
-                futures.add(rpcClient.sendConsensusProposal(recipient, msg));
-            } catch (final InterruptedException | ExecutionException e) {
-                LOG.error("sendConsensusProposal failed with exception {}", e.toString());
-            }
+            futures.add(messagingClient.sendConsensusProposal(recipient, msg));
         }
         return futures;
     }

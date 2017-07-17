@@ -14,6 +14,7 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
+import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.monitoring.ILinkFailureDetectorFactory;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
@@ -78,7 +79,7 @@ final class MembershipService {
             new HashMap<>();
     private final Map<HostAndPort, NodeId> joinerUuid = new HashMap<>();
     private final Map<HostAndPort, Metadata> joinerMetadata = new HashMap<>();
-    private final RpcClient rpcClient;
+    private final IMessagingClient messagingClient;
     private final MetadataManager metadataManager;
 
     // Event subscriptions
@@ -111,7 +112,7 @@ final class MembershipService {
         private final SharedResources sharedResources;
         private Map<String, Metadata> metadata = Collections.emptyMap();
         @Nullable private ILinkFailureDetectorFactory linkFailureDetector = null;
-        @Nullable private RpcClient rpcClient = null;
+        @Nullable private IMessagingClient messagingClient = null;
         @Nullable private Map<ClusterEvents, List<Consumer<List<NodeStatusChange>>>> subscriptions = null;
 
         Builder(final HostAndPort myAddr,
@@ -134,8 +135,8 @@ final class MembershipService {
             return this;
         }
 
-        Builder setRpcClient(final RpcClient rpcClient) {
-            this.rpcClient = rpcClient;
+        Builder setMessagingClient(final IMessagingClient messagingClient) {
+            this.messagingClient = messagingClient;
             return this;
         }
 
@@ -156,8 +157,8 @@ final class MembershipService {
         this.sharedResources = builder.sharedResources;
         this.metadataManager = new MetadataManager();
         this.metadataManager.addMetadata(builder.metadata);
-        this.rpcClient = builder.rpcClient != null ? builder.rpcClient : new RpcClient(myAddr);
-        this.broadcaster = new UnicastToAllBroadcaster(rpcClient);
+        this.messagingClient = builder.messagingClient != null ? builder.messagingClient : new RpcClient(myAddr);
+        this.broadcaster = new UnicastToAllBroadcaster(messagingClient);
         this.subscriptions = builder.subscriptions == null ? new EnumMap<>(ClusterEvents.class) : builder.subscriptions;
         // Make sure there is an empty list for every enum type
         Arrays.stream(ClusterEvents.values()).forEach(event ->
@@ -173,7 +174,7 @@ final class MembershipService {
         // to a monitor is marked faulty.
         this.fdFactory  = builder.linkFailureDetector != null
                         ? builder.linkFailureDetector
-                        : new PingPongFailureDetector.Factory(myAddr, this.rpcClient);
+                        : new PingPongFailureDetector.Factory(myAddr, this.messagingClient);
         this.failureDetectorJobs = new ArrayList<>();
         createFailureDetectorsForCurrentConfiguration();
 
@@ -536,7 +537,7 @@ final class MembershipService {
     void shutdown() {
         linkUpdateBatcherJob.cancel(true);
         failureDetectorJobs.forEach(k -> k.cancel(true));
-        rpcClient.shutdown();
+        messagingClient.shutdown();
     }
 
     /**

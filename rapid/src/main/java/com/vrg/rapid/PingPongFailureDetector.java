@@ -16,6 +16,7 @@ package com.vrg.rapid;
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
+import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.monitoring.ILinkFailureDetectorFactory;
 import com.vrg.rapid.pb.NodeStatus;
 import com.vrg.rapid.pb.ProbeMessage;
@@ -43,14 +44,14 @@ public class PingPongFailureDetector implements Runnable {
     private final HostAndPort monitoree;
     private final AtomicInteger failureCount;
     private final AtomicInteger bootstrapResponseCount;
-    private final RpcClient rpcClient;
+    private final IMessagingClient rpcClient;
     private final Runnable notifier;
 
     // A cache for probe messages. Avoids creating an unnecessary copy of a probe message each time.
     private final ProbeMessage probeMessage;
 
-    private PingPongFailureDetector(final HostAndPort address, final HostAndPort monitoree, final RpcClient rpcClient,
-                                    final Runnable notifier) {
+    private PingPongFailureDetector(final HostAndPort address, final HostAndPort monitoree,
+                                    final IMessagingClient rpcClient, final Runnable notifier) {
         this.address = address;
         this.monitoree = monitoree;
         this.rpcClient = rpcClient;
@@ -119,16 +120,16 @@ public class PingPongFailureDetector implements Runnable {
 
     static class Factory implements ILinkFailureDetectorFactory {
         private final HostAndPort address;
-        private final RpcClient rpcClient;
+        private final IMessagingClient messagingClient;
 
-        Factory(final HostAndPort address, final RpcClient rpcClient) {
+        Factory(final HostAndPort address, final IMessagingClient messagingClient) {
             this.address = address;
-            this.rpcClient = rpcClient;
+            this.messagingClient = messagingClient;
         }
 
         @Override
         public Runnable createInstance(final HostAndPort monitoree, final Runnable notifier) {
-            return new PingPongFailureDetector(address, monitoree, rpcClient, notifier);
+            return new PingPongFailureDetector(address, monitoree, messagingClient, notifier);
         }
     }
 }

@@ -17,6 +17,7 @@ import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.protobuf.ByteString;
+import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.monitoring.ILinkFailureDetectorFactory;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
@@ -94,7 +95,7 @@ public final class Cluster {
                 new EnumMap<>(ClusterEvents.class);
 
         // These fields are initialized at the beginning of start() and join()
-        @Nullable private RpcClient rpcClient = null;
+        @Nullable private IMessagingClient messagingClient = null;
         @Nullable private RpcServer rpcServer = null;
         @Nullable private SharedResources sharedResources = null;
 
@@ -179,16 +180,16 @@ public final class Cluster {
             Objects.requireNonNull(listenAddress);
             sharedResources = new SharedResources(listenAddress);
             rpcServer = new RpcServer(listenAddress, sharedResources, conf.USE_IN_PROCESS_TRANSPORT);
-            rpcClient = new RpcClient(listenAddress, Collections.emptyList(), sharedResources, conf);
+            messagingClient = new RpcClient(listenAddress, Collections.emptyList(), sharedResources, conf);
             final NodeId currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
             final MembershipView membershipView = new MembershipView(K, Collections.singletonList(currentIdentifier),
                     Collections.singletonList(listenAddress));
             final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
             linkFailureDetector = linkFailureDetector != null ? linkFailureDetector
-                    : new PingPongFailureDetector.Factory(listenAddress, rpcClient);
+                    : new PingPongFailureDetector.Factory(listenAddress, messagingClient);
             final MembershipService.Builder builder = new MembershipService.Builder(listenAddress, watermarkBuffer,
                     membershipView, sharedResources)
-                    .setRpcClient(rpcClient)
+                    .setMessagingClient(messagingClient)
                     .setSubscriptions(subscriptions)
                     .setLinkFailureDetector(linkFailureDetector);
             final MembershipService membershipService = metadata.getMetadataCount() > 0
@@ -210,7 +211,7 @@ public final class Cluster {
             NodeId currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
             sharedResources = new SharedResources(listenAddress);
             rpcServer = new RpcServer(listenAddress, sharedResources, conf.USE_IN_PROCESS_TRANSPORT);
-            rpcClient = new RpcClient(listenAddress, clientInterceptors, sharedResources, conf);
+            messagingClient = new RpcClient(listenAddress, clientInterceptors, sharedResources, conf);
             rpcServer.startServer(serverInterceptors);
             for (int attempt = 0; attempt < RETRIES; attempt++) {
                 try {
@@ -239,7 +240,7 @@ public final class Cluster {
                 }
             }
             rpcServer.stopServer();
-            rpcClient.shutdown();
+            messagingClient.shutdown();
             sharedResources.shutdown();
             throw new JoinException("Join attempt unsuccessful " + listenAddress);
         }
@@ -252,9 +253,9 @@ public final class Cluster {
          */
         private Cluster joinAttempt(final HostAndPort seedAddress, final NodeId currentIdentifier, final int attempt)
                                                                 throws ExecutionException, InterruptedException {
-            assert rpcClient != null;
+            assert messagingClient != null;
             // First, get the configuration ID and the monitors to contact from the seed node.
-            final JoinResponse joinPhaseOneResult = rpcClient.sendJoinMessage(seedAddress,
+            final JoinResponse joinPhaseOneResult = messagingClient.sendJoinMessage(seedAddress,
                     listenAddress, currentIdentifier).get();
 
             /*
@@ -301,7 +302,7 @@ public final class Cluster {
         private List<JoinResponse> sendJoinPhase2Messages(final JoinResponse joinPhaseOneResult,
                                         final long configurationToJoin, final NodeId currentIdentifier)
                                                             throws ExecutionException, InterruptedException {
-            assert rpcClient != null;
+            assert messagingClient != null;
             // We have the list of monitors. Now contact them as part of phase 2.
             final List<HostAndPort> monitorList = joinPhaseOneResult.getHostsList().stream()
                     .map(HostAndPort::fromString)
@@ -325,7 +326,7 @@ public final class Cluster {
                         .addAllRingNumber(entry.getValue()).build();
                 LOG.trace("{} is sending a join-p2 to {} for configuration {}",
                         listenAddress, entry.getKey(), configurationToJoin);
-                final ListenableFuture<JoinResponse> call = rpcClient.sendJoinPhase2Message(entry.getKey(), msg);
+                final ListenableFuture<JoinResponse> call = messagingClient.sendJoinPhase2Message(entry.getKey(), msg);
                 responseFutures.add(call);
             }
             return Futures.successfulAsList(responseFutures).get();
@@ -335,7 +336,7 @@ public final class Cluster {
          * We have a valid JoinPhase2Response. Use the retrieved configuration to construct and return a Cluster object.
          */
         private Cluster createClusterFromJoinResponse(final JoinResponse response) {
-            assert rpcClient != null && rpcServer != null && sharedResources != null;
+            assert messagingClient != null && rpcServer != null && sharedResources != null;
             // Safe to proceed. Extract the list of hosts and identifiers from the message,
             // assemble a MembershipService object and start an RpcServer.
             final List<HostAndPort> allHosts = response.getHostsList().stream()
@@ -352,10 +353,10 @@ public final class Cluster {
                     new MembershipView(K, identifiersSeen, allHosts);
             final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
             linkFailureDetector = linkFailureDetector != null ? linkFailureDetector
-                                                      : new PingPongFailureDetector.Factory(listenAddress, rpcClient);
+                                                  : new PingPongFailureDetector.Factory(listenAddress, messagingClient);
             final MembershipService membershipService =
                     new MembershipService.Builder(listenAddress, watermarkBuffer, membershipViewFinal, sharedResources)
-                                         .setRpcClient(rpcClient)
+                                         .setMessagingClient(messagingClient)
                                          .setLinkFailureDetector(linkFailureDetector)
                                          .setMetadata(allMetadata)
                                          .setSubscriptions(subscriptions)
