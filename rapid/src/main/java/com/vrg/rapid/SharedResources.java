@@ -114,6 +114,7 @@ class SharedResources {
     synchronized void shutdown() {
         serverExecutor.shutdownNow();
         protocolExecutor.shutdownNow();
+        clientChannelExecutor.shutdownNow();
         backgroundExecutor.shutdownNow();
         if (eventLoopGroup != null) {
             eventLoopGroup.shutdownGracefully().awaitUninterruptibly(0, TimeUnit.SECONDS);

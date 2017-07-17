@@ -216,7 +216,7 @@ public final class Cluster {
                 try {
                     return joinAttempt(seedAddress, currentIdentifier, attempt);
                 } catch (final ExecutionException | JoinPhaseTwoException e) {
-                    LOG.error("Join message to seed {} returned an exception: {}", seedAddress, e.getCause());
+                    LOG.error("Join message to seed {} returned an exception: {}", seedAddress, e.toString());
                 } catch (final JoinPhaseOneException e) {
                     /*
                      * These are error responses from a seed node that warrant a retry.

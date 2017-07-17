@@ -50,7 +50,7 @@ final class UnicastToAllBroadcaster implements IBroadcaster {
             try {
                 futures.add(rpcClient.sendLinkUpdateMessage(recipient, msg));
             } catch (final InterruptedException | ExecutionException e) {
-                LOG.error("sendLinkUpdateMessage failed with exception {}", e.getCause());
+                LOG.error("sendLinkUpdateMessage failed with exception {}", e.toString());
             }
         }
         return futures;
@@ -64,7 +64,7 @@ final class UnicastToAllBroadcaster implements IBroadcaster {
             try {
                 futures.add(rpcClient.sendConsensusProposal(recipient, msg));
             } catch (final InterruptedException | ExecutionException e) {
-                LOG.error("sendConsensusProposal failed with exception {}", e.getCause());
+                LOG.error("sendConsensusProposal failed with exception {}", e.toString());
             }
         }
         return futures;

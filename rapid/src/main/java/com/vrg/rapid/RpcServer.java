@@ -202,7 +202,7 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
                 membershipService.shutdown();
             }
             server.shutdown();
-            server.awaitTermination(1, TimeUnit.SECONDS);
+            server.awaitTermination(0, TimeUnit.SECONDS);
             protocolExecutor.shutdownNow();
         } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();

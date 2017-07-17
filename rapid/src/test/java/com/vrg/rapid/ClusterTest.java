@@ -457,6 +457,7 @@ public class ClusterTest {
         }
         latch.await();
         waitAndVerifyAgreement(numNodes, 10, 250, seedHost);
+        executor.shutdownNow();
     }
 
     /**
