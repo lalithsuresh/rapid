@@ -69,7 +69,7 @@ import java.util.stream.Collectors;
 final class MembershipService {
     private static final Logger LOG = LoggerFactory.getLogger(MembershipService.class);
     private static final int BATCHING_WINDOW_IN_MS = 100;
-    private static int FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 0;
+    private static final int DEFAULT_FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 0;
     static final int DEFAULT_FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
     private final MembershipView membershipView;
     private final WatermarkBuffer watermarkBuffer;
@@ -677,7 +677,7 @@ final class MembershipService {
         failureDetectorJobs.addAll(membershipView.getMonitoreesOf(myAddr).stream().map(monitoree ->
                 this.backgroundTasksExecutor.scheduleAtFixedRate(
                         this.fdFactory.createInstance(monitoree, createNotifierForMonitoree(monitoree)), // Runnable
-                        FAILURE_DETECTOR_INITIAL_DELAY_IN_MS,
+                        DEFAULT_FAILURE_DETECTOR_INITIAL_DELAY_IN_MS,
                         settings.getFailureDetectorIntervalInMs(),
                         TimeUnit.MILLISECONDS))
                 .collect(Collectors.toList()));
