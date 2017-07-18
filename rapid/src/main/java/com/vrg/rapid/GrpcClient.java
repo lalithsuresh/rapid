@@ -13,7 +13,6 @@
 
 package com.vrg.rapid;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
@@ -66,6 +65,12 @@ import java.util.function.Supplier;
 final class GrpcClient implements IMessagingClient {
     private static final Logger LOG = LoggerFactory.getLogger(GrpcClient.class);
     private static final int DEFAULT_BUF_SIZE = 4096;
+    static final boolean DEFAULT_GRPC_USE_IN_PROCESS_TRANSPORT = false;
+    static final int DEFAULT_GRPC_TIMEOUT_MS = 1000;
+    static final int DEFAULT_GRPC_DEFAULT_RETRIES = 5;
+    static final int DEFAULT_GRPC_JOIN_TIMEOUT = DEFAULT_GRPC_TIMEOUT_MS * 5;
+    static final int DEFAULT_GRPC_PROBE_TIMEOUT = 1000;
+
     private final HostAndPort address;
     private final List<ClientInterceptor> interceptors;
     private final LoadingCache<HostAndPort, Channel> channelMap;
@@ -73,20 +78,21 @@ final class GrpcClient implements IMessagingClient {
     private final ExecutorService backgroundExecutor;
     @Nullable private final EventLoopGroup eventLoopGroup;
     private AtomicBoolean isShuttingDown = new AtomicBoolean(false);
-    private final Conf conf;
+    private final ISettings settings;
+
 
     GrpcClient(final HostAndPort address) {
-        this(address, Collections.emptyList(), new SharedResources(address), new Conf());
+        this(address, Collections.emptyList(), new SharedResources(address), new Settings());
     }
 
     GrpcClient(final HostAndPort address, final List<ClientInterceptor> interceptors,
-               final SharedResources sharedResources, final Conf conf) {
+               final SharedResources sharedResources, final ISettings settings) {
         this.address = address;
         this.interceptors = interceptors;
-        this.conf = conf;
+        this.settings = settings;
         this.grpcExecutor = sharedResources.getClientChannelExecutor();
         this.backgroundExecutor = sharedResources.getBackgroundExecutor();
-        this.eventLoopGroup = conf.USE_IN_PROCESS_TRANSPORT ? null : sharedResources.getEventLoopGroup();
+        this.eventLoopGroup = settings.getUseInProcessTransport() ? null : sharedResources.getEventLoopGroup();
         final RemovalListener<HostAndPort, Channel> removalListener =
                 removal -> shutdownChannel((ManagedChannelImpl) removal.getValue());
         this.channelMap = CacheBuilder.newBuilder()
@@ -113,7 +119,8 @@ final class GrpcClient implements IMessagingClient {
         Objects.requireNonNull(probeMessage);
 
         final MembershipServiceFutureStub stub = getFutureStub(remote);
-        return stub.withDeadlineAfter(conf.RPC_PROBE_TIMEOUT, TimeUnit.MILLISECONDS).receiveProbe(probeMessage);
+        return stub.withDeadlineAfter(settings.getGrpcProbeTimeoutMs(), TimeUnit.MILLISECONDS)
+                   .receiveProbe(probeMessage);
     }
 
     /**
@@ -136,11 +143,11 @@ final class GrpcClient implements IMessagingClient {
                                        .build();
         final Supplier<ListenableFuture<JoinResponse>> call = () -> {
             final MembershipServiceFutureStub stub = getFutureStub(remote)
-                    .withDeadlineAfter(conf.RPC_TIMEOUT_MS * 5L,
+                    .withDeadlineAfter(settings.getGrpcJoinTimeoutMs() * 5L,
                             TimeUnit.MILLISECONDS);
             return stub.receiveJoinMessage(msg);
         };
-        return callWithRetries(call, remote, conf.RPC_DEFAULT_RETRIES);
+        return callWithRetries(call, remote, settings.getGrpcDefaultRetries());
     }
 
     /**
@@ -157,10 +164,10 @@ final class GrpcClient implements IMessagingClient {
 
         final Supplier<ListenableFuture<JoinResponse>> call = () -> {
             final MembershipServiceFutureStub stub;
-            stub = getFutureStub(remote).withDeadlineAfter(conf.RPC_JOIN_PHASE_2_TIMEOUT, TimeUnit.MILLISECONDS);
+            stub = getFutureStub(remote).withDeadlineAfter(settings.getGrpcJoinTimeoutMs(), TimeUnit.MILLISECONDS);
             return stub.receiveJoinPhase2Message(msg);
         };
-        return callWithRetries(call, remote, conf.RPC_DEFAULT_RETRIES);
+        return callWithRetries(call, remote, settings.getGrpcDefaultRetries());
     }
 
     /**
@@ -177,10 +184,10 @@ final class GrpcClient implements IMessagingClient {
             return backgroundExecutor.submit(() -> {
                 final Supplier<ListenableFuture<ConsensusProposalResponse>> call = () -> {
                     final MembershipServiceFutureStub stub = getFutureStub(remote)
-                            .withDeadlineAfter(conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                            .withDeadlineAfter(settings.getGrpcTimeoutMs(), TimeUnit.MILLISECONDS);
                     return stub.receiveConsensusProposal(msg);
                 };
-                return callWithRetries(call, remote, conf.RPC_DEFAULT_RETRIES);
+                return callWithRetries(call, remote, settings.getGrpcDefaultRetries());
             }).get();
         } catch (final InterruptedException | ExecutionException e) {
             return Futures.immediateFailedFuture(e);
@@ -201,10 +208,10 @@ final class GrpcClient implements IMessagingClient {
             return backgroundExecutor.submit(() -> {
                 final Supplier<ListenableFuture<Response>> call = () -> {
                     final MembershipServiceFutureStub stub;
-                    stub = getFutureStub(remote).withDeadlineAfter(conf.RPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                    stub = getFutureStub(remote).withDeadlineAfter(settings.getGrpcTimeoutMs(), TimeUnit.MILLISECONDS);
                     return stub.receiveLinkUpdateMessage(msg);
                 };
-                return callWithRetries(call, remote, conf.RPC_DEFAULT_RETRIES);
+                return callWithRetries(call, remote, settings.getGrpcDefaultRetries());
             }).get();
         } catch (final InterruptedException | ExecutionException e) {
             return Futures.immediateFailedFuture(e);
@@ -306,7 +313,7 @@ final class GrpcClient implements IMessagingClient {
         Channel channel;
         LOG.debug("Creating channel from {} to {}", address, remote);
 
-        if (conf.USE_IN_PROCESS_TRANSPORT) {
+        if (settings.getUseInProcessTransport()) {
             channel = InProcessChannelBuilder
                     .forName(remote.toString())
                     .executor(grpcExecutor)
@@ -331,13 +338,16 @@ final class GrpcClient implements IMessagingClient {
         return channel;
     }
 
-    @VisibleForTesting
-    static class Conf {
-        boolean USE_IN_PROCESS_TRANSPORT = false;
-        int RPC_TIMEOUT_MS = 1000;
-        int RPC_DEFAULT_RETRIES = 5;
-        int RPC_JOIN_PHASE_2_TIMEOUT = RPC_TIMEOUT_MS * 5;
-        int RPC_PROBE_TIMEOUT = 1000;
+    interface ISettings {
+        boolean getUseInProcessTransport();
+
+        int getGrpcTimeoutMs();
+
+        int getGrpcDefaultRetries();
+
+        int getGrpcJoinTimeoutMs();
+
+        int getGrpcProbeTimeoutMs();
     }
 
     static class ShuttingDownException extends RuntimeException {

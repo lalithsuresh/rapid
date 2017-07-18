@@ -69,8 +69,8 @@ import java.util.stream.Collectors;
 final class MembershipService {
     private static final Logger LOG = LoggerFactory.getLogger(MembershipService.class);
     private static final int BATCHING_WINDOW_IN_MS = 100;
-    static int FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
     private static int FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 0;
+    static final int DEFAULT_FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
     private final MembershipView membershipView;
     private final WatermarkBuffer watermarkBuffer;
     private final HostAndPort myAddr;
@@ -104,6 +104,7 @@ final class MembershipService {
     private final Set<String> votesReceived = new HashSet<>(); // Should be a bitset
     private boolean announcedProposal = false;
     private final Object membershipUpdateLock = new Object();
+    private final ISettings settings;
 
     static class Builder {
         private final MembershipView membershipView;
@@ -111,6 +112,7 @@ final class MembershipService {
         private final HostAndPort myAddr;
         private final SharedResources sharedResources;
         private Map<String, Metadata> metadata = Collections.emptyMap();
+        private final ISettings settings;
         @Nullable private ILinkFailureDetectorFactory linkFailureDetector = null;
         @Nullable private IMessagingClient messagingClient = null;
         @Nullable private Map<ClusterEvents, List<Consumer<List<NodeStatusChange>>>> subscriptions = null;
@@ -118,11 +120,13 @@ final class MembershipService {
         Builder(final HostAndPort myAddr,
                 final WatermarkBuffer watermarkBuffer,
                 final MembershipView membershipView,
-                final SharedResources sharedResources) {
+                final SharedResources sharedResources,
+                final ISettings settings) {
             this.myAddr = Objects.requireNonNull(myAddr);
             this.watermarkBuffer = Objects.requireNonNull(watermarkBuffer);
             this.membershipView = Objects.requireNonNull(membershipView);
             this.sharedResources = sharedResources;
+            this.settings = settings;
         }
 
         Builder setMetadata(final Map<String, Metadata> metadata) {
@@ -152,6 +156,7 @@ final class MembershipService {
 
     private MembershipService(final Builder builder) {
         this.myAddr = builder.myAddr;
+        this.settings = builder.settings;
         this.membershipView = builder.membershipView;
         this.watermarkBuffer = builder.watermarkBuffer;
         this.sharedResources = builder.sharedResources;
@@ -337,7 +342,7 @@ final class MembershipService {
         final long membershipSize = membershipView.getMembershipSize();
 
         if (proposalMessage.getConfigurationId() != currentConfigurationId) {
-            LOG.trace("Configuration ID mismatch for proposal: current_config:{} proposal:{}", currentConfigurationId,
+            LOG.trace("Settings ID mismatch for proposal: current_config:{} proposal:{}", currentConfigurationId,
                       proposalMessage);
             return;
         }
@@ -673,7 +678,7 @@ final class MembershipService {
                 this.backgroundTasksExecutor.scheduleAtFixedRate(
                         this.fdFactory.createInstance(monitoree, createNotifierForMonitoree(monitoree)), // Runnable
                         FAILURE_DETECTOR_INITIAL_DELAY_IN_MS,
-                        FAILURE_DETECTOR_INTERVAL_IN_MS,
+                        settings.getFailureDetectorIntervalInMs(),
                         TimeUnit.MILLISECONDS))
                 .collect(Collectors.toList()));
     }
@@ -724,5 +729,9 @@ final class MembershipService {
                 );
             }
         }
+    }
+
+    interface ISettings {
+        int getFailureDetectorIntervalInMs();
     }
 }

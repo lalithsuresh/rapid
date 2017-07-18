@@ -137,7 +137,7 @@ public class MessagingTest {
 
     /**
      * A node in a cluster gets a join request from a peer with non conflicting
-     * hostnames and UUID. Verify the cluster Configuration relayed to
+     * hostnames and UUID. Verify the cluster Settings relayed to
      * the requesting peer.
      */
     @Test
@@ -324,8 +324,8 @@ public class MessagingTest {
             hostList.add(serverAddr);
         }
         final HostAndPort clientAddr = HostAndPort.fromParts(LOCALHOST_IP, serverPort);
-        final GrpcClient.Conf conf = new GrpcClient.Conf();
-        final IMessagingClient client = new GrpcClient(clientAddr, Collections.emptyList(), resources, conf);
+        final Settings settings = new Settings();
+        final IMessagingClient client = new GrpcClient(clientAddr, Collections.emptyList(), resources, settings);
         final UnicastToAllBroadcaster broadcaster = new UnicastToAllBroadcaster(client);
         broadcaster.setMembership(hostList);
         for (int i = 0; i < 10; i++) {
@@ -349,9 +349,9 @@ public class MessagingTest {
         final int basePort = 1234;
         final HostAndPort clientAddr = HostAndPort.fromParts(LOCALHOST_IP, basePort);
         final HostAndPort dst = HostAndPort.fromParts(LOCALHOST_IP, 4321);
-        final GrpcClient.Conf conf = new GrpcClient.Conf();
+        final Settings settings = new Settings();
         final SharedResources resources = new SharedResources(clientAddr);
-        final IMessagingClient client = new GrpcClient(clientAddr, Collections.emptyList(), resources, conf);
+        final IMessagingClient client = new GrpcClient(clientAddr, Collections.emptyList(), resources, settings);
         try {
             client.sendProbeMessage(dst, ProbeMessage.getDefaultInstance()).get();
             fail("sendProbeMessage did not throw an exception");
@@ -391,8 +391,8 @@ public class MessagingTest {
         final HostAndPort clientAddr = HostAndPort.fromParts(LOCALHOST_IP, basePort);
         final HostAndPort dst = HostAndPort.fromParts(LOCALHOST_IP, 4321);
         final SharedResources resources = new SharedResources(clientAddr);
-        final GrpcClient.Conf conf = new GrpcClient.Conf();
-        final IMessagingClient client = new GrpcClient(clientAddr, Collections.emptyList(), resources, conf);
+        final Settings settings = new Settings();
+        final IMessagingClient client = new GrpcClient(clientAddr, Collections.emptyList(), resources, settings);
         client.shutdown();
         resources.shutdown();
         try {
@@ -432,7 +432,7 @@ public class MessagingTest {
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, Utils.nodeIdFromUUID(UUID.randomUUID()));
         final MembershipService service =
-                new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView, resources)
+                new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView, resources, new Settings())
                                     .build();
         final RpcServer rpcServer = new RpcServer(serverAddr, resources, false);
         rpcServer.setMembershipService(service);
@@ -452,7 +452,7 @@ public class MessagingTest {
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, Utils.nodeIdFromUUID(UUID.randomUUID()));
         final MembershipService service =
-                new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView, resources)
+                new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView, resources, new Settings())
                         .build();
         final RpcServer rpcServer = new RpcServer(serverAddr, resources, false);
         rpcServer.setMembershipService(service);
@@ -471,7 +471,7 @@ public class MessagingTest {
             throws IOException {
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
         final MembershipService service =
-                new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView, resources)
+                new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView, resources, new Settings())
                         .build();
         final RpcServer rpcServer = new RpcServer(serverAddr, resources, false);
         rpcServer.setMembershipService(service);

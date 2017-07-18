@@ -139,7 +139,7 @@ public class MembershipServiceTest {
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
         final SharedResources resources = new SharedResources(serverAddr);
         final MembershipService service =
-                new MembershipService.Builder(serverAddr, watermarkBuffer, view, resources)
+                new MembershipService.Builder(serverAddr, watermarkBuffer, view, resources, new Settings())
                         .build();
         services.add(service);
         return service;

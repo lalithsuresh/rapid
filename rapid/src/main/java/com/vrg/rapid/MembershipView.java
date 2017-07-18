@@ -62,7 +62,7 @@ final class MembershipView {
     }
 
     /**
-     * Used to bootstrap a membership view from the fields of a MembershipView.Configuration object.
+     * Used to bootstrap a membership view from the fields of a MembershipView.Settings object.
      */
     MembershipView(final int K, final Collection<NodeId> nodeIds,
                    final Collection<HostAndPort> hostAndPorts) {
@@ -377,11 +377,11 @@ final class MembershipView {
     }
 
     /**
-     * Get a Configuration object that contains the list of nodes in the membership view
+     * Get a Settings object that contains the list of nodes in the membership view
      * as well as the identifiers seen so far. These two lists suffice to bootstrap an
      * identical copy of the MembershipView object.
      *
-     * @return a {@code Configuration} object.
+     * @return a {@code Settings} object.
      */
     Configuration getConfiguration() {
         rwLock.readLock().lock();
@@ -465,7 +465,7 @@ final class MembershipView {
     }
 
     /**
-     * The Configuration object contains a list of nodes in the membership view as well as a list of UUIDs.
+     * The Settings object contains a list of nodes in the membership view as well as a list of UUIDs.
      * An instance of this object created from one MembershipView object contains the necessary information
      * to bootstrap an identical MembershipView object.
      */

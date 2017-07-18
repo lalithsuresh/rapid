@@ -90,7 +90,7 @@ public final class Cluster {
         private Metadata metadata = Metadata.getDefaultInstance();
         private List<ServerInterceptor> serverInterceptors = Collections.emptyList();
         private List<ClientInterceptor> clientInterceptors = Collections.emptyList();
-        private GrpcClient.Conf conf = new GrpcClient.Conf();
+        private Settings settings = new Settings();
         private final Map<ClusterEvents, List<Consumer<List<NodeStatusChange>>>> subscriptions =
                 new EnumMap<>(ClusterEvents.class);
 
@@ -166,8 +166,8 @@ public final class Cluster {
          * This is used to configure GrpcClient properties
          */
         @Internal
-        Builder setRpcClientConf(final GrpcClient.Conf conf) {
-            this.conf = conf;
+        Builder useSettings(final Settings settings) {
+            this.settings = settings;
             return this;
         }
 
@@ -179,8 +179,8 @@ public final class Cluster {
         public Cluster start() throws IOException {
             Objects.requireNonNull(listenAddress);
             sharedResources = new SharedResources(listenAddress);
-            rpcServer = new RpcServer(listenAddress, sharedResources, conf.USE_IN_PROCESS_TRANSPORT);
-            messagingClient = new GrpcClient(listenAddress, Collections.emptyList(), sharedResources, conf);
+            rpcServer = new RpcServer(listenAddress, sharedResources, settings.getUseInProcessTransport());
+            messagingClient = new GrpcClient(listenAddress, Collections.emptyList(), sharedResources, settings);
             final NodeId currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
             final MembershipView membershipView = new MembershipView(K, Collections.singletonList(currentIdentifier),
                     Collections.singletonList(listenAddress));
@@ -188,7 +188,7 @@ public final class Cluster {
             linkFailureDetector = linkFailureDetector != null ? linkFailureDetector
                     : new PingPongFailureDetector.Factory(listenAddress, messagingClient);
             final MembershipService.Builder builder = new MembershipService.Builder(listenAddress, watermarkBuffer,
-                    membershipView, sharedResources)
+                    membershipView, sharedResources, settings)
                     .setMessagingClient(messagingClient)
                     .setSubscriptions(subscriptions)
                     .setLinkFailureDetector(linkFailureDetector);
@@ -210,8 +210,8 @@ public final class Cluster {
         public Cluster join(final HostAndPort seedAddress) throws IOException, InterruptedException {
             NodeId currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
             sharedResources = new SharedResources(listenAddress);
-            rpcServer = new RpcServer(listenAddress, sharedResources, conf.USE_IN_PROCESS_TRANSPORT);
-            messagingClient = new GrpcClient(listenAddress, clientInterceptors, sharedResources, conf);
+            rpcServer = new RpcServer(listenAddress, sharedResources, settings.getUseInProcessTransport());
+            messagingClient = new GrpcClient(listenAddress, clientInterceptors, sharedResources, settings);
             rpcServer.startServer(serverInterceptors);
             for (int attempt = 0; attempt < RETRIES; attempt++) {
                 try {
@@ -247,20 +247,20 @@ public final class Cluster {
 
         /**
          * A single attempt by a node to join a cluster. This includes phase one, where it contacts
-         * a seed node to receive a list of monitors to contact and the configuration to join. If successful,
+         * a seed node to receive a list of monitors to contact and the settings to join. If successful,
          * it triggers phase two where it contacts those monitors who then vouch for the joiner's admission
          * into the cluster.
          */
         private Cluster joinAttempt(final HostAndPort seedAddress, final NodeId currentIdentifier, final int attempt)
                                                                 throws ExecutionException, InterruptedException {
             assert messagingClient != null;
-            // First, get the configuration ID and the monitors to contact from the seed node.
+            // First, get the settings ID and the monitors to contact from the seed node.
             final JoinResponse joinPhaseOneResult = messagingClient.sendJoinMessage(seedAddress,
                     listenAddress, currentIdentifier).get();
 
             /*
              * Either the seed node indicates it is safe to join, or it indicates that we're already
-             * part of the configuration (which happens due to a race condition where we retry a join
+             * part of the settings (which happens due to a race condition where we retry a join
              * after a timeout while the cluster has added us -- see below).
              */
             if (joinPhaseOneResult.getStatusCode() != JoinStatusCode.SAFE_TO_JOIN
@@ -271,12 +271,12 @@ public final class Cluster {
             /*
              * HOSTNAME_ALREADY_IN_RING is a special case. If the joinPhase2 request times out before
              * the join confirmation arrives from a monitor, a client may re-try a join by contacting
-             * the seed and get this response. It should simply get the configuration streamed to it.
-             * To do that, that client tries the join protocol but with a configuration id of -1.
+             * the seed and get this response. It should simply get the settings streamed to it.
+             * To do that, that client tries the join protocol but with a settings id of -1.
              */
             final long configurationToJoin = joinPhaseOneResult.getStatusCode()
                     == JoinStatusCode.HOSTNAME_ALREADY_IN_RING ? -1 : joinPhaseOneResult.getConfigurationId();
-            LOG.debug("{} is trying a join under configuration {} (attempt {})",
+            LOG.debug("{} is trying a join under settings {} (attempt {})",
                     listenAddress, configurationToJoin, attempt);
 
             /*
@@ -324,7 +324,7 @@ public final class Cluster {
                         .setMetadata(metadata)
                         .setConfigurationId(configurationToJoin)
                         .addAllRingNumber(entry.getValue()).build();
-                LOG.trace("{} is sending a join-p2 to {} for configuration {}",
+                LOG.trace("{} is sending a join-p2 to {} for settings {}",
                         listenAddress, entry.getKey(), configurationToJoin);
                 final ListenableFuture<JoinResponse> call = messagingClient.sendJoinPhase2Message(entry.getKey(), msg);
                 responseFutures.add(call);
@@ -333,7 +333,7 @@ public final class Cluster {
         }
 
         /**
-         * We have a valid JoinPhase2Response. Use the retrieved configuration to construct and return a Cluster object.
+         * We have a valid JoinPhase2Response. Use the retrieved settings to construct and return a Cluster object.
          */
         private Cluster createClusterFromJoinResponse(final JoinResponse response) {
             assert messagingClient != null && rpcServer != null && sharedResources != null;
@@ -355,7 +355,8 @@ public final class Cluster {
             linkFailureDetector = linkFailureDetector != null ? linkFailureDetector
                                                   : new PingPongFailureDetector.Factory(listenAddress, messagingClient);
             final MembershipService membershipService =
-                    new MembershipService.Builder(listenAddress, watermarkBuffer, membershipViewFinal, sharedResources)
+                    new MembershipService.Builder(listenAddress, watermarkBuffer, membershipViewFinal,
+                                                  sharedResources, settings)
                                          .setMessagingClient(messagingClient)
                                          .setLinkFailureDetector(linkFailureDetector)
                                          .setMetadata(allMetadata)

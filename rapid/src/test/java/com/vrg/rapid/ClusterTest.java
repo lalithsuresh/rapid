@@ -68,7 +68,7 @@ public class ClusterTest {
     private long seed;
     private int basePort;
     @Nullable private AtomicInteger portCounter = null;
-    private GrpcClient.Conf clientConf = new GrpcClient.Conf();
+    private Settings settings = new Settings();
 
     static {
         // gRPC and netty logs clutter the test output
@@ -95,11 +95,12 @@ public class ClusterTest {
         instances.clear();
         seed = ThreadLocalRandom.current().nextLong();
         random = new Random(seed);
-        clientConf = new GrpcClient.Conf();
-        clientConf.USE_IN_PROCESS_TRANSPORT = true;
+        settings = new Settings();
 
         // Tests need to opt out of the in-process channel
-        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
+        settings.setUseInProcessTransport(true);
+        // Tests need to set more aggressive frequent failure detection intervals if required
+        settings.setFailureDetectorIntervalInMs(1000);
         useStaticFd = false;
         addMetadata = true;
         staticFds.clear();
@@ -230,7 +231,7 @@ public class ClusterTest {
      */
     @Test(timeout = 30000)
     public void concurrentNodeJoinsNetty() throws IOException, InterruptedException {
-        clientConf.USE_IN_PROCESS_TRANSPORT = false;
+        settings.setUseInProcessTransport(false);
         final int numNodes = 5;
         final int phaseOneJoiners = 6;
         final int phaseTwojoiners = 6;
@@ -324,7 +325,7 @@ public class ClusterTest {
         useShortJoinTimeouts();
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         // Drop join-phase-2 attempts by nextNode, but only enough that the RPC retries make it past
-        dropFirstNAtServer(seedHost, (clientConf.RPC_DEFAULT_RETRIES) - 1,
+        dropFirstNAtServer(seedHost, (settings.getGrpcDefaultRetries()) - 1,
                    MembershipServiceGrpc.METHOD_RECEIVE_JOIN_PHASE2MESSAGE);
         createCluster(1, seedHost);
         extendCluster(1, seedHost);
@@ -340,8 +341,8 @@ public class ClusterTest {
     public void phase2JoinAttemptRetry() throws IOException, InterruptedException {
         useShortJoinTimeouts();
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
-        // Drop join-phase-2 attempts by nextNode such that it re-attempts a join under a new configuration
-        dropFirstNAtServer(seedHost, (clientConf.RPC_DEFAULT_RETRIES) + 1,
+        // Drop join-phase-2 attempts by nextNode such that it re-attempts a join under a new settings
+        dropFirstNAtServer(seedHost, (settings.getGrpcDefaultRetries()) + 1,
                    MembershipServiceGrpc.METHOD_RECEIVE_JOIN_PHASE2MESSAGE);
         createCluster(1, seedHost);
         extendCluster(1, seedHost);
@@ -350,18 +351,18 @@ public class ClusterTest {
     }
 
     /**
-     * By the time a joiner issues a join-phase2-message, we change the configuration.
+     * By the time a joiner issues a join-phase2-message, we change the settings.
      */
     @Test(timeout = 30000)
     public void phase2JoinAttemptRetryWithConfigChange() throws IOException, InterruptedException {
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         final HostAndPort joinerHost = HostAndPort.fromParts("127.0.0.1", basePort + 1);
-        // Drop join-phase-2 attempts by nextNode such that it re-attempts a join under a new configuration
+        // Drop join-phase-2 attempts by nextNode such that it re-attempts a join under a new settings
         createCluster(1, seedHost);
         // The next host to join will have its join-phase2-message blocked.
         final CountDownLatch latch = blockAtClient(joinerHost, MembershipServiceGrpc.METHOD_RECEIVE_JOIN_PHASE2MESSAGE);
         extendClusterNonBlocking(1, seedHost);
-        // The following node is now free to join. This will render the configuration received by the previous
+        // The following node is now free to join. This will render the settings received by the previous
         // joiner node stale
         extendCluster(1, seedHost);
         latch.countDown();
@@ -689,7 +690,7 @@ public class ClusterTest {
 
     // Helper to use static-failure-detectors and inject interceptors
     private Cluster.Builder buildCluster(final HostAndPort host) {
-        Cluster.Builder builder = new Cluster.Builder(host).setRpcClientConf(clientConf);
+        Cluster.Builder builder = new Cluster.Builder(host).useSettings(settings);
         if (useStaticFd) {
             final StaticFailureDetector.Factory fdFactory = new StaticFailureDetector.Factory(new HashSet<>());
             builder = builder.setLinkFailureDetectorFactory(fdFactory);
@@ -725,13 +726,13 @@ public class ClusterTest {
 
     // This speeds up the retry attempts during the join protocol
     private void useShortJoinTimeouts() {
-        clientConf.RPC_TIMEOUT_MS = 100;
-        clientConf.RPC_JOIN_PHASE_2_TIMEOUT = 500; // use short timeouts
+        settings.setGrpcTimeoutMs(100);
+        settings.setGrpcJoinTimeoutMs(500); // use short timeouts
     }
 
     // This speeds up failure detection when using the PingPongFailureDetector
     private void useFastFailureDetectionTimeouts() {
-        clientConf.RPC_PROBE_TIMEOUT = 200;
-        MembershipService.FAILURE_DETECTOR_INTERVAL_IN_MS = 200;
+        settings.setGrpcProbeTimeoutMs(200);
+        settings.setFailureDetectorIntervalInMs(200);
     }
 }
