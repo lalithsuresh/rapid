@@ -14,6 +14,9 @@ public final class Settings implements GrpcClient.ISettings, MembershipService.I
     Settings() {
     }
 
+    /*
+     * Settings from GrpcClient.ISettings
+     */
     @Override
     public boolean getUseInProcessTransport() {
         return useInProcessTransport;
@@ -59,6 +62,10 @@ public final class Settings implements GrpcClient.ISettings, MembershipService.I
         this.grpcProbeTimeoutMs = grpcProbeTimeoutMs;
     }
 
+
+    /*
+     * Settings from MembershipService.ISettings
+     */
     @Override
     public int getFailureDetectorIntervalInMs() {
         return failureDetectorIntervalInMs;

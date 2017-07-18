@@ -40,7 +40,6 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * Hosts K permutations of the memberlist that represent the monitoring
  * relationship between nodes; every node monitors its successor on each ring.
  *
- * TODO: too many scans of the k rings during reads. Maintain a cache.
  */
 @ThreadSafe
 final class MembershipView {

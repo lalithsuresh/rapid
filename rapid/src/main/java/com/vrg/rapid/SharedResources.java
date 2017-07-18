@@ -109,7 +109,7 @@ class SharedResources {
     }
 
     /**
-     * Shuts down resources. TODO: resolve the interactions between the sequence of resource shutdowns.
+     * Shuts down resources.
      */
     synchronized void shutdown() {
         serverExecutor.shutdownNow();
