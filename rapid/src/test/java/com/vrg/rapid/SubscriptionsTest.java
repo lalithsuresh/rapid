@@ -27,7 +27,7 @@ public class SubscriptionsTest {
      */
     @Test(timeout = 5000)
     public void testSubscriptionOnJoin() throws IOException, InterruptedException {
-        final RpcClient.Conf conf = new RpcClient.Conf();
+        final GrpcClient.Conf conf = new GrpcClient.Conf();
         conf.USE_IN_PROCESS_TRANSPORT = true;
 
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
@@ -63,7 +63,7 @@ public class SubscriptionsTest {
      */
     @Test(timeout = 5000)
     public void testMultipleSubscriptionsOnJoin() throws IOException, InterruptedException {
-        final RpcClient.Conf conf = new RpcClient.Conf();
+        final GrpcClient.Conf conf = new GrpcClient.Conf();
         conf.USE_IN_PROCESS_TRANSPORT = true;
 
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
@@ -105,7 +105,7 @@ public class SubscriptionsTest {
      */
     @Test(timeout = 5000)
     public void testSubscriptionPostJoin() throws IOException, InterruptedException {
-        final RpcClient.Conf conf = new RpcClient.Conf();
+        final GrpcClient.Conf conf = new GrpcClient.Conf();
         conf.USE_IN_PROCESS_TRANSPORT = true;
 
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
@@ -145,7 +145,7 @@ public class SubscriptionsTest {
      */
     @Test(timeout = 10000)
     public void testSubscriptionWithFailure() throws IOException, InterruptedException {
-        final RpcClient.Conf conf = new RpcClient.Conf();
+        final GrpcClient.Conf conf = new GrpcClient.Conf();
         conf.USE_IN_PROCESS_TRANSPORT = true;
 
         final List<StaticFailureDetector.Factory> fds = new ArrayList<>();

@@ -90,7 +90,7 @@ public final class Cluster {
         private Metadata metadata = Metadata.getDefaultInstance();
         private List<ServerInterceptor> serverInterceptors = Collections.emptyList();
         private List<ClientInterceptor> clientInterceptors = Collections.emptyList();
-        private RpcClient.Conf conf = new RpcClient.Conf();
+        private GrpcClient.Conf conf = new GrpcClient.Conf();
         private final Map<ClusterEvents, List<Consumer<List<NodeStatusChange>>>> subscriptions =
                 new EnumMap<>(ClusterEvents.class);
 
@@ -163,10 +163,10 @@ public final class Cluster {
         }
 
         /**
-         * This is used to configure RpcClient properties
+         * This is used to configure GrpcClient properties
          */
         @Internal
-        Builder setRpcClientConf(final RpcClient.Conf conf) {
+        Builder setRpcClientConf(final GrpcClient.Conf conf) {
             this.conf = conf;
             return this;
         }
@@ -180,7 +180,7 @@ public final class Cluster {
             Objects.requireNonNull(listenAddress);
             sharedResources = new SharedResources(listenAddress);
             rpcServer = new RpcServer(listenAddress, sharedResources, conf.USE_IN_PROCESS_TRANSPORT);
-            messagingClient = new RpcClient(listenAddress, Collections.emptyList(), sharedResources, conf);
+            messagingClient = new GrpcClient(listenAddress, Collections.emptyList(), sharedResources, conf);
             final NodeId currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
             final MembershipView membershipView = new MembershipView(K, Collections.singletonList(currentIdentifier),
                     Collections.singletonList(listenAddress));
@@ -211,7 +211,7 @@ public final class Cluster {
             NodeId currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
             sharedResources = new SharedResources(listenAddress);
             rpcServer = new RpcServer(listenAddress, sharedResources, conf.USE_IN_PROCESS_TRANSPORT);
-            messagingClient = new RpcClient(listenAddress, clientInterceptors, sharedResources, conf);
+            messagingClient = new GrpcClient(listenAddress, clientInterceptors, sharedResources, conf);
             rpcServer.startServer(serverInterceptors);
             for (int attempt = 0; attempt < RETRIES; attempt++) {
                 try {

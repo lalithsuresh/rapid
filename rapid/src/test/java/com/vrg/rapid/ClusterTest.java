@@ -68,7 +68,7 @@ public class ClusterTest {
     private long seed;
     private int basePort;
     @Nullable private AtomicInteger portCounter = null;
-    private RpcClient.Conf clientConf = new RpcClient.Conf();
+    private GrpcClient.Conf clientConf = new GrpcClient.Conf();
 
     static {
         // gRPC and netty logs clutter the test output
@@ -95,7 +95,7 @@ public class ClusterTest {
         instances.clear();
         seed = ThreadLocalRandom.current().nextLong();
         random = new Random(seed);
-        clientConf = new RpcClient.Conf();
+        clientConf = new GrpcClient.Conf();
         clientConf.USE_IN_PROCESS_TRANSPORT = true;
 
         // Tests need to opt out of the in-process channel

@@ -63,8 +63,8 @@ import java.util.function.Supplier;
 /**
  * MessagingServiceGrpc client.
  */
-final class RpcClient implements IMessagingClient {
-    private static final Logger LOG = LoggerFactory.getLogger(RpcClient.class);
+final class GrpcClient implements IMessagingClient {
+    private static final Logger LOG = LoggerFactory.getLogger(GrpcClient.class);
     private static final int DEFAULT_BUF_SIZE = 4096;
     private final HostAndPort address;
     private final List<ClientInterceptor> interceptors;
@@ -75,12 +75,12 @@ final class RpcClient implements IMessagingClient {
     private AtomicBoolean isShuttingDown = new AtomicBoolean(false);
     private final Conf conf;
 
-    RpcClient(final HostAndPort address) {
+    GrpcClient(final HostAndPort address) {
         this(address, Collections.emptyList(), new SharedResources(address), new Conf());
     }
 
-    RpcClient(final HostAndPort address, final List<ClientInterceptor> interceptors,
-              final SharedResources sharedResources, final Conf conf) {
+    GrpcClient(final HostAndPort address, final List<ClientInterceptor> interceptors,
+               final SharedResources sharedResources, final Conf conf) {
         this.address = address;
         this.interceptors = interceptors;
         this.conf = conf;
@@ -249,7 +249,7 @@ final class RpcClient implements IMessagingClient {
                                         final SettableFuture<T> signal,
                                         final int retries) {
         if (isShuttingDown.get() || Thread.currentThread().isInterrupted()) {
-            signal.setException(new ShuttingDownException("RpcClient is shutting down or has been interrupted"));
+            signal.setException(new ShuttingDownException("GrpcClient is shutting down or has been interrupted"));
             return;
         }
         final ListenableFuture<T> callFuture = call.get();
@@ -291,7 +291,7 @@ final class RpcClient implements IMessagingClient {
 
     private MembershipServiceFutureStub getFutureStub(final HostAndPort remote) {
         if (isShuttingDown.get()) {
-            throw new ShuttingDownException("RpcClient is shutting down");
+            throw new ShuttingDownException("GrpcClient is shutting down");
         }
         final Channel channel = channelMap.getUnchecked(remote);
         return MembershipServiceGrpc.newFutureStub(channel);

@@ -15,6 +15,7 @@ package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.ListenableFuture;
+import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
 import com.vrg.rapid.pb.ConsensusProposalResponse;
@@ -90,7 +91,7 @@ public class MessagingTest {
         createAndStartMembershipService(serverAddr);
 
         final HostAndPort clientAddr = HostAndPort.fromParts(LOCALHOST_IP, clientPort);
-        final RpcClient client = new RpcClient(clientAddr);
+        final GrpcClient client = new GrpcClient(clientAddr);
         final JoinResponse result = client.sendJoinMessage(serverAddr, clientAddr,
                                                            Utils.nodeIdFromUUID(UUID.randomUUID())).get();
         assertNotNull(result);
@@ -114,7 +115,7 @@ public class MessagingTest {
 
         // Try with the same host details as the server
         final HostAndPort clientAddr1 = HostAndPort.fromParts(LOCALHOST_IP, serverPort);
-        final RpcClient client1 = new RpcClient(clientAddr1);
+        final GrpcClient client1 = new GrpcClient(clientAddr1);
         final JoinResponse result1 = client1.sendJoinMessage(serverAddr, clientAddr1,
                                                              Utils.nodeIdFromUUID(UUID.randomUUID())).get();
         assertNotNull(result1);
@@ -126,7 +127,7 @@ public class MessagingTest {
         // uuid as the server.
         final int clientPort2 = 1235;
         final HostAndPort clientAddr2 = HostAndPort.fromParts(LOCALHOST_IP, clientPort2);
-        final RpcClient client2 = new RpcClient(clientAddr2);
+        final GrpcClient client2 = new GrpcClient(clientAddr2);
         final JoinResponse result2 = client2.sendJoinMessage(serverAddr, clientAddr2, nodeIdentifier).get();
         assertNotNull(result2);
         assertEquals(JoinStatusCode.UUID_ALREADY_IN_RING, result2.getStatusCode());
@@ -155,7 +156,7 @@ public class MessagingTest {
 
         final int clientPort = SERVER_PORT_BASE - 1;
         final HostAndPort joinerAddr = HostAndPort.fromParts(LOCALHOST_IP, clientPort);
-        final RpcClient joinerClient = new RpcClient(joinerAddr);
+        final GrpcClient joinerClient = new GrpcClient(joinerAddr);
         final JoinResponse phaseOneResult = joinerClient.sendJoinMessage(serverAddr,
                                                                          joinerAddr,
                                                                          Utils.nodeIdFromUUID(UUID.randomUUID())).get();
@@ -191,9 +192,9 @@ public class MessagingTest {
 
         final int clientPort = SERVER_PORT_BASE - 1;
         final HostAndPort joinerAddress = HostAndPort.fromParts(LOCALHOST_IP, clientPort);
-        final RpcClient joinerRpcClient = new RpcClient(joinerAddress);
+        final IMessagingClient messagingClient = new GrpcClient(joinerAddress);
         final NodeId joinerUuid = Utils.nodeIdFromUUID(UUID.randomUUID());
-        final JoinResponse response = joinerRpcClient.sendJoinMessage(serverAddr, joinerAddress, joinerUuid).get();
+        final JoinResponse response = messagingClient.sendJoinMessage(serverAddr, joinerAddress, joinerUuid).get();
         assertNotNull(response);
         assertEquals(JoinStatusCode.SAFE_TO_JOIN, response.getStatusCode());
         assertEquals(K, response.getHostsCount());
@@ -227,9 +228,9 @@ public class MessagingTest {
 
         final int clientPort = SERVER_PORT_BASE - 1;
         final HostAndPort joinerAddress = HostAndPort.fromParts(LOCALHOST_IP, clientPort);
-        final RpcClient joinerRpcClient = new RpcClient(joinerAddress);
+        final IMessagingClient messagingClient = new GrpcClient(joinerAddress);
         final NodeId joinerUuid = Utils.nodeIdFromUUID(UUID.randomUUID());
-        final JoinResponse response = joinerRpcClient.sendJoinMessage(serverAddr, joinerAddress, joinerUuid).get();
+        final JoinResponse response = messagingClient.sendJoinMessage(serverAddr, joinerAddress, joinerUuid).get();
         assertNotNull(response);
         assertEquals(JoinStatusCode.SAFE_TO_JOIN, response.getStatusCode());
         assertEquals(K, response.getHostsCount());
@@ -247,7 +248,7 @@ public class MessagingTest {
             assertEquals(iterJoiner.next(), iterSeed.next());
         }
 
-        final ProbeResponse probeResponse = joinerRpcClient.sendProbeMessage(serverAddr,
+        final ProbeResponse probeResponse = messagingClient.sendProbeMessage(serverAddr,
                                                                              ProbeMessage.getDefaultInstance()).get();
         assertNotNull(probeResponse);
         assertEquals(NodeStatus.OK, probeResponse.getStatus());
@@ -276,7 +277,7 @@ public class MessagingTest {
 
         // While the above drives our failure detector logic, we explicitly test with a probe call
         // to make sure we get a BOOTSTRAPPING response from the RpcServer listening on serverAddr2.
-        final RpcClient joinerRpcClient = new RpcClient(serverAddr2);
+        final GrpcClient joinerRpcClient = new GrpcClient(serverAddr2);
         final ProbeResponse probeResponse1 = joinerRpcClient.sendProbeMessage(serverAddr1,
                                                                              ProbeMessage.getDefaultInstance()).get();
         assertEquals(NodeStatus.OK, probeResponse1.getStatus());
@@ -299,7 +300,7 @@ public class MessagingTest {
         createAndStartMembershipService(serverAddr, interceptors);
 
         final HostAndPort clientAddr = HostAndPort.fromParts(LOCALHOST_IP, serverPort);
-        final RpcClient client = new RpcClient(clientAddr);
+        final IMessagingClient client = new GrpcClient(clientAddr);
         boolean exceptionCaught = false;
         try {
             client.sendProbeMessage(serverAddr, ProbeMessage.getDefaultInstance()).get();
@@ -323,8 +324,8 @@ public class MessagingTest {
             hostList.add(serverAddr);
         }
         final HostAndPort clientAddr = HostAndPort.fromParts(LOCALHOST_IP, serverPort);
-        final RpcClient.Conf conf = new RpcClient.Conf();
-        final RpcClient client = new RpcClient(clientAddr, Collections.emptyList(), resources, conf);
+        final GrpcClient.Conf conf = new GrpcClient.Conf();
+        final IMessagingClient client = new GrpcClient(clientAddr, Collections.emptyList(), resources, conf);
         final UnicastToAllBroadcaster broadcaster = new UnicastToAllBroadcaster(client);
         broadcaster.setMembership(hostList);
         for (int i = 0; i < 10; i++) {
@@ -341,16 +342,16 @@ public class MessagingTest {
 
 
     /**
-     * Tests all RpcClient request types to an endpoint that does not exist, checking if all calls fail.
+     * Tests all GrpcClient request types to an endpoint that does not exist, checking if all calls fail.
      */
     @Test
     public void rpcClientErrorHandling() throws InterruptedException {
         final int basePort = 1234;
         final HostAndPort clientAddr = HostAndPort.fromParts(LOCALHOST_IP, basePort);
         final HostAndPort dst = HostAndPort.fromParts(LOCALHOST_IP, 4321);
-        final RpcClient.Conf conf = new RpcClient.Conf();
+        final GrpcClient.Conf conf = new GrpcClient.Conf();
         final SharedResources resources = new SharedResources(clientAddr);
-        final RpcClient client = new RpcClient(clientAddr, Collections.emptyList(), resources, conf);
+        final IMessagingClient client = new GrpcClient(clientAddr, Collections.emptyList(), resources, conf);
         try {
             client.sendProbeMessage(dst, ProbeMessage.getDefaultInstance()).get();
             fail("sendProbeMessage did not throw an exception");
@@ -382,7 +383,7 @@ public class MessagingTest {
 
 
     /**
-     * Tests all RpcClient request types to an endpoint that exists, but after shutdown is invoked.
+     * Tests all GrpcClient request types to an endpoint that exists, but after shutdown is invoked.
      */
     @Test
     public void rpcClientErrorHandlingAfterShutdown() throws InterruptedException {
@@ -390,14 +391,14 @@ public class MessagingTest {
         final HostAndPort clientAddr = HostAndPort.fromParts(LOCALHOST_IP, basePort);
         final HostAndPort dst = HostAndPort.fromParts(LOCALHOST_IP, 4321);
         final SharedResources resources = new SharedResources(clientAddr);
-        final RpcClient.Conf conf = new RpcClient.Conf();
-        final RpcClient client = new RpcClient(clientAddr, Collections.emptyList(), resources, conf);
+        final GrpcClient.Conf conf = new GrpcClient.Conf();
+        final IMessagingClient client = new GrpcClient(clientAddr, Collections.emptyList(), resources, conf);
         client.shutdown();
         resources.shutdown();
         try {
             client.sendProbeMessage(dst, ProbeMessage.getDefaultInstance()).get();
             fail("sendProbeMessage did not throw an exception");
-        } catch (final ExecutionException | RpcClient.ShuttingDownException ignored) {
+        } catch (final ExecutionException | GrpcClient.ShuttingDownException ignored) {
         }
         try {
             client.sendJoinMessage(dst, clientAddr, Utils.nodeIdFromUUID(UUID.randomUUID())).get();

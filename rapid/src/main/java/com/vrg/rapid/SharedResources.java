@@ -63,7 +63,7 @@ class SharedResources {
     }
 
     /**
-     * The ELG used by RpcClient and RpcServer
+     * The ELG used by GrpcClient and RpcServer
      */
     synchronized EventLoopGroup getEventLoopGroup() {
         // Lazily initialized because this is not required for tests that use InProcessChannel/Server.
@@ -74,7 +74,7 @@ class SharedResources {
     }
 
     /**
-     * Used by background tasks like retries in RpcClient
+     * Used by background tasks like retries in GrpcClient
      */
     ExecutorService getBackgroundExecutor() {
         return backgroundExecutor;
@@ -88,7 +88,7 @@ class SharedResources {
     }
 
     /**
-     * The RpcClient application executor
+     * The GrpcClient application executor
      */
     ExecutorService getClientChannelExecutor() {
         return clientChannelExecutor;

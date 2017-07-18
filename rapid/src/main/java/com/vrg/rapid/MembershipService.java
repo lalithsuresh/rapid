@@ -157,7 +157,7 @@ final class MembershipService {
         this.sharedResources = builder.sharedResources;
         this.metadataManager = new MetadataManager();
         this.metadataManager.addMetadata(builder.metadata);
-        this.messagingClient = builder.messagingClient != null ? builder.messagingClient : new RpcClient(myAddr);
+        this.messagingClient = builder.messagingClient != null ? builder.messagingClient : new GrpcClient(myAddr);
         this.broadcaster = new UnicastToAllBroadcaster(messagingClient);
         this.subscriptions = builder.subscriptions == null ? new EnumMap<>(ClusterEvents.class) : builder.subscriptions;
         // Make sure there is an empty list for every enum type
