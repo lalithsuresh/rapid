@@ -95,6 +95,7 @@ final class MembershipService {
     private final ScheduledFuture<?> linkUpdateBatcherJob;
     private final List<ScheduledFuture<?>> failureDetectorJobs;
     private final SharedResources sharedResources;
+    private final BestEffortMessaging bestEffortMessaging;
 
     // Failure detector
     private final ILinkFailureDetectorFactory fdFactory;
@@ -163,7 +164,8 @@ final class MembershipService {
         this.metadataManager = new MetadataManager();
         this.metadataManager.addMetadata(builder.metadata);
         this.messagingClient = builder.messagingClient != null ? builder.messagingClient : new GrpcClient(myAddr);
-        this.broadcaster = new UnicastToAllBroadcaster(messagingClient);
+        this.bestEffortMessaging = new BestEffortMessaging(myAddr, this, sharedResources);
+        this.broadcaster = new UnicastToAllBroadcaster(messagingClient, bestEffortMessaging);
         this.subscriptions = builder.subscriptions == null ? new EnumMap<>(ClusterEvents.class) : builder.subscriptions;
         // Make sure there is an empty list for every enum type
         Arrays.stream(ClusterEvents.values()).forEach(event ->
@@ -182,6 +184,7 @@ final class MembershipService {
                         : new PingPongFailureDetector.Factory(myAddr, this.messagingClient);
         this.failureDetectorJobs = new ArrayList<>();
         createFailureDetectorsForCurrentConfiguration();
+        bestEffortMessaging.start();
 
         // Execute all VIEW_CHANGE callbacks. This informs applications that a start/join has successfully completed.
         final List<NodeStatusChange> nodeStatusChanges = getInitialViewChange();
@@ -545,6 +548,7 @@ final class MembershipService {
         linkUpdateBatcherJob.cancel(true);
         failureDetectorJobs.forEach(k -> k.cancel(true));
         messagingClient.shutdown();
+        bestEffortMessaging.shutdown();
     }
 
     /**

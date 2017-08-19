@@ -18,6 +18,8 @@ import com.google.common.util.concurrent.ListenableFuture;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
+import com.vrg.rapid.pb.BroadcastMessage;
+import com.vrg.rapid.pb.BroadcastMessageType;
 import com.vrg.rapid.pb.ConsensusProposal;
 import com.vrg.rapid.pb.ConsensusProposalResponse;
 import com.vrg.rapid.pb.Response;
@@ -37,18 +39,23 @@ final class UnicastToAllBroadcaster implements IBroadcaster {
     private static final Logger LOG = LoggerFactory.getLogger(UnicastToAllBroadcaster.class);
     private final IMessagingClient messagingClient;
     private List<HostAndPort> recipients = Collections.emptyList();
+    private final BestEffortMessaging bestEffortMessaging;
 
-    UnicastToAllBroadcaster(final IMessagingClient messagingClient) {
+    UnicastToAllBroadcaster(final IMessagingClient messagingClient, final BestEffortMessaging bestEffortMessaging) {
         this.messagingClient = messagingClient;
+        this.bestEffortMessaging = bestEffortMessaging;
     }
 
     @Override
     @CanIgnoreReturnValue
     public synchronized List<ListenableFuture<Response>> broadcast(final BatchedLinkUpdateMessage msg) {
         final List<ListenableFuture<Response>> futures = new ArrayList<>(recipients.size());
-        for (final HostAndPort recipient: recipients) {
-            futures.add(messagingClient.sendLinkUpdateMessage(recipient, msg));
-        }
+
+//        for (final HostAndPort recipient: recipients) {
+            final BroadcastMessage broadcastMessage = BroadcastMessage.newBuilder().setPayload(msg.toByteString())
+                .setType(BroadcastMessageType.LINK).build();
+            bestEffortMessaging.send(broadcastMessage, recipients);
+//        }
         return futures;
     }
 
@@ -56,9 +63,12 @@ final class UnicastToAllBroadcaster implements IBroadcaster {
     @CanIgnoreReturnValue
     public synchronized List<ListenableFuture<ConsensusProposalResponse>> broadcast(final ConsensusProposal msg) {
         final List<ListenableFuture<ConsensusProposalResponse>> futures = new ArrayList<>(recipients.size());
-        for (final HostAndPort recipient: recipients) {
-            futures.add(messagingClient.sendConsensusProposal(recipient, msg));
-        }
+//        for (final HostAndPort recipient: recipients) {
+//            futures.add(messagingClient.sendConsensusProposal(recipient, msg));
+//        }
+        final BroadcastMessage broadcastMessage = BroadcastMessage.newBuilder().setPayload(msg.toByteString())
+                .setType(BroadcastMessageType.CONSENSUS).build();
+        bestEffortMessaging.send(broadcastMessage, recipients);
         return futures;
     }
 

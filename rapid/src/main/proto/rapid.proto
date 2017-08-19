@@ -117,3 +117,14 @@ enum NodeStatus {
     OK = 0;             // this is the default value
     BOOTSTRAPPING = 1;
 };
+
+message BroadcastMessage
+{
+   BroadcastMessageType type = 1;
+   bytes payload = 2;
+}
+
+enum BroadcastMessageType {
+    LINK = 0;
+    CONSENSUS = 1;
+}

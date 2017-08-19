@@ -325,7 +325,7 @@ public class ClusterTest {
         useShortJoinTimeouts();
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         // Drop join-phase-2 attempts by nextNode, but only enough that the RPC retries make it past
-        dropFirstNAtServer(seedHost, (settings.getGrpcDefaultRetries()) - 1,
+        dropFirstNAtServer(seedHost, 2,
                    MembershipServiceGrpc.METHOD_RECEIVE_JOIN_PHASE2MESSAGE);
         createCluster(1, seedHost);
         extendCluster(1, seedHost);
@@ -342,7 +342,7 @@ public class ClusterTest {
         useShortJoinTimeouts();
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         // Drop join-phase-2 attempts by nextNode such that it re-attempts a join under a new settings
-        dropFirstNAtServer(seedHost, (settings.getGrpcDefaultRetries()) + 1,
+        dropFirstNAtServer(seedHost, 1,
                    MembershipServiceGrpc.METHOD_RECEIVE_JOIN_PHASE2MESSAGE);
         createCluster(1, seedHost);
         extendCluster(1, seedHost);
