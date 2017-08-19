@@ -147,7 +147,7 @@ final class GrpcClient implements IMessagingClient {
                             TimeUnit.MILLISECONDS);
             return stub.receiveJoinMessage(msg);
         };
-        return callWithRetries(call, remote, settings.getGrpcDefaultRetries());
+        return callWithRetries(call, remote, 0);
     }
 
     /**

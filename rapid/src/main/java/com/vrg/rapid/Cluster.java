@@ -246,20 +246,20 @@ public final class Cluster {
 
         /**
          * A single attempt by a node to join a cluster. This includes phase one, where it contacts
-         * a seed node to receive a list of monitors to contact and the settings to join. If successful,
+         * a seed node to receive a list of monitors to contact and the configuration to join. If successful,
          * it triggers phase two where it contacts those monitors who then vouch for the joiner's admission
          * into the cluster.
          */
         private Cluster joinAttempt(final HostAndPort seedAddress, final NodeId currentIdentifier, final int attempt)
                                                                 throws ExecutionException, InterruptedException {
             assert messagingClient != null;
-            // First, get the settings ID and the monitors to contact from the seed node.
+            // First, get the configuration ID and the monitors to contact from the seed node.
             final JoinResponse joinPhaseOneResult = messagingClient.sendJoinMessage(seedAddress,
                     listenAddress, currentIdentifier).get();
 
             /*
              * Either the seed node indicates it is safe to join, or it indicates that we're already
-             * part of the settings (which happens due to a race condition where we retry a join
+             * part of the configuration (which happens due to a race condition where we retry a join
              * after a timeout while the cluster has added us -- see below).
              */
             if (joinPhaseOneResult.getStatusCode() != JoinStatusCode.SAFE_TO_JOIN
@@ -270,12 +270,12 @@ public final class Cluster {
             /*
              * HOSTNAME_ALREADY_IN_RING is a special case. If the joinPhase2 request times out before
              * the join confirmation arrives from a monitor, a client may re-try a join by contacting
-             * the seed and get this response. It should simply get the settings streamed to it.
-             * To do that, that client tries the join protocol but with a settings id of -1.
+             * the seed and get this response. It should simply get the configuration streamed to it.
+             * To do that, that client tries the join protocol but with a configuration id of -1.
              */
             final long configurationToJoin = joinPhaseOneResult.getStatusCode()
                     == JoinStatusCode.HOSTNAME_ALREADY_IN_RING ? -1 : joinPhaseOneResult.getConfigurationId();
-            LOG.debug("{} is trying a join under settings {} (attempt {})",
+            LOG.debug("{} is trying a join under configuration {} (attempt {})",
                     listenAddress, configurationToJoin, attempt);
 
             /*
@@ -323,7 +323,7 @@ public final class Cluster {
                         .setMetadata(metadata)
                         .setConfigurationId(configurationToJoin)
                         .addAllRingNumber(entry.getValue()).build();
-                LOG.trace("{} is sending a join-p2 to {} for settings {}",
+                LOG.info("{} is sending a join-p2 to {} for config {}",
                         listenAddress, entry.getKey(), configurationToJoin);
                 final ListenableFuture<JoinResponse> call = messagingClient.sendJoinPhase2Message(entry.getKey(), msg);
                 responseFutures.add(call);
@@ -332,7 +332,7 @@ public final class Cluster {
         }
 
         /**
-         * We have a valid JoinPhase2Response. Use the retrieved settings to construct and return a Cluster object.
+         * We have a valid JoinPhase2Response. Use the retrieved configuration to construct and return a Cluster object.
          */
         private Cluster createClusterFromJoinResponse(final JoinResponse response) {
             assert messagingClient != null && rpcServer != null && sharedResources != null;

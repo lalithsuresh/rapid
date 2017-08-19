@@ -247,15 +247,17 @@ final class MembershipService {
             // This handles the corner case where the configuration changed between phase 1 and phase 2
             // of the joining node's bootstrap. It should attempt to rejoin the network.
             final MembershipView.Configuration configuration = membershipView.getConfiguration();
-            LOG.info("Wrong configuration for {sender:{}, monitor:{}, config:{}, size:{}}",
-                    joinMessage.getSender(), myAddr,
+            LOG.info("Wrong configuration for {sender:{}, monitor:{}, config:{}, myConfig:{}, size:{}}",
+                    joinMessage.getSender(), myAddr, joinMessage.getConfigurationId(),
                     currentConfiguration, membershipView.getMembershipSize());
             JoinResponse.Builder responseBuilder = JoinResponse.newBuilder()
                     .setSender(this.myAddr.toString())
                     .setConfigurationId(configuration.getConfigurationId());
             if (membershipView.isHostPresent(HostAndPort.fromString(joinMessage.getSender()))
                     && membershipView.isIdentifierPresent(joinMessage.getNodeId())) {
-
+                LOG.info("Host present, but requesting join: {sender:{}, monitor:{}, config:{}, myConfig:{}, size:{}}",
+                        joinMessage.getSender(), myAddr, joinMessage.getConfigurationId(),
+                        currentConfiguration, membershipView.getMembershipSize());
                 // Race condition where a monitor already crossed H messages for the joiner and changed
                 // the configuration, but the JoinPhase2 messages show up at the monitor
                 // after it has already added the joiner. In this case, we simply

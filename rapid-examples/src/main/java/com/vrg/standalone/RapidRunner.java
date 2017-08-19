@@ -32,7 +32,7 @@ class RapidRunner {
             throws IOException, InterruptedException {
         this.listenAddress = listenAddress;
         final Settings settings = new Settings();
-        settings.setGrpcJoinTimeoutMs(10000);
+        settings.setGrpcJoinTimeoutMs(20000);
         if (listenAddress.equals(seedAddress)) {
             cluster = new Cluster.Builder(listenAddress)
                                  .useSettings(settings)

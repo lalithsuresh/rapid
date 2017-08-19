@@ -49,6 +49,7 @@ final class MembershipView {
     @GuardedBy("rwLock") private final Map<Integer, NavigableSet<HostAndPort>> rings;
     @GuardedBy("rwLock") private final Set<NodeId> identifiersSeen = new TreeSet<>(NodeIdComparator.INSTANCE);
     @GuardedBy("rwLock") private long currentConfigurationId = -1;
+    @GuardedBy("rwLock") private Configuration currentConfiguration;
     @GuardedBy("rwLock") private boolean shouldUpdateConfigurationId = true;
 
     MembershipView(final int K) {
@@ -58,6 +59,7 @@ final class MembershipView {
         for (int k = 0; k < K; k++) {
             this.rings.put(k, new TreeSet<>(AddressComparator.getComparatorWithSeed(k)));
         }
+        this.currentConfiguration = new Configuration(identifiersSeen, rings.get(0));
     }
 
     /**
@@ -73,6 +75,7 @@ final class MembershipView {
             this.rings.get(k).addAll(hostAndPorts);
         }
         this.identifiersSeen.addAll(nodeIds);
+        this.currentConfiguration = new Configuration(identifiersSeen, rings.get(0));
     }
 
     /**
@@ -372,7 +375,8 @@ final class MembershipView {
      */
     @GuardedBy("rwLock")
     private void updateCurrentConfigurationId() {
-        currentConfigurationId = Configuration.getConfigurationId(identifiersSeen, rings.get(0));
+        currentConfiguration = new Configuration(identifiersSeen, rings.get(0));
+        currentConfigurationId = currentConfiguration.getConfigurationId();
     }
 
     /**
@@ -385,7 +389,11 @@ final class MembershipView {
     Configuration getConfiguration() {
         rwLock.readLock().lock();
         try {
-            return new Configuration(identifiersSeen, rings.get(0));
+            if (shouldUpdateConfigurationId) {
+                updateCurrentConfigurationId();
+                shouldUpdateConfigurationId = false;
+            }
+            return currentConfiguration;
         }
         finally {
             rwLock.readLock().unlock();
