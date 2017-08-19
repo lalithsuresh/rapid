@@ -145,6 +145,14 @@ public final class Cluster {
         }
 
         /**
+         * This is used to configure Cluster properties such as timeouts
+         */
+        public Builder useSettings(final Settings settings) {
+            this.settings = settings;
+            return this;
+        }
+
+        /**
          * This is used by tests to inject message drop interceptors at the RpcServer.
          */
         @Internal
@@ -159,15 +167,6 @@ public final class Cluster {
         @Internal
         Builder setClientInterceptors(final List<ClientInterceptor> interceptors) {
             this.clientInterceptors = interceptors;
-            return this;
-        }
-
-        /**
-         * This is used to configure GrpcClient properties
-         */
-        @Internal
-        Builder useSettings(final Settings settings) {
-            this.settings = settings;
             return this;
         }
 

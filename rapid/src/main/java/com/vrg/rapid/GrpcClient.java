@@ -143,7 +143,7 @@ final class GrpcClient implements IMessagingClient {
                                        .build();
         final Supplier<ListenableFuture<JoinResponse>> call = () -> {
             final MembershipServiceFutureStub stub = getFutureStub(remote)
-                    .withDeadlineAfter(settings.getGrpcJoinTimeoutMs() * 5L,
+                    .withDeadlineAfter(settings.getGrpcJoinTimeoutMs(),
                             TimeUnit.MILLISECONDS);
             return stub.receiveJoinMessage(msg);
         };

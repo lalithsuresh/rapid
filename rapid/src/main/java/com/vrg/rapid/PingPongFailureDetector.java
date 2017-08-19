@@ -46,6 +46,7 @@ public class PingPongFailureDetector implements Runnable {
     private final AtomicInteger bootstrapResponseCount;
     private final IMessagingClient rpcClient;
     private final Runnable notifier;
+    private boolean notified = false;
 
     // A cache for probe messages. Avoids creating an unnecessary copy of a probe message each time.
     private final ProbeMessage probeMessage;
@@ -68,7 +69,8 @@ public class PingPongFailureDetector implements Runnable {
 
     @Override
     public void run() {
-        if (hasFailed()) {
+        if (hasFailed() && !notified) {
+            notified = true;
             notifier.run();
         }
         else {

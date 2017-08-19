@@ -173,16 +173,14 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
                                                                    .build();
         if (useInProcessServer) {
             final ServerBuilder builder = InProcessServerBuilder.forName(address.toString());
-            server = builder.addService(ServerInterceptors
-                    .intercept(this, interceptorList))
+            server = builder.addService(ServerInterceptors.intercept(this, interceptorList))
                     .executor(grpcExecutor)
                     .build()
                     .start();
         } else {
             server = NettyServerBuilder.forAddress(new InetSocketAddress(address.getHost(), address.getPort()))
                     .workerEventLoopGroup(eventLoopGroup)
-                    .addService(ServerInterceptors
-                    .intercept(this, interceptorList))
+                    .addService(ServerInterceptors.intercept(this, interceptorList))
                     .executor(grpcExecutor)
                     .build()
                     .start();

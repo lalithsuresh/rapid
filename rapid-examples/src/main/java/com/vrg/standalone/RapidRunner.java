@@ -1,14 +1,12 @@
 package com.vrg.standalone;
 
 import com.google.common.net.HostAndPort;
-import com.google.protobuf.ByteString;
 import com.vrg.rapid.Cluster;
 import com.vrg.rapid.NodeStatusChange;
+import com.vrg.rapid.Settings;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
-import java.nio.charset.Charset;
-import java.util.Collections;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -33,17 +31,17 @@ class RapidRunner {
                 final String role, final int sleepDelayMsForNonSeed)
             throws IOException, InterruptedException {
         this.listenAddress = listenAddress;
+        final Settings settings = new Settings();
+        settings.setGrpcJoinTimeoutMs(10000);
         if (listenAddress.equals(seedAddress)) {
             cluster = new Cluster.Builder(listenAddress)
-                                 .setMetadata(Collections.singletonMap("role",
-                                         ByteString.copyFrom(role, Charset.defaultCharset())))
+                                 .useSettings(settings)
                                  .start();
 
         } else {
             Thread.sleep(sleepDelayMsForNonSeed);
             cluster = new Cluster.Builder(listenAddress)
-                                 .setMetadata(Collections.singletonMap("role",
-                                         ByteString.copyFrom(role, Charset.defaultCharset())))
+                                 .useSettings(settings)
                                  .join(seedAddress);
         }
         cluster.registerSubscription(com.vrg.rapid.ClusterEvents.VIEW_CHANGE_PROPOSAL,

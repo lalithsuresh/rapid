@@ -83,9 +83,9 @@ public class StandaloneAgent {
                 for (final RapidRunner runner: runners) {
                     System.out.println(runner.getClusterStatus() + " " + tries);
                 }
-                Thread.sleep(SLEEP_INTERVAL_MS
-                );
+                Thread.sleep(SLEEP_INTERVAL_MS);
             }
+            System.exit(0);
         }
         Thread.currentThread().join();
     }
