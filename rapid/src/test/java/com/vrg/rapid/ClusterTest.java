@@ -121,10 +121,10 @@ public class ClusterTest {
     @Test(timeout = 30000)
     public void singleNodeJoinsThroughSeed() throws IOException, InterruptedException, ExecutionException {
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
-        createCluster(1, seedHost);
-        verifyCluster(1, seedHost);
+        createCluster(5, seedHost);
+        verifyCluster(5, seedHost);
         extendCluster(1, seedHost);
-        verifyCluster(2, seedHost);
+        verifyCluster(6, seedHost);
     }
 
     /**
@@ -134,11 +134,11 @@ public class ClusterTest {
     public void tenNodesJoinSequentially() throws IOException, InterruptedException {
         final int numNodes = 10;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
-        createCluster(1, seedHost); // Only bootstrap a seed.
-        verifyCluster(1, seedHost);
+        createCluster(5, seedHost); // Only bootstrap a seed.
+        verifyCluster(5, seedHost);
         for (int i = 0; i < numNodes; i++) {
             extendCluster(1, seedHost);
-            waitAndVerifyAgreement(i + 2, 5, 1000, seedHost);
+            waitAndVerifyAgreement(i + 6, 5, 1000, seedHost);
         }
     }
 
@@ -149,12 +149,12 @@ public class ClusterTest {
     public void twentyNodesJoinSequentially() throws IOException, InterruptedException {
         final int numNodes = 20;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
-        createCluster(1, seedHost); // Only bootstrap a seed.
-        verifyCluster(1, seedHost);
+        createCluster(5, seedHost); // Only bootstrap a seed.
+        verifyCluster(5, seedHost);
 
         for (int i = 0; i < numNodes; i++) {
             extendCluster(1, seedHost);
-            waitAndVerifyAgreement(i + 2, 5, 1000, seedHost);
+            waitAndVerifyAgreement(i + 6, 5, 1000, seedHost);
         }
     }
 
@@ -327,10 +327,10 @@ public class ClusterTest {
         // Drop join-phase-2 attempts by nextNode, but only enough that the RPC retries make it past
         dropFirstNAtServer(seedHost, 2,
                    MembershipServiceGrpc.METHOD_RECEIVE_JOIN_PHASE2MESSAGE);
-        createCluster(1, seedHost);
+        createCluster(5, seedHost);
         extendCluster(1, seedHost);
-        waitAndVerifyAgreement(2, 15, 1000, seedHost);
-        verifyNumClusterInstances(2);
+        waitAndVerifyAgreement(6, 15, 1000, seedHost);
+        verifyNumClusterInstances(6);
     }
 
     /**
@@ -344,10 +344,10 @@ public class ClusterTest {
         // Drop join-phase-2 attempts by nextNode such that it re-attempts a join under a new settings
         dropFirstNAtServer(seedHost, 1,
                    MembershipServiceGrpc.METHOD_RECEIVE_JOIN_PHASE2MESSAGE);
-        createCluster(1, seedHost);
+        createCluster(5, seedHost);
         extendCluster(1, seedHost);
-        waitAndVerifyAgreement(2, 15, 1000, seedHost);
-        verifyNumClusterInstances(2);
+        waitAndVerifyAgreement(6, 15, 1000, seedHost);
+        verifyNumClusterInstances(6);
     }
 
     /**
@@ -358,7 +358,7 @@ public class ClusterTest {
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         final HostAndPort joinerHost = HostAndPort.fromParts("127.0.0.1", basePort + 1);
         // Drop join-phase-2 attempts by nextNode such that it re-attempts a join under a new settings
-        createCluster(1, seedHost);
+        createCluster(5, seedHost);
         // The next host to join will have its join-phase2-message blocked.
         final CountDownLatch latch = blockAtClient(joinerHost, MembershipServiceGrpc.METHOD_RECEIVE_JOIN_PHASE2MESSAGE);
         extendClusterNonBlocking(1, seedHost);
@@ -366,8 +366,8 @@ public class ClusterTest {
         // joiner node stale
         extendCluster(1, seedHost);
         latch.countDown();
-        waitAndVerifyAgreement(3, 15, 1000, seedHost);
-        verifyNumClusterInstances(3);
+        waitAndVerifyAgreement(7, 15, 1000, seedHost);
+        verifyNumClusterInstances(7);
     }
 
     /**

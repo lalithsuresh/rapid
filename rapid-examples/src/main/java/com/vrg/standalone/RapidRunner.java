@@ -32,6 +32,7 @@ class RapidRunner {
             throws IOException, InterruptedException {
         this.listenAddress = listenAddress;
         final Settings settings = new Settings();
+        settings.setGrpcProbeTimeoutMs(2000);
         settings.setFailureDetectorIntervalInMs(5000);
         settings.setGrpcJoinTimeoutMs(20000);
         if (listenAddress.equals(seedAddress)) {

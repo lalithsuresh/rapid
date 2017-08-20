@@ -81,6 +81,7 @@ final class MembershipService {
     private final Map<HostAndPort, Metadata> joinerMetadata = new HashMap<>();
     private final IMessagingClient messagingClient;
     private final MetadataManager metadataManager;
+    private final Set<HostAndPort> aggregatedProposal = new HashSet<>();
 
     // Event subscriptions
     private final Map<ClusterEvents, List<Consumer<List<NodeStatusChange>>>> subscriptions;
@@ -310,9 +311,16 @@ final class MembershipService {
 
         // Lastly, we apply implicit detections
         proposal.addAll(watermarkBuffer.invalidateFailingLinks(membershipView));
+        proposal.addAll(aggregatedProposal);
 
         // If we have a proposal for this stage, start an instance of consensus on it.
         if (!proposal.isEmpty()) {
+            // If this is the seed node, make sure there are at least 5 nodes before we start
+            if (membershipSize == 1 && proposal.size() < 4) {
+                aggregatedProposal.clear();
+                aggregatedProposal.addAll(proposal);
+                return;
+            }
             LOG.info("Node {} has a proposal of size {}: {}", myAddr, proposal.size(), proposal);
             announcedProposal = true;
 
@@ -431,6 +439,7 @@ final class MembershipService {
         votesPerProposal.clear();
         votesReceived.clear();
         announcedProposal = false;
+        aggregatedProposal.clear();
         broadcaster.setMembership(membershipView.getRing(0));
 
         // Inform LinkFailureDetector about membership change
