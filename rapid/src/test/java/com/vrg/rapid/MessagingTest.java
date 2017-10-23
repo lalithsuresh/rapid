@@ -15,7 +15,10 @@ package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.ListenableFuture;
+import com.vrg.rapid.messaging.GrpcClient;
+import com.vrg.rapid.messaging.GrpcServer;
 import com.vrg.rapid.messaging.IMessagingClient;
+import com.vrg.rapid.messaging.IMessagingServer;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
 import com.vrg.rapid.pb.ConsensusProposalResponse;
@@ -56,7 +59,7 @@ public class MessagingTest {
 
     private static final int SERVER_PORT_BASE = 1134;
     private static final String LOCALHOST_IP = "127.0.0.1";
-    private final List<RpcServer> rpcServers = new ArrayList<>();
+    private final List<IMessagingServer> rpcServers = new ArrayList<>();
     private final List<MembershipService> services = new ArrayList<>();
     @Nullable private SharedResources resources = null;
 
@@ -67,7 +70,7 @@ public class MessagingTest {
 
     @After
     public void cleanup() throws InterruptedException {
-        rpcServers.forEach(RpcServer::stopServer);
+        rpcServers.forEach(IMessagingServer::shutdown);
         rpcServers.clear();
         for (final MembershipService service: services) {
             service.shutdown();
@@ -267,8 +270,8 @@ public class MessagingTest {
         final HostAndPort serverAddr2 = HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE + 1);
         final NodeId nodeIdentifier1 = Utils.nodeIdFromUUID(UUID.randomUUID());
         final NodeId nodeIdentifier2 = Utils.nodeIdFromUUID(UUID.randomUUID());
-        final RpcServer rpcServer = new RpcServer(serverAddr2, resources, false);
-        rpcServer.startServer();
+        final IMessagingServer rpcServer = new GrpcServer(serverAddr2, resources, Collections.emptyList(), false);
+        rpcServer.start();
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr1, nodeIdentifier1);
         membershipView.ringAdd(serverAddr2, nodeIdentifier2); // This causes server1 to monitor server2
@@ -426,7 +429,7 @@ public class MessagingTest {
     /**
      * Create a membership service listenting on serverAddr
      */
-    private RpcServer createAndStartMembershipService(final HostAndPort serverAddr)
+    private IMessagingServer createAndStartMembershipService(final HostAndPort serverAddr)
             throws IOException, MembershipView.NodeAlreadyInRingException {
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
         final MembershipView membershipView = new MembershipView(K);
@@ -434,9 +437,9 @@ public class MessagingTest {
         final MembershipService service =
                 new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView, resources, new Settings())
                                     .build();
-        final RpcServer rpcServer = new RpcServer(serverAddr, resources, false);
+        final IMessagingServer rpcServer = new GrpcServer(serverAddr, resources, Collections.emptyList(), false);
         rpcServer.setMembershipService(service);
-        rpcServer.startServer();
+        rpcServer.start();
         rpcServers.add(rpcServer);
         services.add(service);
         return rpcServer;
@@ -445,7 +448,7 @@ public class MessagingTest {
     /**
      * Create a membership service listenting on serverAddr that uses a list of server interceptors.
      */
-    private RpcServer createAndStartMembershipService(final HostAndPort serverAddr,
+    private IMessagingServer createAndStartMembershipService(final HostAndPort serverAddr,
                                                       final List<ServerInterceptor> interceptors)
             throws IOException, MembershipView.NodeAlreadyInRingException {
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
@@ -454,9 +457,9 @@ public class MessagingTest {
         final MembershipService service =
                 new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView, resources, new Settings())
                         .build();
-        final RpcServer rpcServer = new RpcServer(serverAddr, resources, false);
+        final IMessagingServer rpcServer = new GrpcServer(serverAddr, resources, interceptors, false);
         rpcServer.setMembershipService(service);
-        rpcServer.startServer(interceptors);
+        rpcServer.start();
         rpcServers.add(rpcServer);
         services.add(service);
         return rpcServer;
@@ -465,7 +468,7 @@ public class MessagingTest {
     /**
      * Create a membership service listening on serverAddr, with a supplied membershipView and server interceptors.
      */
-    private RpcServer createAndStartMembershipService(final HostAndPort serverAddr,
+    private IMessagingServer createAndStartMembershipService(final HostAndPort serverAddr,
                                                       final List<ServerInterceptor> interceptors,
                                                       final MembershipView membershipView)
             throws IOException {
@@ -473,9 +476,9 @@ public class MessagingTest {
         final MembershipService service =
                 new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView, resources, new Settings())
                         .build();
-        final RpcServer rpcServer = new RpcServer(serverAddr, resources, false);
+        final IMessagingServer rpcServer = new GrpcServer(serverAddr, resources, interceptors, false);
         rpcServer.setMembershipService(service);
-        rpcServer.startServer(interceptors);
+        rpcServer.start();
         rpcServers.add(rpcServer);
         services.add(service);
         return rpcServer;

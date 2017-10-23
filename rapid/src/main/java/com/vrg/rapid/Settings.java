@@ -1,5 +1,7 @@
 package com.vrg.rapid;
 
+import com.vrg.rapid.messaging.GrpcClient;
+
 /**
  * Holds configuration parameters for different components of a Rapid instance.
  */

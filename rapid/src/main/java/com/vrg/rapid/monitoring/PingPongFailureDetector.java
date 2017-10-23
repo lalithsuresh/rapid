@@ -11,13 +11,12 @@
  * permissions and limitations under the License.
  */
 
-package com.vrg.rapid;
+package com.vrg.rapid.monitoring;
 
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.vrg.rapid.messaging.IMessagingClient;
-import com.vrg.rapid.monitoring.ILinkFailureDetectorFactory;
 import com.vrg.rapid.pb.NodeStatus;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
@@ -120,11 +119,11 @@ public class PingPongFailureDetector implements Runnable {
         }
     }
 
-    static class Factory implements ILinkFailureDetectorFactory {
+    public static class Factory implements ILinkFailureDetectorFactory {
         private final HostAndPort address;
         private final IMessagingClient messagingClient;
 
-        Factory(final HostAndPort address, final IMessagingClient messagingClient) {
+        public Factory(final HostAndPort address, final IMessagingClient messagingClient) {
             this.address = address;
             this.messagingClient = messagingClient;
         }

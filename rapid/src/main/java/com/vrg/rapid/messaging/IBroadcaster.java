@@ -11,7 +11,7 @@
  * permissions and limitations under the License.
  */
 
-package com.vrg.rapid;
+package com.vrg.rapid.messaging;
 
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.ListenableFuture;
@@ -25,7 +25,7 @@ import java.util.List;
 /**
  * Supports different broadcast implementations (eager flooding, gossip, etc.).
  */
-interface IBroadcaster {
+public interface IBroadcaster {
     List<ListenableFuture<Response>> broadcast(BatchedLinkUpdateMessage msg);
 
     List<ListenableFuture<ConsensusProposalResponse>> broadcast(ConsensusProposal msg);

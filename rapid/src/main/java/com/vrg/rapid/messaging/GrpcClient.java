@@ -11,7 +11,7 @@
  * permissions and limitations under the License.
  */
 
-package com.vrg.rapid;
+package com.vrg.rapid.messaging;
 
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
@@ -24,7 +24,8 @@ import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import com.vrg.rapid.messaging.IMessagingClient;
+import com.vrg.rapid.Settings;
+import com.vrg.rapid.SharedResources;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
 import com.vrg.rapid.pb.ConsensusProposalResponse;
@@ -62,14 +63,14 @@ import java.util.function.Supplier;
 /**
  * MessagingServiceGrpc client.
  */
-final class GrpcClient implements IMessagingClient {
+public final class GrpcClient implements IMessagingClient {
     private static final Logger LOG = LoggerFactory.getLogger(GrpcClient.class);
     private static final int DEFAULT_BUF_SIZE = 4096;
-    static final boolean DEFAULT_GRPC_USE_IN_PROCESS_TRANSPORT = false;
-    static final int DEFAULT_GRPC_TIMEOUT_MS = 1000;
-    static final int DEFAULT_GRPC_DEFAULT_RETRIES = 5;
-    static final int DEFAULT_GRPC_JOIN_TIMEOUT = DEFAULT_GRPC_TIMEOUT_MS * 5;
-    static final int DEFAULT_GRPC_PROBE_TIMEOUT = 1000;
+    public static final boolean DEFAULT_GRPC_USE_IN_PROCESS_TRANSPORT = false;
+    public static final int DEFAULT_GRPC_TIMEOUT_MS = 1000;
+    public static final int DEFAULT_GRPC_DEFAULT_RETRIES = 5;
+    public static final int DEFAULT_GRPC_JOIN_TIMEOUT = DEFAULT_GRPC_TIMEOUT_MS * 5;
+    public static final int DEFAULT_GRPC_PROBE_TIMEOUT = 1000;
 
     private final HostAndPort address;
     private final List<ClientInterceptor> interceptors;
@@ -81,12 +82,12 @@ final class GrpcClient implements IMessagingClient {
     private final ISettings settings;
 
 
-    GrpcClient(final HostAndPort address) {
+    public GrpcClient(final HostAndPort address) {
         this(address, Collections.emptyList(), new SharedResources(address), new Settings());
     }
 
-    GrpcClient(final HostAndPort address, final List<ClientInterceptor> interceptors,
-               final SharedResources sharedResources, final ISettings settings) {
+    public GrpcClient(final HostAndPort address, final List<ClientInterceptor> interceptors,
+                      final SharedResources sharedResources, final ISettings settings) {
         this.address = address;
         this.interceptors = interceptors;
         this.settings = settings;
@@ -338,7 +339,7 @@ final class GrpcClient implements IMessagingClient {
         return channel;
     }
 
-    interface ISettings {
+    public interface ISettings {
         boolean getUseInProcessTransport();
 
         int getGrpcTimeoutMs();
@@ -350,7 +351,7 @@ final class GrpcClient implements IMessagingClient {
         int getGrpcProbeTimeoutMs();
     }
 
-    static class ShuttingDownException extends RuntimeException {
+    public static class ShuttingDownException extends RuntimeException {
         ShuttingDownException(final String msg) {
             super(msg);
         }

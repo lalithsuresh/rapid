@@ -17,8 +17,12 @@ import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.protobuf.ByteString;
+import com.vrg.rapid.messaging.GrpcClient;
+import com.vrg.rapid.messaging.GrpcServer;
 import com.vrg.rapid.messaging.IMessagingClient;
+import com.vrg.rapid.messaging.IMessagingServer;
 import com.vrg.rapid.monitoring.ILinkFailureDetectorFactory;
+import com.vrg.rapid.monitoring.PingPongFailureDetector;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
@@ -70,11 +74,11 @@ public final class Cluster {
     private static final int L = 4;
     private static final int RETRIES = 5;
     private final MembershipService membershipService;
-    private final RpcServer rpcServer;
+    private final IMessagingServer rpcServer;
     private final SharedResources sharedResources;
     private final HostAndPort listenAddress;
 
-    private Cluster(final RpcServer rpcServer,
+    private Cluster(final IMessagingServer rpcServer,
                     final MembershipService membershipService,
                     final SharedResources sharedResources,
                     final HostAndPort listenAddress) {
@@ -96,7 +100,7 @@ public final class Cluster {
 
         // These fields are initialized at the beginning of start() and join()
         @Nullable private IMessagingClient messagingClient = null;
-        @Nullable private RpcServer rpcServer = null;
+        @Nullable private IMessagingServer rpcServer = null;
         @Nullable private SharedResources sharedResources = null;
 
         /**
@@ -178,7 +182,8 @@ public final class Cluster {
         public Cluster start() throws IOException {
             Objects.requireNonNull(listenAddress);
             sharedResources = new SharedResources(listenAddress);
-            rpcServer = new RpcServer(listenAddress, sharedResources, settings.getUseInProcessTransport());
+            rpcServer = new GrpcServer(listenAddress, sharedResources, serverInterceptors,
+                                       settings.getUseInProcessTransport());
             messagingClient = new GrpcClient(listenAddress, Collections.emptyList(), sharedResources, settings);
             final NodeId currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
             final MembershipView membershipView = new MembershipView(K, Collections.singletonList(currentIdentifier),
@@ -195,7 +200,7 @@ public final class Cluster {
                     ? builder.setMetadata(Collections.singletonMap(listenAddress.toString(), metadata)).build()
                     : builder.build();
             rpcServer.setMembershipService(membershipService);
-            rpcServer.startServer(serverInterceptors);
+            rpcServer.start();
             return new Cluster(rpcServer, membershipService, sharedResources, listenAddress);
         }
 
@@ -209,9 +214,10 @@ public final class Cluster {
         public Cluster join(final HostAndPort seedAddress) throws IOException, InterruptedException {
             NodeId currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
             sharedResources = new SharedResources(listenAddress);
-            rpcServer = new RpcServer(listenAddress, sharedResources, settings.getUseInProcessTransport());
+            rpcServer = new GrpcServer(listenAddress, sharedResources, serverInterceptors,
+                                       settings.getUseInProcessTransport());
             messagingClient = new GrpcClient(listenAddress, clientInterceptors, sharedResources, settings);
-            rpcServer.startServer(serverInterceptors);
+            rpcServer.start();
             for (int attempt = 0; attempt < RETRIES; attempt++) {
                 try {
                     return joinAttempt(seedAddress, currentIdentifier, attempt);
@@ -238,7 +244,7 @@ public final class Cluster {
                     }
                 }
             }
-            rpcServer.stopServer();
+            rpcServer.shutdown();
             messagingClient.shutdown();
             sharedResources.shutdown();
             throw new JoinException("Join attempt unsuccessful " + listenAddress);
@@ -415,7 +421,7 @@ public final class Cluster {
      */
     public void shutdown() {
         LOG.debug("Shutting down RpcServer and MembershipService");
-        rpcServer.stopServer();
+        rpcServer.shutdown();
         membershipService.shutdown();
         sharedResources.shutdown();
     }

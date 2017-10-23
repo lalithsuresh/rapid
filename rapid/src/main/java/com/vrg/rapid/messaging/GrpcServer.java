@@ -11,10 +11,15 @@
  * permissions and limitations under the License.
  */
 
-package com.vrg.rapid;
+package com.vrg.rapid.messaging;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
+import com.google.common.util.concurrent.FutureCallback;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
+import com.vrg.rapid.MembershipService;
+import com.vrg.rapid.SharedResources;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
 import com.vrg.rapid.pb.ConsensusProposalResponse;
@@ -37,7 +42,6 @@ import io.netty.channel.EventLoopGroup;
 import javax.annotation.Nullable;
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
@@ -48,7 +52,7 @@ import java.util.concurrent.TimeUnit;
  * gRPC server object. It defers receiving messages until it is ready to
  * host a MembershipService object.
  */
-final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
+public final class GrpcServer extends MembershipServiceGrpc.MembershipServiceImplBase implements IMessagingServer {
     private final ExecutorService grpcExecutor;
     @Nullable private final EventLoopGroup eventLoopGroup;
     private static final ProbeResponse BOOTSTRAPPING_MESSAGE =
@@ -57,20 +61,21 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     @Nullable private MembershipService membershipService;
     @Nullable private Server server;
     private final ExecutorService protocolExecutor;
+    private final List<ServerInterceptor> interceptors;
     private final boolean useInProcessServer;
 
     // Used to queue messages in the RPC layer until we are ready with
     // a MembershipService object
     private final DeferredReceiveInterceptor deferringInterceptor = new DeferredReceiveInterceptor();
 
-    RpcServer(final HostAndPort address,
-              final SharedResources sharedResources,
-              final boolean useInProcessTransport) {
+    public GrpcServer(final HostAndPort address, final SharedResources sharedResources,
+                      final List<ServerInterceptor> interceptors, final boolean useInProcessTransport) {
         this.address = address;
         this.protocolExecutor = sharedResources.getProtocolExecutor();
         this.grpcExecutor = sharedResources.getServerExecutor();
         this.eventLoopGroup = useInProcessTransport ? null : sharedResources.getEventLoopGroup();
         this.useInProcessServer = useInProcessTransport;
+        this.interceptors = interceptors;
     }
 
     /**
@@ -80,7 +85,7 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     public void receiveLinkUpdateMessage(final BatchedLinkUpdateMessage request,
                                          final StreamObserver<Response> responseObserver) {
         assert membershipService != null;
-        protocolExecutor.execute(() -> membershipService.processLinkUpdateMessage(request));
+        protocolExecutor.execute(() -> processLinkUpdateMessage(request));
         responseObserver.onNext(Response.getDefaultInstance());
         responseObserver.onCompleted();
     }
@@ -92,7 +97,7 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     public void receiveConsensusProposal(final ConsensusProposal request,
                                          final StreamObserver<ConsensusProposalResponse> responseObserver) {
         assert membershipService != null;
-        protocolExecutor.execute(() -> membershipService.processConsensusProposal(request));
+        protocolExecutor.execute(() -> processConsensusProposal(request));
         responseObserver.onNext(ConsensusProposalResponse.getDefaultInstance());
         responseObserver.onCompleted();
     }
@@ -104,7 +109,10 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     public void receiveJoinMessage(final JoinMessage joinMessage,
                                    final StreamObserver<JoinResponse> responseObserver) {
         assert membershipService != null;
-        protocolExecutor.execute(() -> membershipService.processJoinMessage(joinMessage, responseObserver));
+        protocolExecutor.execute(() -> {
+            final ListenableFuture<JoinResponse> result = processJoinMessage(joinMessage);
+            Futures.addCallback(result, new JoinResponseCallback(responseObserver), grpcExecutor);
+        });
     }
 
     /**
@@ -113,8 +121,11 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     @Override
     public void receiveJoinPhase2Message(final JoinMessage joinMessage,
                                          final StreamObserver<JoinResponse> responseObserver) {
-        assert membershipService != null;
-        protocolExecutor.execute(() -> membershipService.processJoinPhaseTwoMessage(joinMessage, responseObserver));
+        protocolExecutor.execute(() -> {
+            final ListenableFuture<JoinResponse> result =
+                    processJoinPhaseTwoMessage(joinMessage);
+            Futures.addCallback(result, new JoinResponseCallback(responseObserver), grpcExecutor);
+        });
     }
 
     /**
@@ -124,7 +135,10 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
     public void receiveProbe(final ProbeMessage probeMessage,
                              final StreamObserver<ProbeResponse> probeResponseObserver) {
         if (membershipService != null) {
-            protocolExecutor.execute(() -> membershipService.processProbeMessage(probeMessage, probeResponseObserver));
+            protocolExecutor.execute(() -> {
+                final ListenableFuture<ProbeResponse> result = processProbeMessage(probeMessage);
+                Futures.addCallback(result, new ProbeResponseCallback(probeResponseObserver), grpcExecutor);
+            });
         }
         else {
             /*
@@ -143,12 +157,13 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
 
     /**
      * Invoked by the bootstrap protocol when it has a membership service object
-     * ready. Until this method is called, the RpcServer will not have its gRPC service
+     * ready. Until this method is called, the GrpcServer will not have its gRPC service
      * methods invoked.
      *
      * @param service a fully initialized MembershipService object.
      */
-    void setMembershipService(final MembershipService service) {
+    @Override
+    public void setMembershipService(final MembershipService service) {
         if (this.membershipService != null) {
             throw new RuntimeException("setMembershipService called more than once");
         }
@@ -156,16 +171,68 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
         deferringInterceptor.unblock();
     }
 
+    // IMessaging server interface
+    @Override
+    public ListenableFuture<ProbeResponse> processProbeMessage(final ProbeMessage probeMessage) {
+        assert membershipService != null;
+        return membershipService.processProbeMessage(probeMessage);
+    }
+
+    // IMessaging server interface
+    @Override
+    public ListenableFuture<JoinResponse> processJoinMessage(final JoinMessage msg) {
+        assert membershipService != null;
+        return membershipService.processJoinMessage(msg);
+    }
+
+    // IMessaging server interface
+    @Override
+    public ListenableFuture<JoinResponse> processJoinPhaseTwoMessage(final JoinMessage msg) {
+        assert membershipService != null;
+        return membershipService.processJoinPhaseTwoMessage(msg);
+    }
+
+    // IMessaging server interface
+    @Override
+    public void processConsensusProposal(final ConsensusProposal msg) {
+        assert membershipService != null;
+        membershipService.processConsensusProposal(msg);
+    }
+
+    // IMessaging server interface
+    @Override
+    public void processLinkUpdateMessage(final BatchedLinkUpdateMessage msg) {
+        assert membershipService != null;
+        membershipService.processLinkUpdateMessage(msg);
+    }
+
+    // IMessaging server interface
+    @Override
+    public void shutdown() {
+        assert server != null;
+        try {
+            if (membershipService != null) {
+                membershipService.shutdown();
+            }
+            server.shutdown();
+            server.awaitTermination(0, TimeUnit.SECONDS);
+            protocolExecutor.shutdownNow();
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     /**
      * Starts the RPC server.
      *
      * @throws IOException if a server cannot be successfully initialized
      */
-    void startServer() throws IOException {
-        startServer(Collections.emptyList());
+    @Override
+    public void start() throws IOException {
+        startServer(interceptors);
     }
 
-    void startServer(final List<ServerInterceptor> interceptors) throws IOException {
+    private void startServer(final List<ServerInterceptor> interceptors) throws IOException {
         Objects.requireNonNull(interceptors);
         final ImmutableList.Builder<ServerInterceptor> listBuilder = ImmutableList.builder();
         final List<ServerInterceptor> interceptorList = listBuilder.add(deferringInterceptor)
@@ -187,23 +254,45 @@ final class RpcServer extends MembershipServiceGrpc.MembershipServiceImplBase {
         }
 
         // Use stderr here since the logger may have been reset by its JVM shutdown hook.
-        Runtime.getRuntime().addShutdownHook(new Thread(this::stopServer));
+        Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown));
     }
 
-    /**
-     * Shuts down MembershipService and RPC server.
-     */
-    void stopServer() {
-        assert server != null;
-        try {
-            if (membershipService != null) {
-                membershipService.shutdown();
-            }
-            server.shutdown();
-            server.awaitTermination(0, TimeUnit.SECONDS);
-            protocolExecutor.shutdownNow();
-        } catch (final InterruptedException e) {
-            Thread.currentThread().interrupt();
+    // Callbacks
+    private static class JoinResponseCallback implements FutureCallback<JoinResponse> {
+        private final StreamObserver<JoinResponse> responseObserver;
+
+        JoinResponseCallback(final StreamObserver<JoinResponse> responseObserver) {
+            this.responseObserver = responseObserver;
+        }
+
+        @Override
+        public void onSuccess(@Nullable final JoinResponse response) {
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+        }
+
+        @Override
+        public void onFailure(final Throwable throwable) {
+            throwable.printStackTrace();
+        }
+    }
+
+    private static class ProbeResponseCallback implements FutureCallback<ProbeResponse> {
+        private final StreamObserver<ProbeResponse> responseObserver;
+
+        ProbeResponseCallback(final StreamObserver<ProbeResponse> responseObserver) {
+            this.responseObserver = responseObserver;
+        }
+
+        @Override
+        public void onSuccess(@Nullable final ProbeResponse response) {
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+        }
+
+        @Override
+        public void onFailure(final Throwable throwable) {
+            throwable.printStackTrace();
         }
     }
 }

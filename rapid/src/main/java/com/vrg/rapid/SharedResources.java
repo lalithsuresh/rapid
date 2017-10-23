@@ -34,7 +34,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * Holds all executors and ELGs that are shared across a single instance of Rapid.
  */
-class SharedResources {
+public class SharedResources {
     private static final Logger LOG = LoggerFactory.getLogger(SharedResources.class);
     private static final int DEFAULT_THREADS = 1;
     @Nullable private EventLoopGroup eventLoopGroup = null;
@@ -45,18 +45,11 @@ class SharedResources {
     private final ScheduledExecutorService scheduledTasksExecutor;
     private final HostAndPort address;
 
-    SharedResources(final HostAndPort address) {
+    public SharedResources(final HostAndPort address) {
         this.address = address;
-        this.serverExecutor = Executors.newFixedThreadPool(DEFAULT_THREADS,
-                                                    newFastLocalThreadFactory("server-exec", address));
-        this.clientChannelExecutor = Executors.newFixedThreadPool(DEFAULT_THREADS,
-                                                    newFastLocalThreadFactory("client-exec", address));
-        final ThreadPoolExecutor tpe =  new ThreadPoolExecutor(DEFAULT_THREADS, DEFAULT_THREADS,
-                0L, TimeUnit.MILLISECONDS,
-                new LinkedBlockingQueue<>(),
-                newNamedThreadFactory("bg", address));
-        tpe.setRejectedExecutionHandler(new BackgroundExecutorRejectionHandler());
-        this.backgroundExecutor = tpe;
+        this.serverExecutor = newNamedThreadPool(DEFAULT_THREADS, "server-exec", address);
+        this.clientChannelExecutor = newNamedThreadPool(DEFAULT_THREADS, "client-exec", address);
+        this.backgroundExecutor = newNamedThreadPool(DEFAULT_THREADS, "bg", address);
         this.protocolExecutor = Executors.newSingleThreadExecutor(newNamedThreadFactory("protocol", address));
         this.scheduledTasksExecutor = Executors.newSingleThreadScheduledExecutor(
                                                     newNamedThreadFactory("msbg", address));
@@ -65,7 +58,7 @@ class SharedResources {
     /**
      * The ELG used by GrpcClient and RpcServer
      */
-    synchronized EventLoopGroup getEventLoopGroup() {
+    public synchronized EventLoopGroup getEventLoopGroup() {
         // Lazily initialized because this is not required for tests that use InProcessChannel/Server.
         if (eventLoopGroup == null) {
             eventLoopGroup = new NioEventLoopGroup(DEFAULT_THREADS, newFastLocalThreadFactory("elg", address));
@@ -76,35 +69,35 @@ class SharedResources {
     /**
      * Used by background tasks like retries in GrpcClient
      */
-    ExecutorService getBackgroundExecutor() {
+    public ExecutorService getBackgroundExecutor() {
         return backgroundExecutor;
     }
 
     /**
      * The RpcServer application executor
      */
-    ExecutorService getServerExecutor() {
+    public ExecutorService getServerExecutor() {
         return serverExecutor;
     }
 
     /**
      * The GrpcClient application executor
      */
-    ExecutorService getClientChannelExecutor() {
+    public ExecutorService getClientChannelExecutor() {
         return clientChannelExecutor;
     }
 
     /**
      * Executes the protocol logic in MembershipService.
      */
-    ExecutorService getProtocolExecutor() {
+    public ExecutorService getProtocolExecutor() {
         return protocolExecutor;
     }
 
     /**
      * Executes periodic background tasks in MembershipService.
      */
-    ScheduledExecutorService getScheduledTasksExecutor() {
+    public ScheduledExecutorService getScheduledTasksExecutor() {
         return scheduledTasksExecutor;
     }
 
@@ -142,7 +135,19 @@ class SharedResources {
                 ).build();
     }
 
-    public static class BackgroundExecutorRejectionHandler implements RejectedExecutionHandler {
+    /**
+     * TPE with a rejected execution handler specified.
+     */
+    private ThreadPoolExecutor newNamedThreadPool(final int threads, final String poolName, final HostAndPort address) {
+        final ThreadPoolExecutor tpe = new ThreadPoolExecutor(threads, threads,
+                0L, TimeUnit.MILLISECONDS,
+                new LinkedBlockingQueue<>(),
+                newNamedThreadFactory("bg", address));
+        tpe.setRejectedExecutionHandler(new BackgroundExecutorRejectionHandler());
+        return tpe;
+    }
+
+    static class BackgroundExecutorRejectionHandler implements RejectedExecutionHandler {
         @Override
         public void rejectedExecution(final Runnable r, final ThreadPoolExecutor executor) {
             LOG.info("Running a task submitted to the background executor after it was shutdown()");

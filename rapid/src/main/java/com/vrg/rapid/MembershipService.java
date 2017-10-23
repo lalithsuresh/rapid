@@ -14,8 +14,14 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.SettableFuture;
+import com.vrg.rapid.messaging.GrpcClient;
+import com.vrg.rapid.messaging.IBroadcaster;
 import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.monitoring.ILinkFailureDetectorFactory;
+import com.vrg.rapid.monitoring.PingPongFailureDetector;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
 import com.vrg.rapid.pb.JoinMessage;
@@ -28,7 +34,6 @@ import com.vrg.rapid.pb.NodeId;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
 import io.grpc.StatusRuntimeException;
-import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -66,7 +71,7 @@ import java.util.stream.Collectors;
  *
  */
 @NotThreadSafe
-final class MembershipService {
+public final class MembershipService {
     private static final Logger LOG = LoggerFactory.getLogger(MembershipService.class);
     private static final int BATCHING_WINDOW_IN_MS = 100;
     private static final int DEFAULT_FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 0;
@@ -75,7 +80,7 @@ final class MembershipService {
     private final WatermarkBuffer watermarkBuffer;
     private final HostAndPort myAddr;
     private final IBroadcaster broadcaster;
-    private final Map<HostAndPort, LinkedBlockingDeque<StreamObserver<JoinResponse>>> joinersToRespondTo =
+    private final Map<HostAndPort, LinkedBlockingDeque<SettableFuture<JoinResponse>>> joinersToRespondTo =
             new HashMap<>();
     private final Map<HostAndPort, NodeId> joinerUuid = new HashMap<>();
     private final Map<HostAndPort, Metadata> joinerMetadata = new HashMap<>();
@@ -193,8 +198,7 @@ final class MembershipService {
      * The seed responds with the current configuration ID and a list of monitors
      * for the joiner, who then moves on to phase 2 of the protocol with its monitors.
      */
-    void processJoinMessage(final JoinMessage joinMessage,
-                            final StreamObserver<JoinResponse> responseObserver) {
+    public ListenableFuture<JoinResponse> processJoinMessage(final JoinMessage joinMessage) {
         final HostAndPort joiningHost = HostAndPort.fromString(joinMessage.getSender());
         final JoinStatusCode statusCode = membershipView.isSafeToJoin(joiningHost, joinMessage.getNodeId());
         final JoinResponse.Builder builder = JoinResponse.newBuilder()
@@ -212,8 +216,7 @@ final class MembershipService {
                    .map(HostAndPort::toString)
                    .collect(Collectors.toList()));
         }
-        responseObserver.onNext(builder.build());
-        responseObserver.onCompleted();
+        return Futures.immediateFuture(builder.build());
     }
 
     /**
@@ -222,16 +225,16 @@ final class MembershipService {
      * and consensus succeeds, the monitor informs the joiner about the new configuration it
      * is now a part of.
      */
-    void processJoinPhaseTwoMessage(final JoinMessage joinMessage,
-                                    final StreamObserver<JoinResponse> responseObserver) {
+    public ListenableFuture<JoinResponse> processJoinPhaseTwoMessage(final JoinMessage joinMessage) {
         final long currentConfiguration = membershipView.getCurrentConfigurationId();
         if (currentConfiguration == joinMessage.getConfigurationId()) {
             LOG.trace("Enqueuing SAFE_TO_JOIN for {sender:{}, monitor:{}, config:{}, size:{}}",
                     joinMessage.getSender(), myAddr,
                     currentConfiguration, membershipView.getMembershipSize());
 
+            final SettableFuture<JoinResponse> settableFuture = SettableFuture.create();
             joinersToRespondTo.computeIfAbsent(HostAndPort.fromString(joinMessage.getSender()),
-                    k -> new LinkedBlockingDeque<>()).add(responseObserver);
+                    k -> new LinkedBlockingDeque<>()).add(settableFuture);
 
             final LinkUpdateMessage msg = LinkUpdateMessage.newBuilder()
                     .setLinkSrc(this.myAddr.toString())
@@ -243,6 +246,7 @@ final class MembershipService {
                     .setMetadata(joinMessage.getMetadata())
                     .build();
             enqueueLinkUpdateMessage(msg);
+            return settableFuture;
         } else {
             // This handles the corner case where the configuration changed between phase 1 and phase 2
             // of the joining node's bootstrap. It should attempt to rejoin the network.
@@ -274,8 +278,7 @@ final class MembershipService {
                         joinMessage.getSender(), myAddr,
                         configuration.getConfigurationId(), configuration.hostAndPorts.size());
             }
-            responseObserver.onNext(responseBuilder.build()); // new config
-            responseObserver.onCompleted();
+            return Futures.immediateFuture(responseBuilder.build()); // new configuration
         }
     }
 
@@ -288,7 +291,7 @@ final class MembershipService {
      * Link update messages that do not affect an ongoing proposal
      * needs to be dropped.
      */
-    void processLinkUpdateMessage(final BatchedLinkUpdateMessage messageBatch) {
+    public void processLinkUpdateMessage(final BatchedLinkUpdateMessage messageBatch) {
         Objects.requireNonNull(messageBatch);
 
         // We already have a proposal for this round => we have initiated consensus and cannot go back on our proposal.
@@ -339,7 +342,7 @@ final class MembershipService {
      * XXX: Implement recovery for the extremely rare possibility of conflicting proposals.
      *
      */
-    void processConsensusProposal(final ConsensusProposal proposalMessage) {
+    public void processConsensusProposal(final ConsensusProposal proposalMessage) {
         final long currentConfigurationId = membershipView.getCurrentConfigurationId();
         final long membershipSize = membershipView.getMembershipSize();
 
@@ -448,15 +451,9 @@ final class MembershipService {
     /**
      * Invoked by monitors of a node for failure detection.
      */
-    void processProbeMessage(final ProbeMessage probeMessage,
-                             final StreamObserver<ProbeResponse> probeResponseObserver) {
-        try {
-            LOG.trace("handleProbeMessage at {} from {}", myAddr, probeMessage.getSender());
-            probeResponseObserver.onNext(ProbeResponse.getDefaultInstance());
-            probeResponseObserver.onCompleted();
-        } catch (final StatusRuntimeException e) {
-            LOG.trace("StreamObserver.onNext() for message {} received StatusRuntimeException", probeMessage);
-        }
+    public ListenableFuture<ProbeResponse> processProbeMessage(final ProbeMessage probeMessage) {
+        LOG.trace("handleProbeMessage at {} from {}", myAddr, probeMessage.getSender());
+        return Futures.immediateFuture(ProbeResponse.getDefaultInstance());
     }
 
 
@@ -541,7 +538,7 @@ final class MembershipService {
     /**
      * Shuts down all the executors.
      */
-    void shutdown() {
+    public void shutdown() {
         linkUpdateBatcherJob.cancel(true);
         failureDetectorJobs.forEach(k -> k.cancel(true));
         messagingClient.shutdown();
@@ -718,12 +715,12 @@ final class MembershipService {
             if (joinersToRespondTo.containsKey(node)) {
                 backgroundTasksExecutor.execute(
                         () -> {
-                            joinersToRespondTo.get(node).forEach(observer -> {
+                            joinersToRespondTo.get(node).forEach(settableFuture -> {
                                 try {
-                                    observer.onNext(response);
-                                    observer.onCompleted();
+                                    settableFuture.set(response);
                                 } catch (final StatusRuntimeException e) {
                                     LOG.warn("{} got a StatusRuntimeException {}", myAddr, e.getLocalizedMessage());
+                                    settableFuture.setException(e);
                                 }
                             });
                             joinersToRespondTo.remove(node);

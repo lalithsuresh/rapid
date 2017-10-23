@@ -11,7 +11,7 @@
  * permissions and limitations under the License.
  */
 
-package com.vrg.rapid;
+package com.vrg.rapid.messaging;
 
 import com.vrg.rapid.pb.MembershipServiceGrpc;
 import io.grpc.Metadata;
@@ -22,7 +22,7 @@ import io.grpc.ServerInterceptor;
 
 /**
  * An interceptor that blocks server calls from being invoked until requested.
- * Used by the RpcServer to defer service method invocations until it has instantiated
+ * Used by the GrpcServer to defer service method invocations until it has instantiated
  * a MembershipService object.
  */
 final class DeferredReceiveInterceptor implements ServerInterceptor {
