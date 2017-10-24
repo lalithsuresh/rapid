@@ -27,6 +27,7 @@ import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
 import com.vrg.rapid.pb.NodeId;
 import com.vrg.rapid.pb.NodeStatus;
+import com.vrg.rapid.pb.PreJoinMessage;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
 import io.grpc.ServerInterceptor;
@@ -95,8 +96,8 @@ public class MessagingTest {
 
         final HostAndPort clientAddr = HostAndPort.fromParts(LOCALHOST_IP, clientPort);
         final GrpcClient client = new GrpcClient(clientAddr);
-        final JoinResponse result = client.sendJoinMessage(serverAddr, clientAddr,
-                                                           Utils.nodeIdFromUUID(UUID.randomUUID())).get();
+        final JoinResponse result = sendPreJoinMessage(client, serverAddr, clientAddr,
+                                                       Utils.nodeIdFromUUID(UUID.randomUUID()));
         assertNotNull(result);
         assertEquals(JoinStatusCode.SAFE_TO_JOIN, result.getStatusCode());
         assertEquals(K, result.getHostsCount());
@@ -119,8 +120,8 @@ public class MessagingTest {
         // Try with the same host details as the server
         final HostAndPort clientAddr1 = HostAndPort.fromParts(LOCALHOST_IP, serverPort);
         final GrpcClient client1 = new GrpcClient(clientAddr1);
-        final JoinResponse result1 = client1.sendJoinMessage(serverAddr, clientAddr1,
-                                                             Utils.nodeIdFromUUID(UUID.randomUUID())).get();
+        final JoinResponse result1 = sendPreJoinMessage(client1, serverAddr, clientAddr1,
+                                                             Utils.nodeIdFromUUID(UUID.randomUUID()));
         assertNotNull(result1);
         assertEquals(JoinStatusCode.HOSTNAME_ALREADY_IN_RING, result1.getStatusCode());
         assertEquals(K, result1.getHostsCount());
@@ -131,7 +132,7 @@ public class MessagingTest {
         final int clientPort2 = 1235;
         final HostAndPort clientAddr2 = HostAndPort.fromParts(LOCALHOST_IP, clientPort2);
         final GrpcClient client2 = new GrpcClient(clientAddr2);
-        final JoinResponse result2 = client2.sendJoinMessage(serverAddr, clientAddr2, nodeIdentifier).get();
+        final JoinResponse result2 = sendPreJoinMessage(client2, serverAddr, clientAddr2, nodeIdentifier);
         assertNotNull(result2);
         assertEquals(JoinStatusCode.UUID_ALREADY_IN_RING, result2.getStatusCode());
         assertEquals(0, result2.getHostsCount());
@@ -160,9 +161,8 @@ public class MessagingTest {
         final int clientPort = SERVER_PORT_BASE - 1;
         final HostAndPort joinerAddr = HostAndPort.fromParts(LOCALHOST_IP, clientPort);
         final GrpcClient joinerClient = new GrpcClient(joinerAddr);
-        final JoinResponse phaseOneResult = joinerClient.sendJoinMessage(serverAddr,
-                                                                         joinerAddr,
-                                                                         Utils.nodeIdFromUUID(UUID.randomUUID())).get();
+        final JoinResponse phaseOneResult = sendPreJoinMessage(joinerClient, serverAddr, joinerAddr,
+                                                               Utils.nodeIdFromUUID(UUID.randomUUID()));
         assertNotNull(phaseOneResult);
         assertEquals(JoinStatusCode.SAFE_TO_JOIN, phaseOneResult.getStatusCode());
         assertEquals(K, phaseOneResult.getHostsCount()); // this is the monitor list
@@ -197,7 +197,7 @@ public class MessagingTest {
         final HostAndPort joinerAddress = HostAndPort.fromParts(LOCALHOST_IP, clientPort);
         final IMessagingClient messagingClient = new GrpcClient(joinerAddress);
         final NodeId joinerUuid = Utils.nodeIdFromUUID(UUID.randomUUID());
-        final JoinResponse response = messagingClient.sendJoinMessage(serverAddr, joinerAddress, joinerUuid).get();
+        final JoinResponse response = sendPreJoinMessage(messagingClient, serverAddr, joinerAddress, joinerUuid);
         assertNotNull(response);
         assertEquals(JoinStatusCode.SAFE_TO_JOIN, response.getStatusCode());
         assertEquals(K, response.getHostsCount());
@@ -233,7 +233,7 @@ public class MessagingTest {
         final HostAndPort joinerAddress = HostAndPort.fromParts(LOCALHOST_IP, clientPort);
         final IMessagingClient messagingClient = new GrpcClient(joinerAddress);
         final NodeId joinerUuid = Utils.nodeIdFromUUID(UUID.randomUUID());
-        final JoinResponse response = messagingClient.sendJoinMessage(serverAddr, joinerAddress, joinerUuid).get();
+        final JoinResponse response = sendPreJoinMessage(messagingClient, serverAddr, joinerAddress, joinerUuid);
         assertNotNull(response);
         assertEquals(JoinStatusCode.SAFE_TO_JOIN, response.getStatusCode());
         assertEquals(K, response.getHostsCount());
@@ -251,8 +251,8 @@ public class MessagingTest {
             assertEquals(iterJoiner.next(), iterSeed.next());
         }
 
-        final ProbeResponse probeResponse = messagingClient.sendProbeMessage(serverAddr,
-                                                                             ProbeMessage.getDefaultInstance()).get();
+        final ProbeResponse probeResponse = messagingClient.sendMessage(serverAddr,
+                                                                        ProbeMessage.getDefaultInstance()).get();
         assertNotNull(probeResponse);
         assertEquals(NodeStatus.OK, probeResponse.getStatus());
     }
@@ -281,11 +281,11 @@ public class MessagingTest {
         // While the above drives our failure detector logic, we explicitly test with a probe call
         // to make sure we get a BOOTSTRAPPING response from the RpcServer listening on serverAddr2.
         final GrpcClient joinerRpcClient = new GrpcClient(serverAddr2);
-        final ProbeResponse probeResponse1 = joinerRpcClient.sendProbeMessage(serverAddr1,
-                                                                             ProbeMessage.getDefaultInstance()).get();
+        final ProbeResponse probeResponse1 = joinerRpcClient.sendMessage(serverAddr1,
+                                                                         ProbeMessage.getDefaultInstance()).get();
         assertEquals(NodeStatus.OK, probeResponse1.getStatus());
-        final ProbeResponse probeResponse2 = joinerRpcClient.sendProbeMessage(serverAddr2,
-                ProbeMessage.getDefaultInstance()).get();
+        final ProbeResponse probeResponse2 = joinerRpcClient.sendMessage(serverAddr2,
+                                                                         ProbeMessage.getDefaultInstance()).get();
         assertEquals(NodeStatus.BOOTSTRAPPING, probeResponse2.getStatus());
     }
 
@@ -306,7 +306,7 @@ public class MessagingTest {
         final IMessagingClient client = new GrpcClient(clientAddr);
         boolean exceptionCaught = false;
         try {
-            client.sendProbeMessage(serverAddr, ProbeMessage.getDefaultInstance()).get();
+            client.sendMessage(serverAddr, ProbeMessage.getDefaultInstance()).get();
         } catch (final ExecutionException e) {
             exceptionCaught = true;
         }
@@ -356,27 +356,27 @@ public class MessagingTest {
         final SharedResources resources = new SharedResources(clientAddr);
         final IMessagingClient client = new GrpcClient(clientAddr, Collections.emptyList(), resources, settings);
         try {
-            client.sendProbeMessage(dst, ProbeMessage.getDefaultInstance()).get();
+            client.sendMessage(dst, ProbeMessage.getDefaultInstance()).get();
             fail("sendProbeMessage did not throw an exception");
         } catch (final ExecutionException ignored) {
         }
         try {
-            client.sendJoinMessage(dst, clientAddr, Utils.nodeIdFromUUID(UUID.randomUUID())).get();
+            sendPreJoinMessage(client, dst, clientAddr, Utils.nodeIdFromUUID(UUID.randomUUID()));
             fail("sendJoinMessage did not throw an exception");
         } catch (final ExecutionException ignored) {
         }
         try {
-            client.sendJoinPhase2Message(dst, JoinMessage.getDefaultInstance()).get();
+            client.sendMessage(dst, JoinMessage.getDefaultInstance()).get();
             fail("sendJoinPhase2Message did not throw an exception");
         } catch (final ExecutionException ignored) {
         }
         try {
-            client.sendLinkUpdateMessage(dst, BatchedLinkUpdateMessage.getDefaultInstance()).get();
+            client.sendMessage(dst, BatchedLinkUpdateMessage.getDefaultInstance()).get();
             fail("sendLinkUpdateMessage did not throw an exception");
         } catch (final ExecutionException ignored) {
         }
         try {
-            client.sendConsensusProposal(dst, ConsensusProposal.getDefaultInstance()).get();
+            client.sendMessage(dst, ConsensusProposal.getDefaultInstance()).get();
             fail("sendConsensusProposal did not throw an exception");
         } catch (final ExecutionException ignored) {
         }
@@ -399,27 +399,27 @@ public class MessagingTest {
         client.shutdown();
         resources.shutdown();
         try {
-            client.sendProbeMessage(dst, ProbeMessage.getDefaultInstance()).get();
+            client.sendMessage(dst, ProbeMessage.getDefaultInstance()).get();
             fail("sendProbeMessage did not throw an exception");
         } catch (final ExecutionException | GrpcClient.ShuttingDownException ignored) {
         }
         try {
-            client.sendJoinMessage(dst, clientAddr, Utils.nodeIdFromUUID(UUID.randomUUID())).get();
+            sendPreJoinMessage(client, dst, clientAddr, Utils.nodeIdFromUUID(UUID.randomUUID()));
             fail("sendJoinMessage did not throw an exception");
         } catch (final ExecutionException ignored) {
         }
         try {
-            client.sendJoinPhase2Message(dst, JoinMessage.getDefaultInstance()).get();
+            client.sendMessage(dst, JoinMessage.getDefaultInstance()).get();
             fail("sendJoinPhase2Message did not throw an exception");
         } catch (final ExecutionException ignored) {
         }
         try {
-            client.sendLinkUpdateMessage(dst, BatchedLinkUpdateMessage.getDefaultInstance()).get();
+            client.sendMessage(dst, BatchedLinkUpdateMessage.getDefaultInstance()).get();
             fail("sendLinkUpdateMessage did not throw an exception");
         } catch (final ExecutionException ignored) {
         }
         try {
-            client.sendConsensusProposal(dst, ConsensusProposal.getDefaultInstance()).get();
+            client.sendMessage(dst, ConsensusProposal.getDefaultInstance()).get();
             fail("sendConsensusProposal did not throw an exception");
         } catch (final ExecutionException ignored) {
         }
@@ -482,5 +482,14 @@ public class MessagingTest {
         rpcServers.add(rpcServer);
         services.add(service);
         return rpcServer;
+    }
+
+    private JoinResponse sendPreJoinMessage(final IMessagingClient client, final HostAndPort serverAddr,
+                                            final HostAndPort clientAddr, final NodeId identifier)
+            throws ExecutionException, InterruptedException {
+        final PreJoinMessage preJoinMessage = PreJoinMessage.newBuilder()
+                                                            .setSender(clientAddr.toString())
+                                                            .setNodeId(identifier).build();
+        return client.sendMessage(serverAddr, preJoinMessage).get();
     }
 }

@@ -33,7 +33,7 @@ import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.MembershipServiceGrpc;
 import com.vrg.rapid.pb.MembershipServiceGrpc.MembershipServiceFutureStub;
-import com.vrg.rapid.pb.NodeId;
+import com.vrg.rapid.pb.PreJoinMessage;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
 import com.vrg.rapid.pb.Response;
@@ -115,7 +115,7 @@ public final class GrpcClient implements IMessagingClient {
      * @return A future that returns a ProbeResponse if the call was successful.
      */
     @Override
-    public ListenableFuture<ProbeResponse> sendProbeMessage(final HostAndPort remote, final ProbeMessage probeMessage) {
+    public ListenableFuture<ProbeResponse> sendMessage(final HostAndPort remote, final ProbeMessage probeMessage) {
         Objects.requireNonNull(remote);
         Objects.requireNonNull(probeMessage);
 
@@ -128,25 +128,19 @@ public final class GrpcClient implements IMessagingClient {
      * Create and send a protobuf JoinMessage to a remote host.
      *
      * @param remote Remote host to send the message to
-     * @param sender The node sending the join message
+     * @param preJoinMessage The node sending the join message
      * @return A future that returns a JoinResponse if the call was successful.
      */
     @Override
-    public ListenableFuture<JoinResponse> sendJoinMessage(final HostAndPort remote, final HostAndPort sender,
-                                                          final NodeId nodeId) {
+    public ListenableFuture<JoinResponse> sendMessage(final HostAndPort remote, final PreJoinMessage preJoinMessage) {
         Objects.requireNonNull(remote);
-        Objects.requireNonNull(sender);
-        Objects.requireNonNull(nodeId);
+        Objects.requireNonNull(preJoinMessage);
 
-        final JoinMessage.Builder builder = JoinMessage.newBuilder();
-        final JoinMessage msg = builder.setSender(sender.toString())
-                                       .setNodeId(nodeId)
-                                       .build();
         final Supplier<ListenableFuture<JoinResponse>> call = () -> {
             final MembershipServiceFutureStub stub = getFutureStub(remote)
                     .withDeadlineAfter(settings.getGrpcJoinTimeoutMs(),
                             TimeUnit.MILLISECONDS);
-            return stub.receiveJoinMessage(msg);
+            return stub.receivePreJoinMessage(preJoinMessage);
         };
         return callWithRetries(call, remote, 0);
     }
@@ -159,7 +153,7 @@ public final class GrpcClient implements IMessagingClient {
      * @return A future that returns a JoinResponse if the call was successful.
      */
     @Override
-    public ListenableFuture<JoinResponse> sendJoinPhase2Message(final HostAndPort remote, final JoinMessage msg) {
+    public ListenableFuture<JoinResponse> sendMessage(final HostAndPort remote, final JoinMessage msg) {
         Objects.requireNonNull(remote);
         Objects.requireNonNull(msg);
 
@@ -178,7 +172,7 @@ public final class GrpcClient implements IMessagingClient {
      * @param msg Consensus proposal message
      */
     @Override
-    public ListenableFuture<ConsensusProposalResponse> sendConsensusProposal(final HostAndPort remote,
+    public ListenableFuture<ConsensusProposalResponse> sendMessage(final HostAndPort remote,
                                                                              final ConsensusProposal msg) {
         Objects.requireNonNull(msg);
         try {
@@ -202,7 +196,7 @@ public final class GrpcClient implements IMessagingClient {
      * @param msg A BatchedLinkUpdateMessage that contains one or more LinkUpdateMessages
      */
     @Override
-    public ListenableFuture<Response> sendLinkUpdateMessage(final HostAndPort remote,
+    public ListenableFuture<Response> sendMessage(final HostAndPort remote,
                                                             final BatchedLinkUpdateMessage msg) {
         Objects.requireNonNull(msg);
         try {

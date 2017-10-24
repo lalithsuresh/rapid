@@ -23,6 +23,7 @@ import com.vrg.rapid.SharedResources;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
 import com.vrg.rapid.pb.ConsensusProposalResponse;
+import com.vrg.rapid.pb.PreJoinMessage;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.MembershipServiceGrpc;
@@ -85,7 +86,7 @@ public final class GrpcServer extends MembershipServiceGrpc.MembershipServiceImp
     public void receiveLinkUpdateMessage(final BatchedLinkUpdateMessage request,
                                          final StreamObserver<Response> responseObserver) {
         assert membershipService != null;
-        protocolExecutor.execute(() -> processLinkUpdateMessage(request));
+        protocolExecutor.execute(() -> membershipService.handleMessage(request));
         responseObserver.onNext(Response.getDefaultInstance());
         responseObserver.onCompleted();
     }
@@ -97,7 +98,7 @@ public final class GrpcServer extends MembershipServiceGrpc.MembershipServiceImp
     public void receiveConsensusProposal(final ConsensusProposal request,
                                          final StreamObserver<ConsensusProposalResponse> responseObserver) {
         assert membershipService != null;
-        protocolExecutor.execute(() -> processConsensusProposal(request));
+        protocolExecutor.execute(() -> membershipService.handleMessage(request));
         responseObserver.onNext(ConsensusProposalResponse.getDefaultInstance());
         responseObserver.onCompleted();
     }
@@ -106,11 +107,11 @@ public final class GrpcServer extends MembershipServiceGrpc.MembershipServiceImp
      * Defined in rapid.proto.
      */
     @Override
-    public void receiveJoinMessage(final JoinMessage joinMessage,
+    public void receivePreJoinMessage(final PreJoinMessage joinMessage,
                                    final StreamObserver<JoinResponse> responseObserver) {
         assert membershipService != null;
         protocolExecutor.execute(() -> {
-            final ListenableFuture<JoinResponse> result = processJoinMessage(joinMessage);
+            final ListenableFuture<JoinResponse> result = membershipService.handleMessage(joinMessage);
             Futures.addCallback(result, new JoinResponseCallback(responseObserver), grpcExecutor);
         });
     }
@@ -123,7 +124,7 @@ public final class GrpcServer extends MembershipServiceGrpc.MembershipServiceImp
                                          final StreamObserver<JoinResponse> responseObserver) {
         protocolExecutor.execute(() -> {
             final ListenableFuture<JoinResponse> result =
-                    processJoinPhaseTwoMessage(joinMessage);
+                    membershipService.handleMessage(joinMessage);
             Futures.addCallback(result, new JoinResponseCallback(responseObserver), grpcExecutor);
         });
     }
@@ -136,7 +137,7 @@ public final class GrpcServer extends MembershipServiceGrpc.MembershipServiceImp
                              final StreamObserver<ProbeResponse> probeResponseObserver) {
         if (membershipService != null) {
             protocolExecutor.execute(() -> {
-                final ListenableFuture<ProbeResponse> result = processProbeMessage(probeMessage);
+                final ListenableFuture<ProbeResponse> result = membershipService.handleMessage(probeMessage);
                 Futures.addCallback(result, new ProbeResponseCallback(probeResponseObserver), grpcExecutor);
             });
         }
@@ -171,40 +172,6 @@ public final class GrpcServer extends MembershipServiceGrpc.MembershipServiceImp
         deferringInterceptor.unblock();
     }
 
-    // IMessaging server interface
-    @Override
-    public ListenableFuture<ProbeResponse> processProbeMessage(final ProbeMessage probeMessage) {
-        assert membershipService != null;
-        return membershipService.processProbeMessage(probeMessage);
-    }
-
-    // IMessaging server interface
-    @Override
-    public ListenableFuture<JoinResponse> processJoinMessage(final JoinMessage msg) {
-        assert membershipService != null;
-        return membershipService.processJoinMessage(msg);
-    }
-
-    // IMessaging server interface
-    @Override
-    public ListenableFuture<JoinResponse> processJoinPhaseTwoMessage(final JoinMessage msg) {
-        assert membershipService != null;
-        return membershipService.processJoinPhaseTwoMessage(msg);
-    }
-
-    // IMessaging server interface
-    @Override
-    public void processConsensusProposal(final ConsensusProposal msg) {
-        assert membershipService != null;
-        membershipService.processConsensusProposal(msg);
-    }
-
-    // IMessaging server interface
-    @Override
-    public void processLinkUpdateMessage(final BatchedLinkUpdateMessage msg) {
-        assert membershipService != null;
-        membershipService.processLinkUpdateMessage(msg);
-    }
 
     // IMessaging server interface
     @Override

@@ -7,7 +7,7 @@ option java_outer_classname = "Remoting";
 package remoting;
 
 service MembershipService {
-  rpc receiveJoinMessage (JoinMessage) returns (JoinResponse) {}
+  rpc receivePreJoinMessage (PreJoinMessage) returns (JoinResponse) {}
   rpc receiveJoinPhase2Message (JoinMessage) returns (JoinResponse) {}
   rpc receiveLinkUpdateMessage (BatchedLinkUpdateMessage) returns (Response) {}
   rpc receiveConsensusProposal (ConsensusProposal) returns (ConsensusProposalResponse) {}
@@ -24,6 +24,14 @@ message NodeId
 }
 
 // TODO: JoinMessage and JoinResponse are overloaded because they are being used for phase 1 and 2 of the bootstrap.
+message PreJoinMessage
+{
+   string sender = 1;
+   NodeId nodeId = 2;
+   repeated int32 ringNumber = 3;
+   int64 configurationId = 4;
+}
+
 message JoinMessage
 {
    string sender = 1;

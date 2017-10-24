@@ -74,7 +74,7 @@ public class PingPongFailureDetector implements Runnable {
         }
         else {
             LOG.trace("{} sending probe to {}", address, monitoree);
-            Futures.addCallback(rpcClient.sendProbeMessage(monitoree, probeMessage),
+            Futures.addCallback(rpcClient.sendMessage(monitoree, probeMessage),
                     new ProbeCallback(monitoree));
         }
     }

@@ -48,7 +48,7 @@ final class UnicastToAllBroadcaster implements IBroadcaster {
     public synchronized List<ListenableFuture<Response>> broadcast(final BatchedLinkUpdateMessage msg) {
         final List<ListenableFuture<Response>> futures = new ArrayList<>(recipients.size());
         for (final HostAndPort recipient: recipients) {
-            futures.add(messagingClient.sendLinkUpdateMessage(recipient, msg));
+            futures.add(messagingClient.sendMessage(recipient, msg));
         }
         return futures;
     }
@@ -58,7 +58,7 @@ final class UnicastToAllBroadcaster implements IBroadcaster {
     public synchronized List<ListenableFuture<ConsensusProposalResponse>> broadcast(final ConsensusProposal msg) {
         final List<ListenableFuture<ConsensusProposalResponse>> futures = new ArrayList<>(recipients.size());
         for (final HostAndPort recipient: recipients) {
-            futures.add(messagingClient.sendConsensusProposal(recipient, msg));
+            futures.add(messagingClient.sendMessage(recipient, msg));
         }
         return futures;
     }

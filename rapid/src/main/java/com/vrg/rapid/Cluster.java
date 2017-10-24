@@ -28,6 +28,7 @@ import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
 import com.vrg.rapid.pb.Metadata;
 import com.vrg.rapid.pb.NodeId;
+import com.vrg.rapid.pb.PreJoinMessage;
 import io.grpc.ClientInterceptor;
 import io.grpc.ExperimentalApi;
 import io.grpc.Internal;
@@ -260,8 +261,11 @@ public final class Cluster {
                                                                 throws ExecutionException, InterruptedException {
             assert messagingClient != null;
             // First, get the configuration ID and the monitors to contact from the seed node.
-            final JoinResponse joinPhaseOneResult = messagingClient.sendJoinMessage(seedAddress,
-                    listenAddress, currentIdentifier).get();
+            final PreJoinMessage preJoinMessage = PreJoinMessage.newBuilder()
+                                                                .setSender(listenAddress.toString())
+                                                                .setNodeId(currentIdentifier)
+                                                                .build();
+            final JoinResponse joinPhaseOneResult = messagingClient.sendMessage(seedAddress, preJoinMessage).get();
 
             /*
              * Either the seed node indicates it is safe to join, or it indicates that we're already
@@ -331,7 +335,7 @@ public final class Cluster {
                         .addAllRingNumber(entry.getValue()).build();
                 LOG.info("{} is sending a join-p2 to {} for config {}",
                         listenAddress, entry.getKey(), configurationToJoin);
-                final ListenableFuture<JoinResponse> call = messagingClient.sendJoinPhase2Message(entry.getKey(), msg);
+                final ListenableFuture<JoinResponse> call = messagingClient.sendMessage(entry.getKey(), msg);
                 responseFutures.add(call);
             }
             return Futures.successfulAsList(responseFutures).get();

@@ -24,6 +24,7 @@ import com.vrg.rapid.monitoring.ILinkFailureDetectorFactory;
 import com.vrg.rapid.monitoring.PingPongFailureDetector;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
+import com.vrg.rapid.pb.PreJoinMessage;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
@@ -198,15 +199,15 @@ public final class MembershipService {
      * The seed responds with the current configuration ID and a list of monitors
      * for the joiner, who then moves on to phase 2 of the protocol with its monitors.
      */
-    public ListenableFuture<JoinResponse> processJoinMessage(final JoinMessage joinMessage) {
-        final HostAndPort joiningHost = HostAndPort.fromString(joinMessage.getSender());
-        final JoinStatusCode statusCode = membershipView.isSafeToJoin(joiningHost, joinMessage.getNodeId());
+    public ListenableFuture<JoinResponse> handleMessage(final PreJoinMessage msg) {
+        final HostAndPort joiningHost = HostAndPort.fromString(msg.getSender());
+        final JoinStatusCode statusCode = membershipView.isSafeToJoin(joiningHost, msg.getNodeId());
         final JoinResponse.Builder builder = JoinResponse.newBuilder()
                 .setSender(this.myAddr.toString())
                 .setConfigurationId(membershipView.getCurrentConfigurationId())
                 .setStatusCode(statusCode);
         LOG.trace("Join at seed for {seed:{}, sender:{}, config:{}, size:{}}",
-                myAddr, joinMessage.getSender(),
+                myAddr, msg.getSender(),
                 membershipView.getCurrentConfigurationId(), membershipView.getMembershipSize());
         if (statusCode.equals(JoinStatusCode.SAFE_TO_JOIN)
                 || statusCode.equals(JoinStatusCode.HOSTNAME_ALREADY_IN_RING)) {
@@ -225,7 +226,7 @@ public final class MembershipService {
      * and consensus succeeds, the monitor informs the joiner about the new configuration it
      * is now a part of.
      */
-    public ListenableFuture<JoinResponse> processJoinPhaseTwoMessage(final JoinMessage joinMessage) {
+    public ListenableFuture<JoinResponse> handleMessage(final JoinMessage joinMessage) {
         final long currentConfiguration = membershipView.getCurrentConfigurationId();
         if (currentConfiguration == joinMessage.getConfigurationId()) {
             LOG.trace("Enqueuing SAFE_TO_JOIN for {sender:{}, monitor:{}, config:{}, size:{}}",
@@ -291,7 +292,7 @@ public final class MembershipService {
      * Link update messages that do not affect an ongoing proposal
      * needs to be dropped.
      */
-    public void processLinkUpdateMessage(final BatchedLinkUpdateMessage messageBatch) {
+    public void handleMessage(final BatchedLinkUpdateMessage messageBatch) {
         Objects.requireNonNull(messageBatch);
 
         // We already have a proposal for this round => we have initiated consensus and cannot go back on our proposal.
@@ -342,7 +343,7 @@ public final class MembershipService {
      * XXX: Implement recovery for the extremely rare possibility of conflicting proposals.
      *
      */
-    public void processConsensusProposal(final ConsensusProposal proposalMessage) {
+    public void handleMessage(final ConsensusProposal proposalMessage) {
         final long currentConfigurationId = membershipView.getCurrentConfigurationId();
         final long membershipSize = membershipView.getMembershipSize();
 
@@ -451,7 +452,7 @@ public final class MembershipService {
     /**
      * Invoked by monitors of a node for failure detection.
      */
-    public ListenableFuture<ProbeResponse> processProbeMessage(final ProbeMessage probeMessage) {
+    public ListenableFuture<ProbeResponse> handleMessage(final ProbeMessage probeMessage) {
         LOG.trace("handleProbeMessage at {} from {}", myAddr, probeMessage.getSender());
         return Futures.immediateFuture(ProbeResponse.getDefaultInstance());
     }
