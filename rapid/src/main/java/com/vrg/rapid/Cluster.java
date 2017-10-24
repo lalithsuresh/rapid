@@ -206,17 +206,11 @@ public final class Cluster {
         }
 
         /**
-         * Supply the messaging client to use.
+         * Supply the messaging client and server to use.
          */
-        public Builder setMessagingClient(final IMessagingClient messagingClient) {
+        public Builder setMessagingClientAndServer(final IMessagingClient messagingClient,
+                                                   final IMessagingServer messagingServer) {
             this.messagingClient = messagingClient;
-            return this;
-        }
-
-        /**
-         * Supply the messaging server to use.
-         */
-        public Builder setMessagingServer(final IMessagingServer messagingServer) {
             this.messagingServer = messagingServer;
             return this;
         }
