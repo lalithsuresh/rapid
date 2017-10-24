@@ -11,7 +11,7 @@
  * permissions and limitations under the License.
  */
 
-package com.vrg.rapid.messaging;
+package com.vrg.rapid.messaging.impl;
 
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
@@ -26,6 +26,7 @@ import com.google.common.util.concurrent.SettableFuture;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.vrg.rapid.Settings;
 import com.vrg.rapid.SharedResources;
+import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
 import com.vrg.rapid.pb.ConsensusProposalResponse;

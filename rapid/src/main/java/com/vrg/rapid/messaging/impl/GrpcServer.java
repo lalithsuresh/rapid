@@ -11,7 +11,7 @@
  * permissions and limitations under the License.
  */
 
-package com.vrg.rapid.messaging;
+package com.vrg.rapid.messaging.impl;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
@@ -20,6 +20,7 @@ import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.vrg.rapid.MembershipService;
 import com.vrg.rapid.SharedResources;
+import com.vrg.rapid.messaging.IMessagingServer;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
 import com.vrg.rapid.pb.ConsensusProposalResponse;

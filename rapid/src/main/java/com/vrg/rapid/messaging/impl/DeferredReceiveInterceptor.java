@@ -11,7 +11,7 @@
  * permissions and limitations under the License.
  */
 
-package com.vrg.rapid.messaging;
+package com.vrg.rapid.messaging.impl;
 
 import com.vrg.rapid.pb.MembershipServiceGrpc;
 import io.grpc.Metadata;

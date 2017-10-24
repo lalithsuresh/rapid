@@ -15,8 +15,8 @@ package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.ListenableFuture;
-import com.vrg.rapid.messaging.GrpcClient;
-import com.vrg.rapid.messaging.GrpcServer;
+import com.vrg.rapid.messaging.impl.GrpcClient;
+import com.vrg.rapid.messaging.impl.GrpcServer;
 import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.messaging.IMessagingServer;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;

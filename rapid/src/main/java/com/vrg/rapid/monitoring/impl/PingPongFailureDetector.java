@@ -11,12 +11,13 @@
  * permissions and limitations under the License.
  */
 
-package com.vrg.rapid.monitoring;
+package com.vrg.rapid.monitoring.impl;
 
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.vrg.rapid.messaging.IMessagingClient;
+import com.vrg.rapid.monitoring.ILinkFailureDetectorFactory;
 import com.vrg.rapid.pb.NodeStatus;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
