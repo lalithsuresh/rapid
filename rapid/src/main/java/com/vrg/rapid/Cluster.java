@@ -17,10 +17,10 @@ import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.protobuf.ByteString;
-import com.vrg.rapid.messaging.impl.GrpcClient;
-import com.vrg.rapid.messaging.impl.GrpcServer;
 import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.messaging.IMessagingServer;
+import com.vrg.rapid.messaging.impl.GrpcClient;
+import com.vrg.rapid.messaging.impl.GrpcServer;
 import com.vrg.rapid.monitoring.ILinkFailureDetectorFactory;
 import com.vrg.rapid.monitoring.impl.PingPongFailureDetector;
 import com.vrg.rapid.pb.JoinMessage;
@@ -48,7 +48,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
-import java.util.function.Consumer;
+import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 
 /**
@@ -123,7 +123,7 @@ public final class Cluster {
      * @param callback Callback to be executed when {@code event} occurs.
      */
     public void registerSubscription(final ClusterEvents event,
-                                     final Consumer<List<NodeStatusChange>> callback) {
+                                     final BiConsumer<Long, List<NodeStatusChange>> callback) {
         membershipService.registerSubscription(event, callback);
     }
 
@@ -144,7 +144,7 @@ public final class Cluster {
         private List<ServerInterceptor> serverInterceptors = Collections.emptyList();
         private List<ClientInterceptor> clientInterceptors = Collections.emptyList();
         private Settings settings = new Settings();
-        private final Map<ClusterEvents, List<Consumer<List<NodeStatusChange>>>> subscriptions =
+        private final Map<ClusterEvents, List<BiConsumer<Long, List<NodeStatusChange>>>> subscriptions =
                 new EnumMap<>(ClusterEvents.class);
 
         // These fields are initialized at the beginning of start() and join()
@@ -191,7 +191,7 @@ public final class Cluster {
          */
         @ExperimentalApi
         public Builder addSubscription(final ClusterEvents event,
-                                       final Consumer<List<NodeStatusChange>> callback) {
+                                       final BiConsumer<Long, List<NodeStatusChange>> callback) {
             this.subscriptions.computeIfAbsent(event, k -> new ArrayList<>());
             this.subscriptions.get(event).add(callback);
             return this;
@@ -260,14 +260,13 @@ public final class Cluster {
             final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
             linkFailureDetector = linkFailureDetector != null ? linkFailureDetector
                     : new PingPongFailureDetector.Factory(listenAddress, messagingClient);
-            final MembershipService.Builder builder = new MembershipService.Builder(listenAddress, watermarkBuffer,
-                    membershipView, sharedResources, settings)
-                    .setMessagingClient(messagingClient)
-                    .setSubscriptions(subscriptions)
-                    .setLinkFailureDetector(linkFailureDetector);
-            final MembershipService membershipService = metadata.getMetadataCount() > 0
-                    ? builder.setMetadata(Collections.singletonMap(listenAddress.toString(), metadata)).build()
-                    : builder.build();
+
+            final Map<String, Metadata> metadataMap = metadata.getMetadataCount() > 0
+                                                    ? Collections.singletonMap(listenAddress.toString(), metadata)
+                                                    : Collections.emptyMap();
+            final MembershipService membershipService = new MembershipService(listenAddress, watermarkBuffer,
+                                                            membershipView, sharedResources, settings, messagingClient,
+                                                            linkFailureDetector, metadataMap, subscriptions);
             messagingServer.setMembershipService(membershipService);
             messagingServer.start();
             return new Cluster(messagingServer, membershipService, sharedResources, listenAddress);
@@ -436,13 +435,8 @@ public final class Cluster {
             linkFailureDetector = linkFailureDetector != null ? linkFailureDetector
                                                   : new PingPongFailureDetector.Factory(listenAddress, messagingClient);
             final MembershipService membershipService =
-                    new MembershipService.Builder(listenAddress, watermarkBuffer, membershipViewFinal,
-                                                  sharedResources, settings)
-                                         .setMessagingClient(messagingClient)
-                                         .setLinkFailureDetector(linkFailureDetector)
-                                         .setMetadata(allMetadata)
-                                         .setSubscriptions(subscriptions)
-                                         .build();
+                    new MembershipService(listenAddress, watermarkBuffer, membershipViewFinal, sharedResources,
+                                          settings, messagingClient, linkFailureDetector, allMetadata, subscriptions);
             messagingServer.setMembershipService(membershipService);
             if (LOG.isTraceEnabled()) {
                 LOG.trace("{} has monitors {}", listenAddress,

@@ -1,6 +1,9 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
+import com.vrg.rapid.messaging.IMessagingClient;
+import com.vrg.rapid.messaging.impl.GrpcClient;
+import com.vrg.rapid.monitoring.impl.PingPongFailureDetector;
 import com.vrg.rapid.pb.ConsensusProposal;
 import junitparams.JUnitParamsRunner;
 import junitparams.Parameters;
@@ -138,9 +141,9 @@ public class MembershipServiceTest {
             throws IOException, MembershipView.NodeAlreadyInRingException {
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
         final SharedResources resources = new SharedResources(serverAddr);
-        final MembershipService service =
-                new MembershipService.Builder(serverAddr, watermarkBuffer, view, resources, new Settings())
-                        .build();
+        final IMessagingClient client = new GrpcClient(serverAddr);
+        final MembershipService service = new MembershipService(serverAddr, watermarkBuffer, view, resources,
+                new Settings(), client, new PingPongFailureDetector.Factory(serverAddr, client));
         services.add(service);
         return service;
     }

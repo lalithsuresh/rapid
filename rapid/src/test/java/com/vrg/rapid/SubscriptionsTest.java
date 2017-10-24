@@ -13,7 +13,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.function.Consumer;
+import java.util.function.BiConsumer;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -232,11 +232,11 @@ public class SubscriptionsTest {
     /**
      * Encapsulates a NodeStatusChange callback and counts the number of times it was invoked
      */
-    private static class TestCallback implements Consumer<List<NodeStatusChange>> {
+    private static class TestCallback implements BiConsumer<Long, List<NodeStatusChange>> {
         private final List<List<NodeStatusChange>> notificationLog = new ArrayList<>();
 
         @Override
-        public void accept(final List<NodeStatusChange> nodeStatusChanges) {
+        public void accept(final Long id, final List<NodeStatusChange> nodeStatusChanges) {
             notificationLog.add(nodeStatusChanges);
         }
 

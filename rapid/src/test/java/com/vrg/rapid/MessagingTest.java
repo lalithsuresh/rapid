@@ -19,6 +19,7 @@ import com.vrg.rapid.messaging.impl.GrpcClient;
 import com.vrg.rapid.messaging.impl.GrpcServer;
 import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.messaging.IMessagingServer;
+import com.vrg.rapid.monitoring.impl.PingPongFailureDetector;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
 import com.vrg.rapid.pb.ConsensusProposalResponse;
@@ -434,9 +435,9 @@ public class MessagingTest {
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, Utils.nodeIdFromUUID(UUID.randomUUID()));
-        final MembershipService service =
-                new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView, resources, new Settings())
-                                    .build();
+        final IMessagingClient client = new GrpcClient(serverAddr);
+        final MembershipService service = new MembershipService(serverAddr, watermarkBuffer, membershipView, resources,
+                new Settings(), client, new PingPongFailureDetector.Factory(serverAddr, client));
         final IMessagingServer rpcServer = new GrpcServer(serverAddr, resources, Collections.emptyList(), false);
         rpcServer.setMembershipService(service);
         rpcServer.start();
@@ -454,10 +455,10 @@ public class MessagingTest {
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, Utils.nodeIdFromUUID(UUID.randomUUID()));
-        final MembershipService service =
-                new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView, resources, new Settings())
-                        .build();
+        final IMessagingClient client = new GrpcClient(serverAddr);
         final IMessagingServer rpcServer = new GrpcServer(serverAddr, resources, interceptors, false);
+        final MembershipService service = new MembershipService(serverAddr, watermarkBuffer, membershipView, resources,
+                new Settings(), client, new PingPongFailureDetector.Factory(serverAddr, client));
         rpcServer.setMembershipService(service);
         rpcServer.start();
         rpcServers.add(rpcServer);
@@ -473,9 +474,9 @@ public class MessagingTest {
                                                       final MembershipView membershipView)
             throws IOException {
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
-        final MembershipService service =
-                new MembershipService.Builder(serverAddr, watermarkBuffer, membershipView, resources, new Settings())
-                        .build();
+        final IMessagingClient client = new GrpcClient(serverAddr);
+        final MembershipService service = new MembershipService(serverAddr, watermarkBuffer, membershipView, resources,
+                new Settings(), client, new PingPongFailureDetector.Factory(serverAddr, client));
         final IMessagingServer rpcServer = new GrpcServer(serverAddr, resources, interceptors, false);
         rpcServer.setMembershipService(service);
         rpcServer.start();

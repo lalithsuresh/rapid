@@ -57,29 +57,30 @@ class RapidRunner {
     /**
      * Executed whenever a Cluster VIEW_CHANGE_PROPOSAL event occurs.
      */
-    private void onViewChangeProposal(final List<NodeStatusChange> viewChange) {
-        System.out.println("The condition detector has outputted a proposal: " + viewChange);
+    private void onViewChangeProposal(final Long configurationId, final List<NodeStatusChange> viewChange) {
+        System.out.println("The condition detector has outputted a proposal: " + viewChange + " " + configurationId);
     }
 
     /**
      * Executed whenever a Cluster VIEW_CHANGE_ONE_STEP_FAILED event occurs.
      */
-    private void onViewChangeOneStepFailed(final List<NodeStatusChange> viewChange) {
-        System.out.println("The condition detector had a conflict during one-step consensus: " + viewChange);
+    private void onViewChangeOneStepFailed(final Long configurationId, final List<NodeStatusChange> viewChange) {
+        System.out.println("The condition detector had a conflict during one-step consensus: "
+                + viewChange + " " + configurationId);
     }
 
     /**
      * Executed whenever a Cluster KICKED event occurs.
      */
-    private void onKicked(final List<NodeStatusChange> viewChange) {
-        System.out.println("We got kicked from the network: " + viewChange);
+    private void onKicked(final Long configurationId, final List<NodeStatusChange> viewChange) {
+        System.out.println("We got kicked from the network: " + viewChange + " " + configurationId);
     }
 
     /**
      * Executed whenever a Cluster VIEW_CHANGE event occurs.
      */
-    private void onViewChange(final List<NodeStatusChange> viewChange) {
-        System.out.println("View change detected: " + viewChange);
+    private void onViewChange(final Long configurationId, final List<NodeStatusChange> viewChange) {
+        System.out.println("View change detected: " + viewChange + " " + configurationId);
     }
 
     /**

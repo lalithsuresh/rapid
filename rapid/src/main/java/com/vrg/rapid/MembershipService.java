@@ -17,14 +17,11 @@ import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
-import com.vrg.rapid.messaging.impl.GrpcClient;
 import com.vrg.rapid.messaging.IBroadcaster;
 import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.monitoring.ILinkFailureDetectorFactory;
-import com.vrg.rapid.monitoring.impl.PingPongFailureDetector;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
-import com.vrg.rapid.pb.PreJoinMessage;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
@@ -32,13 +29,13 @@ import com.vrg.rapid.pb.LinkStatus;
 import com.vrg.rapid.pb.LinkUpdateMessage;
 import com.vrg.rapid.pb.Metadata;
 import com.vrg.rapid.pb.NodeId;
+import com.vrg.rapid.pb.PreJoinMessage;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
 import io.grpc.StatusRuntimeException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
 import javax.annotation.concurrent.NotThreadSafe;
 import java.util.ArrayList;
@@ -60,7 +57,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.Consumer;
+import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 
 
@@ -89,7 +86,7 @@ public final class MembershipService {
     private final MetadataManager metadataManager;
 
     // Event subscriptions
-    private final Map<ClusterEvents, List<Consumer<List<NodeStatusChange>>>> subscriptions;
+    private final Map<ClusterEvents, List<BiConsumer<Long, List<NodeStatusChange>>>> subscriptions;
 
     // Fields used by batching logic.
     @GuardedBy("batchSchedulerLock")
@@ -112,86 +109,51 @@ public final class MembershipService {
     private final Object membershipUpdateLock = new Object();
     private final ISettings settings;
 
-    static class Builder {
-        private final MembershipView membershipView;
-        private final WatermarkBuffer watermarkBuffer;
-        private final HostAndPort myAddr;
-        private final SharedResources sharedResources;
-        private Map<String, Metadata> metadata = Collections.emptyMap();
-        private final ISettings settings;
-        @Nullable private ILinkFailureDetectorFactory linkFailureDetector = null;
-        @Nullable private IMessagingClient messagingClient = null;
-        @Nullable private Map<ClusterEvents, List<Consumer<List<NodeStatusChange>>>> subscriptions = null;
 
-        Builder(final HostAndPort myAddr,
-                final WatermarkBuffer watermarkBuffer,
-                final MembershipView membershipView,
-                final SharedResources sharedResources,
-                final ISettings settings) {
-            this.myAddr = Objects.requireNonNull(myAddr);
-            this.watermarkBuffer = Objects.requireNonNull(watermarkBuffer);
-            this.membershipView = Objects.requireNonNull(membershipView);
-            this.sharedResources = sharedResources;
-            this.settings = settings;
-        }
-
-        Builder setMetadata(final Map<String, Metadata> metadata) {
-            this.metadata = metadata;
-            return this;
-        }
-
-        Builder setLinkFailureDetector(final ILinkFailureDetectorFactory linkFailureDetector) {
-            this.linkFailureDetector = linkFailureDetector;
-            return this;
-        }
-
-        Builder setMessagingClient(final IMessagingClient messagingClient) {
-            this.messagingClient = messagingClient;
-            return this;
-        }
-
-        Builder setSubscriptions(final Map<ClusterEvents, List<Consumer<List<NodeStatusChange>>>> subscriptions) {
-            this.subscriptions = subscriptions;
-            return this;
-        }
-
-        MembershipService build() {
-            return new MembershipService(this);
-        }
+    MembershipService(final HostAndPort myAddr, final WatermarkBuffer watermarkBuffer,
+                      final MembershipView membershipView, final SharedResources sharedResources,
+                      final ISettings settings, final IMessagingClient messagingClient,
+                      final ILinkFailureDetectorFactory linkFailureDetector) {
+        this(myAddr, watermarkBuffer, membershipView, sharedResources, settings, messagingClient, linkFailureDetector,
+             Collections.emptyMap(), new EnumMap<>(ClusterEvents.class));
     }
 
-    private MembershipService(final Builder builder) {
-        this.myAddr = builder.myAddr;
-        this.settings = builder.settings;
-        this.membershipView = builder.membershipView;
-        this.watermarkBuffer = builder.watermarkBuffer;
-        this.sharedResources = builder.sharedResources;
+    MembershipService(final HostAndPort myAddr, final WatermarkBuffer watermarkBuffer,
+                      final MembershipView membershipView, final SharedResources sharedResources,
+                      final ISettings settings, final IMessagingClient messagingClient,
+                      final ILinkFailureDetectorFactory linkFailureDetector, final Map<String, Metadata> metadataMap,
+                      final Map<ClusterEvents, List<BiConsumer<Long, List<NodeStatusChange>>>> subscriptions) {
+        this.myAddr = myAddr;
+        this.settings = settings;
+        this.membershipView = membershipView;
+        this.watermarkBuffer = watermarkBuffer;
+        this.sharedResources = sharedResources;
         this.metadataManager = new MetadataManager();
-        this.metadataManager.addMetadata(builder.metadata);
-        this.messagingClient = builder.messagingClient != null ? builder.messagingClient : new GrpcClient(myAddr);
+        this.metadataManager.addMetadata(metadataMap);
+        this.messagingClient = messagingClient;
         this.broadcaster = new UnicastToAllBroadcaster(messagingClient);
-        this.subscriptions = builder.subscriptions == null ? new EnumMap<>(ClusterEvents.class) : builder.subscriptions;
+        this.subscriptions = subscriptions;
+        this.fdFactory = linkFailureDetector;
+
         // Make sure there is an empty list for every enum type
         Arrays.stream(ClusterEvents.values()).forEach(event ->
                 this.subscriptions.computeIfAbsent(event, k -> new ArrayList<>(0)));
 
         // Schedule background jobs
-        this.backgroundTasksExecutor = builder.sharedResources.getScheduledTasksExecutor();
+        this.backgroundTasksExecutor = sharedResources.getScheduledTasksExecutor();
         linkUpdateBatcherJob = this.backgroundTasksExecutor.scheduleAtFixedRate(new LinkUpdateBatcher(),
                 0, BATCHING_WINDOW_IN_MS, TimeUnit.MILLISECONDS);
 
         this.broadcaster.setMembership(membershipView.getRing(0));
         // this::linkFailureNotification is invoked by the failure detector whenever an edge
         // to a monitor is marked faulty.
-        this.fdFactory  = builder.linkFailureDetector != null
-                        ? builder.linkFailureDetector
-                        : new PingPongFailureDetector.Factory(myAddr, this.messagingClient);
         this.failureDetectorJobs = new ArrayList<>();
         createFailureDetectorsForCurrentConfiguration();
 
         // Execute all VIEW_CHANGE callbacks. This informs applications that a start/join has successfully completed.
+        final long configurationId = membershipView.getCurrentConfigurationId();
         final List<NodeStatusChange> nodeStatusChanges = getInitialViewChange();
-        subscriptions.get(ClusterEvents.VIEW_CHANGE).forEach(cb -> cb.accept(nodeStatusChanges));
+        subscriptions.get(ClusterEvents.VIEW_CHANGE).forEach(cb -> cb.accept(configurationId, nodeStatusChanges));
     }
 
     /**
@@ -320,7 +282,8 @@ public final class MembershipService {
             if (subscriptions.containsKey(ClusterEvents.VIEW_CHANGE_PROPOSAL)) {
                 final List<NodeStatusChange> result = createNodeStatusChangeList(proposal);
                 // Inform subscribers that a proposal has been announced.
-                subscriptions.get(ClusterEvents.VIEW_CHANGE_PROPOSAL).forEach(cb -> cb.accept(result));
+                subscriptions.get(ClusterEvents.VIEW_CHANGE_PROPOSAL).forEach(cb -> cb.accept(currentConfigurationId,
+                                                                                              result));
             }
 
             final ConsensusProposal proposalMessage = ConsensusProposal.newBuilder()
@@ -383,7 +346,7 @@ public final class MembershipService {
                 final Set<HostAndPort> toSet = proposalWithMostVotes.stream()
                                                     .map(HostAndPort::fromString).collect(Collectors.toSet());
                 subscriptions.get(ClusterEvents.VIEW_CHANGE_ONE_STEP_FAILED)
-                        .forEach(cb -> cb.accept(createNodeStatusChangeList(toSet)));
+                        .forEach(cb -> cb.accept(currentConfigurationId, createNodeStatusChangeList(toSet)));
             }
         }
     }
@@ -424,8 +387,9 @@ public final class MembershipService {
             }
         }
 
+        final long currentConfigurationId = membershipView.getCurrentConfigurationId();
         // Publish an event to the listeners.
-        subscriptions.get(ClusterEvents.VIEW_CHANGE).forEach(cb -> cb.accept(statusChanges));
+        subscriptions.get(ClusterEvents.VIEW_CHANGE).forEach(cb -> cb.accept(currentConfigurationId, statusChanges));
 
         // Clear data structures for the next round.
         watermarkBuffer.clear();
@@ -442,7 +406,7 @@ public final class MembershipService {
             // We need to gracefully exit by calling a user handler and invalidating
             // the current session.
             LOG.trace("{} got kicked out and is shutting down.", myAddr);
-            subscriptions.get(ClusterEvents.KICKED).forEach(cb -> cb.accept(statusChanges));
+            subscriptions.get(ClusterEvents.KICKED).forEach(cb -> cb.accept(currentConfigurationId, statusChanges));
         }
 
         // Send new configuration to all nodes joining through us
@@ -464,7 +428,7 @@ public final class MembershipService {
      * @param callback Callback to be executed when {@code event} occurs.
      */
     void registerSubscription(final ClusterEvents event,
-                              final Consumer<List<NodeStatusChange>> callback) {
+                              final BiConsumer<Long, List<NodeStatusChange>> callback) {
         subscriptions.get(event).add(callback);
     }
 
