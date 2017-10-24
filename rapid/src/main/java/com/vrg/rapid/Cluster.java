@@ -89,6 +89,54 @@ public final class Cluster {
         this.listenAddress = listenAddress;
     }
 
+    /**
+     * Returns the list of hosts currently in the membership set.
+     *
+     * @return list of hosts in the membership set
+     */
+    public List<HostAndPort> getMemberlist() {
+        return membershipService.getMembershipView();
+    }
+
+    /**
+     * Returns the number of hosts currently in the membership set.
+     *
+     * @return the number of hosts in the membership set
+     */
+    public int getMembershipSize() {
+        return membershipService.getMembershipSize();
+    }
+
+    /**
+     * Returns the list of hosts currently in the membership set.
+     *
+     * @return list of hosts in the membership set
+     */
+    public Map<String, Metadata> getClusterMetadata() {
+        return membershipService.getMetadata();
+    }
+
+    /**
+     * Register callbacks for cluster events.
+     *
+     * @param event Cluster event to subscribe to
+     * @param callback Callback to be executed when {@code event} occurs.
+     */
+    public void registerSubscription(final ClusterEvents event,
+                                     final Consumer<List<NodeStatusChange>> callback) {
+        membershipService.registerSubscription(event, callback);
+    }
+
+    /**
+     * Shutdown the RpcServer
+     */
+    public void shutdown() {
+        LOG.debug("Shutting down RpcServer and MembershipService");
+        rpcServer.shutdown();
+        membershipService.shutdown();
+        sharedResources.shutdown();
+    }
+
     public static class Builder {
         private final HostAndPort listenAddress;
         @Nullable private ILinkFailureDetectorFactory linkFailureDetector = null;
@@ -101,7 +149,7 @@ public final class Cluster {
 
         // These fields are initialized at the beginning of start() and join()
         @Nullable private IMessagingClient messagingClient = null;
-        @Nullable private IMessagingServer rpcServer = null;
+        @Nullable private IMessagingServer messagingServer = null;
         @Nullable private SharedResources sharedResources = null;
 
         /**
@@ -158,6 +206,22 @@ public final class Cluster {
         }
 
         /**
+         * Supply the messaging client to use.
+         */
+        public Builder setMessagingClient(final IMessagingClient messagingClient) {
+            this.messagingClient = messagingClient;
+            return this;
+        }
+
+        /**
+         * Supply the messaging server to use.
+         */
+        public Builder setMessagingServer(final IMessagingServer messagingServer) {
+            this.messagingServer = messagingServer;
+            return this;
+        }
+
+        /**
          * This is used by tests to inject message drop interceptors at the RpcServer.
          */
         @Internal
@@ -183,9 +247,13 @@ public final class Cluster {
         public Cluster start() throws IOException {
             Objects.requireNonNull(listenAddress);
             sharedResources = new SharedResources(listenAddress);
-            rpcServer = new GrpcServer(listenAddress, sharedResources, serverInterceptors,
-                                       settings.getUseInProcessTransport());
-            messagingClient = new GrpcClient(listenAddress, Collections.emptyList(), sharedResources, settings);
+            messagingServer = messagingServer != null
+                            ? messagingServer
+                            : new GrpcServer(listenAddress, sharedResources, serverInterceptors,
+                                             settings.getUseInProcessTransport());
+            messagingClient = messagingClient != null
+                                ? messagingClient
+                                : new GrpcClient(listenAddress, clientInterceptors, sharedResources, settings);
             final NodeId currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
             final MembershipView membershipView = new MembershipView(K, Collections.singletonList(currentIdentifier),
                     Collections.singletonList(listenAddress));
@@ -200,9 +268,9 @@ public final class Cluster {
             final MembershipService membershipService = metadata.getMetadataCount() > 0
                     ? builder.setMetadata(Collections.singletonMap(listenAddress.toString(), metadata)).build()
                     : builder.build();
-            rpcServer.setMembershipService(membershipService);
-            rpcServer.start();
-            return new Cluster(rpcServer, membershipService, sharedResources, listenAddress);
+            messagingServer.setMembershipService(membershipService);
+            messagingServer.start();
+            return new Cluster(messagingServer, membershipService, sharedResources, listenAddress);
         }
 
 
@@ -215,10 +283,14 @@ public final class Cluster {
         public Cluster join(final HostAndPort seedAddress) throws IOException, InterruptedException {
             NodeId currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
             sharedResources = new SharedResources(listenAddress);
-            rpcServer = new GrpcServer(listenAddress, sharedResources, serverInterceptors,
-                                       settings.getUseInProcessTransport());
-            messagingClient = new GrpcClient(listenAddress, clientInterceptors, sharedResources, settings);
-            rpcServer.start();
+            messagingServer = messagingServer != null
+                    ? messagingServer
+                    : new GrpcServer(listenAddress, sharedResources, serverInterceptors,
+                                     settings.getUseInProcessTransport());
+            messagingClient = messagingClient != null
+                    ? messagingClient
+                    : new GrpcClient(listenAddress, clientInterceptors, sharedResources, settings);
+            messagingServer.start();
             for (int attempt = 0; attempt < RETRIES; attempt++) {
                 try {
                     return joinAttempt(seedAddress, currentIdentifier, attempt);
@@ -245,7 +317,7 @@ public final class Cluster {
                     }
                 }
             }
-            rpcServer.shutdown();
+            messagingServer.shutdown();
             messagingClient.shutdown();
             sharedResources.shutdown();
             throw new JoinException("Join attempt unsuccessful " + listenAddress);
@@ -345,7 +417,7 @@ public final class Cluster {
          * We have a valid JoinPhase2Response. Use the retrieved configuration to construct and return a Cluster object.
          */
         private Cluster createClusterFromJoinResponse(final JoinResponse response) {
-            assert messagingClient != null && rpcServer != null && sharedResources != null;
+            assert messagingClient != null && messagingServer != null && sharedResources != null;
             // Safe to proceed. Extract the list of hosts and identifiers from the message,
             // assemble a MembershipService object and start an RpcServer.
             final List<HostAndPort> allHosts = response.getHostsList().stream()
@@ -371,64 +443,17 @@ public final class Cluster {
                                          .setMetadata(allMetadata)
                                          .setSubscriptions(subscriptions)
                                          .build();
-            rpcServer.setMembershipService(membershipService);
+            messagingServer.setMembershipService(membershipService);
             if (LOG.isTraceEnabled()) {
                 LOG.trace("{} has monitors {}", listenAddress,
                         membershipViewFinal.getMonitorsOf(listenAddress));
                 LOG.trace("{} has monitorees {}", listenAddress,
                         membershipViewFinal.getMonitorsOf(listenAddress));
             }
-            return new Cluster(rpcServer, membershipService, sharedResources, listenAddress);
+            return new Cluster(messagingServer, membershipService, sharedResources, listenAddress);
         }
     }
 
-    /**
-     * Returns the list of hosts currently in the membership set.
-     *
-     * @return list of hosts in the membership set
-     */
-    public List<HostAndPort> getMemberlist() {
-        return membershipService.getMembershipView();
-    }
-
-    /**
-     * Returns the number of hosts currently in the membership set.
-     *
-     * @return the number of hosts in the membership set
-     */
-    public int getMembershipSize() {
-        return membershipService.getMembershipSize();
-    }
-
-    /**
-     * Returns the list of hosts currently in the membership set.
-     *
-     * @return list of hosts in the membership set
-     */
-    public Map<String, Metadata> getClusterMetadata() {
-        return membershipService.getMetadata();
-    }
-
-    /**
-     * Register callbacks for cluster events.
-     *
-     * @param event Cluster event to subscribe to
-     * @param callback Callback to be executed when {@code event} occurs.
-     */
-    public void registerSubscription(final ClusterEvents event,
-                                     final Consumer<List<NodeStatusChange>> callback) {
-        membershipService.registerSubscription(event, callback);
-    }
-
-    /**
-     * Shutdown the RpcServer
-     */
-    public void shutdown() {
-        LOG.debug("Shutting down RpcServer and MembershipService");
-        rpcServer.shutdown();
-        membershipService.shutdown();
-        sharedResources.shutdown();
-    }
 
     @Override
     public String toString() {
