@@ -123,6 +123,7 @@ public final class GrpcServer extends MembershipServiceGrpc.MembershipServiceImp
     public void receiveJoinPhase2Message(final JoinMessage joinMessage,
                                          final StreamObserver<JoinResponse> responseObserver) {
         protocolExecutor.execute(() -> {
+            assert membershipService != null;
             final ListenableFuture<JoinResponse> result =
                     membershipService.handleMessage(joinMessage);
             Futures.addCallback(result, new JoinResponseCallback(responseObserver), grpcExecutor);
@@ -178,12 +179,8 @@ public final class GrpcServer extends MembershipServiceGrpc.MembershipServiceImp
     public void shutdown() {
         assert server != null;
         try {
-            if (membershipService != null) {
-                membershipService.shutdown();
-            }
             server.shutdown();
             server.awaitTermination(0, TimeUnit.SECONDS);
-            protocolExecutor.shutdownNow();
         } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
         }

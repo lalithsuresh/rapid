@@ -539,7 +539,7 @@ public final class MembershipService {
     /**
      * Shuts down all the executors.
      */
-    public void shutdown() {
+    void shutdown() {
         linkUpdateBatcherJob.cancel(true);
         failureDetectorJobs.forEach(k -> k.cancel(true));
         messagingClient.shutdown();
