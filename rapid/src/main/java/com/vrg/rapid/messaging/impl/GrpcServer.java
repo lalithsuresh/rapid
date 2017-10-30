@@ -62,7 +62,6 @@ public final class GrpcServer extends MembershipServiceGrpc.MembershipServiceImp
     private final HostAndPort address;
     @Nullable private MembershipService membershipService;
     @Nullable private Server server;
-    private final ExecutorService protocolExecutor;
     private final List<ServerInterceptor> interceptors;
     private final boolean useInProcessServer;
 
@@ -73,11 +72,33 @@ public final class GrpcServer extends MembershipServiceGrpc.MembershipServiceImp
     public GrpcServer(final HostAndPort address, final SharedResources sharedResources,
                       final List<ServerInterceptor> interceptors, final boolean useInProcessTransport) {
         this.address = address;
-        this.protocolExecutor = sharedResources.getProtocolExecutor();
         this.grpcExecutor = sharedResources.getServerExecutor();
         this.eventLoopGroup = useInProcessTransport ? null : sharedResources.getEventLoopGroup();
         this.useInProcessServer = useInProcessTransport;
         this.interceptors = interceptors;
+    }
+
+
+    /**
+     * Defined in rapid.proto.
+     */
+    @Override
+    public void receivePreJoinMessage(final PreJoinMessage joinMessage,
+                                      final StreamObserver<JoinResponse> responseObserver) {
+        assert membershipService != null;
+        final ListenableFuture<JoinResponse> result = membershipService.handleMessage(joinMessage);
+        Futures.addCallback(result, new JoinResponseCallback(responseObserver), grpcExecutor);
+    }
+
+    /**
+     * Defined in rapid.proto.
+     */
+    @Override
+    public void receiveJoinPhase2Message(final JoinMessage joinMessage,
+                                         final StreamObserver<JoinResponse> responseObserver) {
+        assert membershipService != null;
+        final ListenableFuture<JoinResponse> result = membershipService.handleMessage(joinMessage);
+        Futures.addCallback(result, new JoinResponseCallback(responseObserver), grpcExecutor);
     }
 
     /**
@@ -87,7 +108,7 @@ public final class GrpcServer extends MembershipServiceGrpc.MembershipServiceImp
     public void receiveLinkUpdateMessage(final BatchedLinkUpdateMessage request,
                                          final StreamObserver<Response> responseObserver) {
         assert membershipService != null;
-        protocolExecutor.execute(() -> membershipService.handleMessage(request));
+        Futures.addCallback(membershipService.handleMessage(request), new VoidResponseCallback(), grpcExecutor);
         responseObserver.onNext(Response.getDefaultInstance());
         responseObserver.onCompleted();
     }
@@ -99,36 +120,9 @@ public final class GrpcServer extends MembershipServiceGrpc.MembershipServiceImp
     public void receiveConsensusProposal(final ConsensusProposal request,
                                          final StreamObserver<ConsensusProposalResponse> responseObserver) {
         assert membershipService != null;
-        protocolExecutor.execute(() -> membershipService.handleMessage(request));
+        Futures.addCallback(membershipService.handleMessage(request), new VoidResponseCallback(), grpcExecutor);
         responseObserver.onNext(ConsensusProposalResponse.getDefaultInstance());
         responseObserver.onCompleted();
-    }
-
-    /**
-     * Defined in rapid.proto.
-     */
-    @Override
-    public void receivePreJoinMessage(final PreJoinMessage joinMessage,
-                                   final StreamObserver<JoinResponse> responseObserver) {
-        assert membershipService != null;
-        protocolExecutor.execute(() -> {
-            final ListenableFuture<JoinResponse> result = membershipService.handleMessage(joinMessage);
-            Futures.addCallback(result, new JoinResponseCallback(responseObserver), grpcExecutor);
-        });
-    }
-
-    /**
-     * Defined in rapid.proto.
-     */
-    @Override
-    public void receiveJoinPhase2Message(final JoinMessage joinMessage,
-                                         final StreamObserver<JoinResponse> responseObserver) {
-        protocolExecutor.execute(() -> {
-            assert membershipService != null;
-            final ListenableFuture<JoinResponse> result =
-                    membershipService.handleMessage(joinMessage);
-            Futures.addCallback(result, new JoinResponseCallback(responseObserver), grpcExecutor);
-        });
     }
 
     /**
@@ -138,10 +132,8 @@ public final class GrpcServer extends MembershipServiceGrpc.MembershipServiceImp
     public void receiveProbe(final ProbeMessage probeMessage,
                              final StreamObserver<ProbeResponse> probeResponseObserver) {
         if (membershipService != null) {
-            protocolExecutor.execute(() -> {
-                final ListenableFuture<ProbeResponse> result = membershipService.handleMessage(probeMessage);
-                Futures.addCallback(result, new ProbeResponseCallback(probeResponseObserver), grpcExecutor);
-            });
+            final ListenableFuture<ProbeResponse> result = membershipService.handleMessage(probeMessage);
+            Futures.addCallback(result, new ProbeResponseCallback(probeResponseObserver), grpcExecutor);
         }
         else {
             /*
@@ -253,6 +245,17 @@ public final class GrpcServer extends MembershipServiceGrpc.MembershipServiceImp
         public void onSuccess(@Nullable final ProbeResponse response) {
             responseObserver.onNext(response);
             responseObserver.onCompleted();
+        }
+
+        @Override
+        public void onFailure(final Throwable throwable) {
+            throwable.printStackTrace();
+        }
+    }
+
+    private static class VoidResponseCallback implements FutureCallback<Void> {
+        @Override
+        public void onSuccess(@Nullable final Void response) {
         }
 
         @Override

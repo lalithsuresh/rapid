@@ -61,10 +61,10 @@ public class MembershipServiceTest {
                 getProposal(currentId, Collections.singletonList(proposalNode));
 
         for (int i = 0; i < quorum - 1; i++) {
-            service.handleMessage(proposal.setSender(addrForBase(i).toString()).build());
+            service.handleMessage(proposal.setSender(addrForBase(i).toString()).build()).get();
             assertEquals(N, service.getMembershipSize());
         }
-        service.handleMessage(proposal.setSender(addrForBase(quorum - 1).toString()).build());
+        service.handleMessage(proposal.setSender(addrForBase(quorum - 1).toString()).build()).get();
         assertEquals(N - 1, service.getMembershipSize());
     }
 
@@ -100,16 +100,16 @@ public class MembershipServiceTest {
         final ConsensusProposal.Builder proposalConflict =
                 getProposal(currentId, Collections.singletonList(proposalNodeConflict));
         for (int i = 0; i < numConflicts; i++) {
-            service.handleMessage(proposalConflict.setSender(addrForBase(i).toString()).build());
+            service.handleMessage(proposalConflict.setSender(addrForBase(i).toString()).build()).get();
             assertEquals(N, service.getMembershipSize());
         }
         final int nonConflictCount = Math.min(numConflicts + quorum - 1, N - 1);
         for (int i = numConflicts; i < nonConflictCount; i++) {
-            service.handleMessage(proposal.setSender(addrForBase(i).toString()).build());
+            service.handleMessage(proposal.setSender(addrForBase(i).toString()).build()).get();
             assertEquals(N, service.getMembershipSize());
         }
         service.handleMessage(proposal.setSender(addrForBase(nonConflictCount)
-                                                 .toString()).build());
+                                                 .toString()).build()).get();
         assertEquals(changeExpected ? N - 1 : N, service.getMembershipSize());
     }
 

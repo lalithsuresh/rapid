@@ -32,7 +32,6 @@ import com.vrg.rapid.pb.NodeId;
 import com.vrg.rapid.pb.PreJoinMessage;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
-import io.grpc.StatusRuntimeException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -162,24 +161,29 @@ public final class MembershipService {
      * for the joiner, who then moves on to phase 2 of the protocol with its monitors.
      */
     public ListenableFuture<JoinResponse> handleMessage(final PreJoinMessage msg) {
-        final HostAndPort joiningHost = HostAndPort.fromString(msg.getSender());
-        final JoinStatusCode statusCode = membershipView.isSafeToJoin(joiningHost, msg.getNodeId());
-        final JoinResponse.Builder builder = JoinResponse.newBuilder()
-                .setSender(this.myAddr.toString())
-                .setConfigurationId(membershipView.getCurrentConfigurationId())
-                .setStatusCode(statusCode);
-        LOG.trace("Join at seed for {seed:{}, sender:{}, config:{}, size:{}}",
-                myAddr, msg.getSender(),
-                membershipView.getCurrentConfigurationId(), membershipView.getMembershipSize());
-        if (statusCode.equals(JoinStatusCode.SAFE_TO_JOIN)
-                || statusCode.equals(JoinStatusCode.HOSTNAME_ALREADY_IN_RING)) {
-            // Return a list of monitors for the joiner to contact for phase 2 of the protocol
-            builder.addAllHosts(membershipView.getExpectedMonitorsOf(joiningHost)
-                   .stream()
-                   .map(HostAndPort::toString)
-                   .collect(Collectors.toList()));
-        }
-        return Futures.immediateFuture(builder.build());
+        final SettableFuture<JoinResponse> future = SettableFuture.create();
+
+        sharedResources.getProtocolExecutor().execute(() -> {
+            final HostAndPort joiningHost = HostAndPort.fromString(msg.getSender());
+            final JoinStatusCode statusCode = membershipView.isSafeToJoin(joiningHost, msg.getNodeId());
+            final JoinResponse.Builder builder = JoinResponse.newBuilder()
+                    .setSender(this.myAddr.toString())
+                    .setConfigurationId(membershipView.getCurrentConfigurationId())
+                    .setStatusCode(statusCode);
+            LOG.trace("Join at seed for {seed:{}, sender:{}, config:{}, size:{}}",
+                    myAddr, msg.getSender(),
+                    membershipView.getCurrentConfigurationId(), membershipView.getMembershipSize());
+            if (statusCode.equals(JoinStatusCode.SAFE_TO_JOIN)
+                    || statusCode.equals(JoinStatusCode.HOSTNAME_ALREADY_IN_RING)) {
+                // Return a list of monitors for the joiner to contact for phase 2 of the protocol
+                builder.addAllHosts(membershipView.getExpectedMonitorsOf(joiningHost)
+                        .stream()
+                        .map(HostAndPort::toString)
+                        .collect(Collectors.toList()));
+            }
+            future.set(builder.build());
+        });
+        return future;
     }
 
     /**
@@ -189,60 +193,63 @@ public final class MembershipService {
      * is now a part of.
      */
     public ListenableFuture<JoinResponse> handleMessage(final JoinMessage joinMessage) {
-        final long currentConfiguration = membershipView.getCurrentConfigurationId();
-        if (currentConfiguration == joinMessage.getConfigurationId()) {
-            LOG.trace("Enqueuing SAFE_TO_JOIN for {sender:{}, monitor:{}, config:{}, size:{}}",
-                    joinMessage.getSender(), myAddr,
-                    currentConfiguration, membershipView.getMembershipSize());
+        final SettableFuture<JoinResponse> future = SettableFuture.create();
 
-            final SettableFuture<JoinResponse> settableFuture = SettableFuture.create();
-            joinersToRespondTo.computeIfAbsent(HostAndPort.fromString(joinMessage.getSender()),
-                    k -> new LinkedBlockingDeque<>()).add(settableFuture);
+        sharedResources.getProtocolExecutor().execute(() -> {
+            final long currentConfiguration = membershipView.getCurrentConfigurationId();
+            if (currentConfiguration == joinMessage.getConfigurationId()) {
+                LOG.trace("Enqueuing SAFE_TO_JOIN for {sender:{}, monitor:{}, config:{}, size:{}}",
+                        joinMessage.getSender(), myAddr,
+                        currentConfiguration, membershipView.getMembershipSize());
 
-            final LinkUpdateMessage msg = LinkUpdateMessage.newBuilder()
-                    .setLinkSrc(this.myAddr.toString())
-                    .setLinkDst(joinMessage.getSender())
-                    .setLinkStatus(LinkStatus.UP)
-                    .setConfigurationId(currentConfiguration)
-                    .setNodeId(joinMessage.getNodeId())
-                    .addAllRingNumber(joinMessage.getRingNumberList())
-                    .setMetadata(joinMessage.getMetadata())
-                    .build();
-            enqueueLinkUpdateMessage(msg);
-            return settableFuture;
-        } else {
-            // This handles the corner case where the configuration changed between phase 1 and phase 2
-            // of the joining node's bootstrap. It should attempt to rejoin the network.
-            final MembershipView.Configuration configuration = membershipView.getConfiguration();
-            LOG.info("Wrong configuration for {sender:{}, monitor:{}, config:{}, myConfig:{}, size:{}}",
-                    joinMessage.getSender(), myAddr, joinMessage.getConfigurationId(),
-                    currentConfiguration, membershipView.getMembershipSize());
-            JoinResponse.Builder responseBuilder = JoinResponse.newBuilder()
-                    .setSender(this.myAddr.toString())
-                    .setConfigurationId(configuration.getConfigurationId());
-            if (membershipView.isHostPresent(HostAndPort.fromString(joinMessage.getSender()))
-                    && membershipView.isIdentifierPresent(joinMessage.getNodeId())) {
-                LOG.info("Host present, but requesting join: {sender:{}, monitor:{}, config:{}, myConfig:{}, size:{}}",
+                joinersToRespondTo.computeIfAbsent(HostAndPort.fromString(joinMessage.getSender()),
+                        k -> new LinkedBlockingDeque<>()).add(future);
+
+                final LinkUpdateMessage msg = LinkUpdateMessage.newBuilder()
+                        .setLinkSrc(this.myAddr.toString())
+                        .setLinkDst(joinMessage.getSender())
+                        .setLinkStatus(LinkStatus.UP)
+                        .setConfigurationId(currentConfiguration)
+                        .setNodeId(joinMessage.getNodeId())
+                        .addAllRingNumber(joinMessage.getRingNumberList())
+                        .setMetadata(joinMessage.getMetadata())
+                        .build();
+                enqueueLinkUpdateMessage(msg);
+            } else {
+                // This handles the corner case where the configuration changed between phase 1 and phase 2
+                // of the joining node's bootstrap. It should attempt to rejoin the network.
+                final MembershipView.Configuration configuration = membershipView.getConfiguration();
+                LOG.info("Wrong configuration for {sender:{}, monitor:{}, config:{}, myConfig:{}, size:{}}",
                         joinMessage.getSender(), myAddr, joinMessage.getConfigurationId(),
                         currentConfiguration, membershipView.getMembershipSize());
-                // Race condition where a monitor already crossed H messages for the joiner and changed
-                // the configuration, but the JoinPhase2 messages show up at the monitor
-                // after it has already added the joiner. In this case, we simply
-                // tell the sender that they're safe to join.
-                responseBuilder = responseBuilder.setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
-                        .addAllHosts(configuration.hostAndPorts
-                                .stream()
-                                .map(HostAndPort::toString)
-                                .collect(Collectors.toList()))
-                        .addAllIdentifiers(configuration.nodeIds);
-            } else {
-                responseBuilder = responseBuilder.setStatusCode(JoinStatusCode.CONFIG_CHANGED);
-                LOG.info("Returning CONFIG_CHANGED for {sender:{}, monitor:{}, config:{}, size:{}}",
-                        joinMessage.getSender(), myAddr,
-                        configuration.getConfigurationId(), configuration.hostAndPorts.size());
+                JoinResponse.Builder responseBuilder = JoinResponse.newBuilder()
+                        .setSender(this.myAddr.toString())
+                        .setConfigurationId(configuration.getConfigurationId());
+                if (membershipView.isHostPresent(HostAndPort.fromString(joinMessage.getSender()))
+                        && membershipView.isIdentifierPresent(joinMessage.getNodeId())) {
+                    LOG.info("Joining host already present : {sender:{}, monitor:{}, config:{}, myConfig:{}, size:{}}",
+                            joinMessage.getSender(), myAddr, joinMessage.getConfigurationId(),
+                            currentConfiguration, membershipView.getMembershipSize());
+                    // Race condition where a monitor already crossed H messages for the joiner and changed
+                    // the configuration, but the JoinPhase2 messages show up at the monitor
+                    // after it has already added the joiner. In this case, we simply
+                    // tell the sender that they're safe to join.
+                    responseBuilder = responseBuilder.setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
+                            .addAllHosts(configuration.hostAndPorts
+                                    .stream()
+                                    .map(HostAndPort::toString)
+                                    .collect(Collectors.toList()))
+                            .addAllIdentifiers(configuration.nodeIds);
+                } else {
+                    responseBuilder = responseBuilder.setStatusCode(JoinStatusCode.CONFIG_CHANGED);
+                    LOG.info("Returning CONFIG_CHANGED for {sender:{}, monitor:{}, config:{}, size:{}}",
+                            joinMessage.getSender(), myAddr,
+                            configuration.getConfigurationId(), configuration.hostAndPorts.size());
+                }
+                future.set(responseBuilder.build()); // new configuration
             }
-            return Futures.immediateFuture(responseBuilder.build()); // new configuration
-        }
+        });
+        return future;
     }
 
 
@@ -254,49 +261,55 @@ public final class MembershipService {
      * Link update messages that do not affect an ongoing proposal
      * needs to be dropped.
      */
-    public void handleMessage(final BatchedLinkUpdateMessage messageBatch) {
+    public ListenableFuture<Void> handleMessage(final BatchedLinkUpdateMessage messageBatch) {
         Objects.requireNonNull(messageBatch);
+        final SettableFuture<Void> future = SettableFuture.create();
 
-        // We already have a proposal for this round => we have initiated consensus and cannot go back on our proposal.
-        if (announcedProposal) {
-            return;
-        }
-        final long currentConfigurationId = membershipView.getCurrentConfigurationId();
-        final int membershipSize = membershipView.getMembershipSize();
-        final Set<HostAndPort> proposal = messageBatch.getMessagesList().stream()
-                // First, we filter out invalid messages that violate membership invariants.
-                .filter(msg -> filterLinkUpdateMessages(messageBatch, msg, membershipSize, currentConfigurationId))
-                // We then apply all the valid messages into our condition detector to obtain a view change proposal
-                .map(watermarkBuffer::aggregateForProposal)
-                .flatMap(List::stream)
-                .collect(Collectors.toSet());
-
-        // Lastly, we apply implicit detections
-        proposal.addAll(watermarkBuffer.invalidateFailingLinks(membershipView));
-
-        // If we have a proposal for this stage, start an instance of consensus on it.
-        if (!proposal.isEmpty()) {
-            LOG.info("Node {} has a proposal of size {}: {}", myAddr, proposal.size(), proposal);
-            announcedProposal = true;
-
-            if (subscriptions.containsKey(ClusterEvents.VIEW_CHANGE_PROPOSAL)) {
-                final List<NodeStatusChange> result = createNodeStatusChangeList(proposal);
-                // Inform subscribers that a proposal has been announced.
-                subscriptions.get(ClusterEvents.VIEW_CHANGE_PROPOSAL).forEach(cb -> cb.accept(currentConfigurationId,
-                                                                                              result));
+        sharedResources.getProtocolExecutor().execute(() -> {
+            // We already have a proposal for this round
+            // => we have initiated consensus and cannot go back on our proposal.
+            if (announcedProposal) {
+                future.set(null);
             }
+            final long currentConfigurationId = membershipView.getCurrentConfigurationId();
+            final int membershipSize = membershipView.getMembershipSize();
+            final Set<HostAndPort> proposal = messageBatch.getMessagesList().stream()
+                    // First, we filter out invalid messages that violate membership invariants.
+                    .filter(msg -> filterLinkUpdateMessages(messageBatch, msg, membershipSize, currentConfigurationId))
+                    // We then apply all the valid messages into our condition detector to obtain a view change proposal
+                    .map(watermarkBuffer::aggregateForProposal)
+                    .flatMap(List::stream)
+                    .collect(Collectors.toSet());
 
-            final ConsensusProposal proposalMessage = ConsensusProposal.newBuilder()
-                    .setConfigurationId(currentConfigurationId)
-                    .addAllHosts(proposal
-                            .stream()
-                            .map(HostAndPort::toString)
-                            .sorted()
-                            .collect(Collectors.toList()))
-                    .setSender(myAddr.toString())
-                    .build();
-            broadcaster.broadcast(proposalMessage);
-        }
+            // Lastly, we apply implicit detections
+            proposal.addAll(watermarkBuffer.invalidateFailingLinks(membershipView));
+
+            // If we have a proposal for this stage, start an instance of consensus on it.
+            if (!proposal.isEmpty()) {
+                LOG.info("Node {} has a proposal of size {}: {}", myAddr, proposal.size(), proposal);
+                announcedProposal = true;
+
+                if (subscriptions.containsKey(ClusterEvents.VIEW_CHANGE_PROPOSAL)) {
+                    final List<NodeStatusChange> result = createNodeStatusChangeList(proposal);
+                    // Inform subscribers that a proposal has been announced.
+                    subscriptions.get(ClusterEvents.VIEW_CHANGE_PROPOSAL)
+                                 .forEach(cb -> cb.accept(currentConfigurationId, result));
+                }
+
+                final ConsensusProposal proposalMessage = ConsensusProposal.newBuilder()
+                        .setConfigurationId(currentConfigurationId)
+                        .addAllHosts(proposal
+                                .stream()
+                                .map(HostAndPort::toString)
+                                .sorted()
+                                .collect(Collectors.toList()))
+                        .setSender(myAddr.toString())
+                        .build();
+                broadcaster.broadcast(proposalMessage);
+            }
+            future.set(null);
+        });
+        return future;
     }
 
 
@@ -306,49 +319,53 @@ public final class MembershipService {
      * XXX: Implement recovery for the extremely rare possibility of conflicting proposals.
      *
      */
-    public void handleMessage(final ConsensusProposal proposalMessage) {
-        final long currentConfigurationId = membershipView.getCurrentConfigurationId();
-        final long membershipSize = membershipView.getMembershipSize();
+    public ListenableFuture<Void> handleMessage(final ConsensusProposal proposalMessage) {
+        final SettableFuture<Void> future = SettableFuture.create();
+        sharedResources.getProtocolExecutor().execute(() -> {
+            final long currentConfigurationId = membershipView.getCurrentConfigurationId();
+            final long membershipSize = membershipView.getMembershipSize();
 
-        if (proposalMessage.getConfigurationId() != currentConfigurationId) {
-            LOG.trace("Settings ID mismatch for proposal: current_config:{} proposal:{}", currentConfigurationId,
-                      proposalMessage);
-            return;
-        }
-
-        if (votesReceived.contains(proposalMessage.getSender())) {
-            return;
-        }
-        votesReceived.add(proposalMessage.getSender());
-        final AtomicInteger proposalsReceived = votesPerProposal.computeIfAbsent(proposalMessage.getHostsList(),
-                                                                            k -> new AtomicInteger(0));
-        final int count = proposalsReceived.incrementAndGet();
-        final int F = (int) Math.floor((membershipSize - 1) / 4.0); // Fast Paxos resiliency.
-        if (votesReceived.size() >= membershipSize - F) {
-            if (count >= membershipSize - F) {
-                LOG.trace("{} has decided on a view change: {}", myAddr, proposalMessage.getHostsList());
-                // We have a successful proposal. Consume it.
-                decideViewChange(proposalMessage.getHostsList()
-                                                .stream()
-                                                .map(HostAndPort::fromString)
-                                                .collect(Collectors.toList()));
+            if (proposalMessage.getConfigurationId() != currentConfigurationId) {
+                LOG.trace("Settings ID mismatch for proposal: current_config:{} proposal:{}", currentConfigurationId,
+                        proposalMessage);
+                future.set(null);
             }
-            else {
-                // Extremely rare scenario. Complain to the application.
-                List<String> proposalWithMostVotes = Collections.emptyList();
-                int min = Integer.MIN_VALUE;
-                for (final Map.Entry<List<String>, AtomicInteger> entry: votesPerProposal.entrySet()) {
-                    if (entry.getValue().get() > min) {
-                        proposalWithMostVotes = entry.getKey();
-                        min = entry.getValue().get();
+
+            if (votesReceived.contains(proposalMessage.getSender())) {
+                future.set(null);
+            }
+            votesReceived.add(proposalMessage.getSender());
+            final AtomicInteger proposalsReceived = votesPerProposal.computeIfAbsent(proposalMessage.getHostsList(),
+                    k -> new AtomicInteger(0));
+            final int count = proposalsReceived.incrementAndGet();
+            final int F = (int) Math.floor((membershipSize - 1) / 4.0); // Fast Paxos resiliency.
+            if (votesReceived.size() >= membershipSize - F) {
+                if (count >= membershipSize - F) {
+                    LOG.trace("{} has decided on a view change: {}", myAddr, proposalMessage.getHostsList());
+                    // We have a successful proposal. Consume it.
+                    decideViewChange(proposalMessage.getHostsList()
+                            .stream()
+                            .map(HostAndPort::fromString)
+                            .collect(Collectors.toList()));
+                } else {
+                    // Extremely rare scenario. Complain to the application.
+                    List<String> proposalWithMostVotes = Collections.emptyList();
+                    int min = Integer.MIN_VALUE;
+                    for (final Map.Entry<List<String>, AtomicInteger> entry : votesPerProposal.entrySet()) {
+                        if (entry.getValue().get() > min) {
+                            proposalWithMostVotes = entry.getKey();
+                            min = entry.getValue().get();
+                        }
                     }
+                    final Set<HostAndPort> toSet = proposalWithMostVotes.stream()
+                            .map(HostAndPort::fromString).collect(Collectors.toSet());
+                    subscriptions.get(ClusterEvents.VIEW_CHANGE_ONE_STEP_FAILED)
+                            .forEach(cb -> cb.accept(currentConfigurationId, createNodeStatusChangeList(toSet)));
                 }
-                final Set<HostAndPort> toSet = proposalWithMostVotes.stream()
-                                                    .map(HostAndPort::fromString).collect(Collectors.toSet());
-                subscriptions.get(ClusterEvents.VIEW_CHANGE_ONE_STEP_FAILED)
-                        .forEach(cb -> cb.accept(currentConfigurationId, createNodeStatusChangeList(toSet)));
             }
-        }
+            future.set(null);
+        });
+        return future;
     }
 
 
@@ -441,28 +458,27 @@ public final class MembershipService {
      */
     private void linkFailureNotification(final HostAndPort monitoree, final long configurationId) {
         sharedResources.getProtocolExecutor().execute(() -> {
-                if (configurationId != membershipView.getCurrentConfigurationId()) {
-                    LOG.info("Ignoring failure notification from old configuration" +
-                                    " {monitoree:{}, monitor:{}, config:{}, oldConfiguration:{}}",
-                            monitoree, myAddr, membershipView.getCurrentConfigurationId(), configurationId);
-                    return;
-                }
-                if (LOG.isDebugEnabled()) {
-                    final int size = membershipView.getMembershipSize();
-                    LOG.debug("Announcing LinkFail event {monitoree:{}, monitor:{}, config:{}, size:{}}",
-                            monitoree, myAddr, configurationId, size);
-                }
-                // Note: setUuid is deliberately missing here because it does not affect leaves.
-                final LinkUpdateMessage msg = LinkUpdateMessage.newBuilder()
-                        .setLinkSrc(myAddr.toString())
-                        .setLinkDst(monitoree.toString())
-                        .setLinkStatus(LinkStatus.DOWN)
-                        .addAllRingNumber(membershipView.getRingNumbers(myAddr, monitoree))
-                        .setConfigurationId(configurationId)
-                        .build();
-                enqueueLinkUpdateMessage(msg);
+            if (configurationId != membershipView.getCurrentConfigurationId()) {
+                LOG.info("Ignoring failure notification from old configuration" +
+                                " {monitoree:{}, monitor:{}, config:{}, oldConfiguration:{}}",
+                        monitoree, myAddr, membershipView.getCurrentConfigurationId(), configurationId);
+                return;
             }
-        );
+            if (LOG.isDebugEnabled()) {
+                final int size = membershipView.getMembershipSize();
+                LOG.debug("Announcing LinkFail event {monitoree:{}, monitor:{}, config:{}, size:{}}",
+                        monitoree, myAddr, configurationId, size);
+            }
+            // Note: setUuid is deliberately missing here because it does not affect leaves.
+            final LinkUpdateMessage msg = LinkUpdateMessage.newBuilder()
+                    .setLinkSrc(myAddr.toString())
+                    .setLinkDst(monitoree.toString())
+                    .setLinkStatus(LinkStatus.DOWN)
+                    .addAllRingNumber(membershipView.getRingNumbers(myAddr, monitoree))
+                    .setConfigurationId(configurationId)
+                    .build();
+            enqueueLinkUpdateMessage(msg);
+        });
     }
 
 
@@ -679,17 +695,8 @@ public final class MembershipService {
         for (final HostAndPort node: proposal) {
             if (joinersToRespondTo.containsKey(node)) {
                 backgroundTasksExecutor.execute(
-                        () -> {
-                            joinersToRespondTo.get(node).forEach(settableFuture -> {
-                                try {
-                                    settableFuture.set(response);
-                                } catch (final StatusRuntimeException e) {
-                                    LOG.warn("{} got a StatusRuntimeException {}", myAddr, e.getLocalizedMessage());
-                                    settableFuture.setException(e);
-                                }
-                            });
-                            joinersToRespondTo.remove(node);
-                        }
+                    () -> joinersToRespondTo.remove(node)
+                                            .forEach(settableFuture -> settableFuture.set(response))
                 );
             }
         }

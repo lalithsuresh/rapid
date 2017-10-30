@@ -178,7 +178,7 @@ public class ClusterTest {
      * This test starts with a single seed, and a wave where 50 subsequent nodes initiate their join protocol
      * concurrently. Following this, a subsequent wave begins where 100 nodes then start together.
      */
-    @Test(timeout = 150000)
+    @Test(timeout = 30000)
     public void fiftyNodesJoinTwentyNodeCluster() throws IOException, InterruptedException {
         final int numNodesPhase1 = 20;
         final int numNodesPhase2 = 50;
@@ -244,7 +244,6 @@ public class ClusterTest {
             final List<HostAndPort> keysAsArray = new ArrayList<>(instances.keySet());
             extendCluster(2, keysAsArray.get(r.nextInt(instances.size())));
         }
-        Thread.sleep(100);
         for (int i = 0; i < phaseTwojoiners; i++) {
             extendCluster(1, seedHost);
         }
@@ -706,6 +705,7 @@ public class ClusterTest {
             final ByteString byteString = ByteString.copyFrom(host.toString(), Charset.defaultCharset());
             builder = builder.setMetadata(Collections.singletonMap("Key", byteString));
         }
+
         return builder;
     }
 
@@ -732,7 +732,7 @@ public class ClusterTest {
 
     // This speeds up failure detection when using the PingPongFailureDetector
     private void useFastFailureDetectionTimeouts() {
-        settings.setGrpcProbeTimeoutMs(200);
-        settings.setFailureDetectorIntervalInMs(200);
+        settings.setGrpcProbeTimeoutMs(10);
+        settings.setFailureDetectorIntervalInMs(50);
     }
 }
