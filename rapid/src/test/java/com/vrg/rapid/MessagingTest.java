@@ -14,11 +14,12 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
+import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
-import com.vrg.rapid.messaging.impl.GrpcClient;
-import com.vrg.rapid.messaging.impl.GrpcServer;
 import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.messaging.IMessagingServer;
+import com.vrg.rapid.messaging.impl.GrpcClient;
+import com.vrg.rapid.messaging.impl.GrpcServer;
 import com.vrg.rapid.monitoring.impl.PingPongFailureDetector;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
@@ -40,8 +41,10 @@ import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
@@ -182,6 +185,88 @@ public class MessagingTest {
     }
 
     /**
+     * A node in a cluster gets a join request from a peer that is already part of the membership.
+     * If the joiner is in the current configuration, it should get back the full configuration.
+     */
+    @Test
+    public void joinWithMultipleNodesCheckRace()
+            throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException, ExecutionException {
+        // Initialize 10 node cluster
+        final int numNodes = 10;
+        final HostAndPort serverAddr = HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE);
+        for (int i = 0; i < numNodes; i++) {
+            final MembershipView mview = new MembershipView(K);
+            for (int j = 0; j < numNodes; j++) {
+                mview.ringAdd(HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE + j),
+                        Utils.nodeIdFromUUID(new UUID(0, j)));
+            }
+            createAndStartMembershipService(HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE + i),
+                    new ArrayList<>(), mview);
+        }
+
+        // Join protocol starts here
+        final int clientPort = SERVER_PORT_BASE - 1;
+        final HostAndPort joinerAddr = HostAndPort.fromParts(LOCALHOST_IP, clientPort);
+        final GrpcClient joinerClient = new GrpcClient(joinerAddr);
+        final NodeId uuid = Utils.nodeIdFromUUID(UUID.randomUUID());
+        final JoinResponse phaseOneResult = sendPreJoinMessage(joinerClient, serverAddr, joinerAddr, uuid);
+
+        assertNotNull(phaseOneResult);
+        assertEquals(JoinStatusCode.SAFE_TO_JOIN, phaseOneResult.getStatusCode());
+        assertEquals(K, phaseOneResult.getHostsCount()); // this is the monitor list
+
+        // Verify that the monitors retrieved from the seed are the same
+        final List<HostAndPort> hostsAtClient = phaseOneResult.getHostsList().stream()
+                .map(HostAndPort::fromString)
+                .collect(Collectors.toList());
+        final Map<HostAndPort, List<Integer>> ringNumbersPerMonitor = new HashMap<>(K);
+
+        // Batch together requests to the same node.
+        int ringNumber = 0;
+        for (final HostAndPort monitor: hostsAtClient) {
+            ringNumbersPerMonitor.computeIfAbsent(monitor, k -> new ArrayList<>()).add(ringNumber);
+            ringNumber++;
+        }
+
+        // Try #1: successfully join here.
+        final List<ListenableFuture<JoinResponse>> responseFutures = new ArrayList<>();
+        for (final Map.Entry<HostAndPort, List<Integer>> entry: ringNumbersPerMonitor.entrySet()) {
+            final JoinMessage msg = JoinMessage.newBuilder()
+                    .setSender(joinerAddr.toString())
+                    .setNodeId(uuid)
+                    .setConfigurationId(phaseOneResult.getConfigurationId())
+                    .addAllRingNumber(entry.getValue()).build();
+            final ListenableFuture<JoinResponse> call = joinerClient.sendMessage(entry.getKey(), msg);
+            responseFutures.add(call);
+        }
+        final List<JoinResponse> joinResponses = Futures.successfulAsList(responseFutures).get();
+        assertEquals(ringNumbersPerMonitor.size(), joinResponses.size());
+
+        for (final JoinResponse response: joinResponses) {
+            assertEquals(JoinStatusCode.SAFE_TO_JOIN, response.getStatusCode());
+        }
+
+        // Try #2. Should get back the full configuration from all nodes.
+        final List<ListenableFuture<JoinResponse>> retryFutures = new ArrayList<>();
+        for (final Map.Entry<HostAndPort, List<Integer>> entry: ringNumbersPerMonitor.entrySet()) {
+            final JoinMessage msg = JoinMessage.newBuilder()
+                    .setSender(joinerAddr.toString())
+                    .setNodeId(uuid)
+                    .setConfigurationId(phaseOneResult.getConfigurationId())
+                    .addAllRingNumber(entry.getValue()).build();
+            final ListenableFuture<JoinResponse> call = joinerClient.sendMessage(entry.getKey(), msg);
+            retryFutures.add(call);
+        }
+        final List<JoinResponse> retriedJoinResponses = Futures.successfulAsList(retryFutures).get();
+        assertEquals(ringNumbersPerMonitor.size(), retriedJoinResponses.size());
+
+        for (final JoinResponse response: retriedJoinResponses) {
+            assertEquals(JoinStatusCode.SAFE_TO_JOIN, response.getStatusCode());
+            assertEquals(numNodes + 1, response.getHostsCount());
+        }
+    }
+
+    /**
      * Test bootstrap with a single node.
      */
     @Test
@@ -216,6 +301,7 @@ public class MessagingTest {
             assertEquals(iterJoiner.next(), iterSeed.next());
         }
     }
+
 
     /**
      * Test probing code path.
