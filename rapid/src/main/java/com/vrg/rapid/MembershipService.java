@@ -43,7 +43,6 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -53,7 +52,6 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiConsumer;
@@ -87,6 +85,9 @@ public final class MembershipService {
     // Event subscriptions
     private final Map<ClusterEvents, List<BiConsumer<Long, List<NodeStatusChange>>>> subscriptions;
 
+    //
+    private FastPaxos fastPaxosInstance;
+
     // Fields used by batching logic.
     @GuardedBy("batchSchedulerLock")
     private long lastEnqueueTimestamp = -1;    // Timestamp
@@ -102,8 +103,6 @@ public final class MembershipService {
     private final ILinkFailureDetectorFactory fdFactory;
 
     // Fields used by consensus protocol
-    private final Map<List<String>, AtomicInteger> votesPerProposal = new HashMap<>();
-    private final Set<String> votesReceived = new HashSet<>(); // Should be a bitset
     private boolean announcedProposal = false;
     private final Object membershipUpdateLock = new Object();
     private final ISettings settings;
@@ -147,6 +146,11 @@ public final class MembershipService {
         // this::linkFailureNotification is invoked by the failure detector whenever an edge
         // to a monitor is marked faulty.
         this.failureDetectorJobs = new ArrayList<>();
+
+        // Prepare consensus instance
+        this.fastPaxosInstance = new FastPaxos(myAddr, membershipView.getCurrentConfigurationId(),
+                                               membershipView.getMembershipSize(), this.broadcaster,
+                                               this::decideViewChange);
         createFailureDetectorsForCurrentConfiguration();
 
         // Execute all VIEW_CHANGE callbacks. This informs applications that a start/join has successfully completed.
@@ -295,17 +299,7 @@ public final class MembershipService {
                     subscriptions.get(ClusterEvents.VIEW_CHANGE_PROPOSAL)
                                  .forEach(cb -> cb.accept(currentConfigurationId, result));
                 }
-
-                final ConsensusProposal proposalMessage = ConsensusProposal.newBuilder()
-                        .setConfigurationId(currentConfigurationId)
-                        .addAllHosts(proposal
-                                .stream()
-                                .map(HostAndPort::toString)
-                                .sorted()
-                                .collect(Collectors.toList()))
-                        .setSender(myAddr.toString())
-                        .build();
-                broadcaster.broadcast(proposalMessage);
+                fastPaxosInstance.propose(new ArrayList<>(proposal));
             }
             future.set(null);
         });
@@ -322,47 +316,7 @@ public final class MembershipService {
     public ListenableFuture<Void> handleMessage(final ConsensusProposal proposalMessage) {
         final SettableFuture<Void> future = SettableFuture.create();
         sharedResources.getProtocolExecutor().execute(() -> {
-            final long currentConfigurationId = membershipView.getCurrentConfigurationId();
-            final long membershipSize = membershipView.getMembershipSize();
-
-            if (proposalMessage.getConfigurationId() != currentConfigurationId) {
-                LOG.trace("Settings ID mismatch for proposal: current_config:{} proposal:{}", currentConfigurationId,
-                        proposalMessage);
-                future.set(null);
-            }
-
-            if (votesReceived.contains(proposalMessage.getSender())) {
-                future.set(null);
-            }
-            votesReceived.add(proposalMessage.getSender());
-            final AtomicInteger proposalsReceived = votesPerProposal.computeIfAbsent(proposalMessage.getHostsList(),
-                    k -> new AtomicInteger(0));
-            final int count = proposalsReceived.incrementAndGet();
-            final int F = (int) Math.floor((membershipSize - 1) / 4.0); // Fast Paxos resiliency.
-            if (votesReceived.size() >= membershipSize - F) {
-                if (count >= membershipSize - F) {
-                    LOG.trace("{} has decided on a view change: {}", myAddr, proposalMessage.getHostsList());
-                    // We have a successful proposal. Consume it.
-                    decideViewChange(proposalMessage.getHostsList()
-                            .stream()
-                            .map(HostAndPort::fromString)
-                            .collect(Collectors.toList()));
-                } else {
-                    // Extremely rare scenario. Complain to the application.
-                    List<String> proposalWithMostVotes = Collections.emptyList();
-                    int min = Integer.MIN_VALUE;
-                    for (final Map.Entry<List<String>, AtomicInteger> entry : votesPerProposal.entrySet()) {
-                        if (entry.getValue().get() > min) {
-                            proposalWithMostVotes = entry.getKey();
-                            min = entry.getValue().get();
-                        }
-                    }
-                    final Set<HostAndPort> toSet = proposalWithMostVotes.stream()
-                            .map(HostAndPort::fromString).collect(Collectors.toSet());
-                    subscriptions.get(ClusterEvents.VIEW_CHANGE_ONE_STEP_FAILED)
-                            .forEach(cb -> cb.accept(currentConfigurationId, createNodeStatusChangeList(toSet)));
-                }
-            }
+            fastPaxosInstance.handleFastRoundProposal(proposalMessage);
             future.set(null);
         });
         return future;
@@ -370,7 +324,7 @@ public final class MembershipService {
 
 
     /**
-     * This is invoked by Consensus modules when they arrive at a decision.
+     * This is invoked by FastPaxos modules when they arrive at a decision.
      *
      * Any node that is not in the membership list will be added to the cluster,
      * and any node that is currently in the membership list will be removed from it.
@@ -410,9 +364,9 @@ public final class MembershipService {
 
         // Clear data structures for the next round.
         watermarkBuffer.clear();
-        votesPerProposal.clear();
-        votesReceived.clear();
         announcedProposal = false;
+        fastPaxosInstance = new FastPaxos(myAddr, currentConfigurationId, membershipView.getMembershipSize(),
+                                          broadcaster, this::decideViewChange);
         broadcaster.setMembership(membershipView.getRing(0));
 
         // Inform LinkFailureDetector about membership change
@@ -654,13 +608,15 @@ public final class MembershipService {
      * Creates and schedules failure detector instances based on the fdFactory instance.
      */
     private void createFailureDetectorsForCurrentConfiguration() {
-        failureDetectorJobs.addAll(membershipView.getMonitoreesOf(myAddr).stream().map(monitoree ->
-                this.backgroundTasksExecutor.scheduleAtFixedRate(
-                        this.fdFactory.createInstance(monitoree, createNotifierForMonitoree(monitoree)), // Runnable
-                        DEFAULT_FAILURE_DETECTOR_INITIAL_DELAY_IN_MS,
-                        settings.getFailureDetectorIntervalInMs(),
-                        TimeUnit.MILLISECONDS))
-                .collect(Collectors.toList()));
+        final List<ScheduledFuture<?>> jobs = membershipView.getMonitoreesOf(myAddr)
+                .stream().map(monitoree -> backgroundTasksExecutor
+                         .scheduleAtFixedRate(fdFactory.createInstance(monitoree,
+                                createNotifierForMonitoree(monitoree)), // Runnable
+                                DEFAULT_FAILURE_DETECTOR_INITIAL_DELAY_IN_MS,
+                                settings.getFailureDetectorIntervalInMs(),
+                                TimeUnit.MILLISECONDS))
+                .collect(Collectors.toList());
+        failureDetectorJobs.addAll(jobs);
     }
 
     /**
