@@ -7,7 +7,7 @@ import java.util.UUID;
 /**
  * Utility methods to convert protobuf types
  */
-public final class Utils {
+final class Utils {
 
     private Utils() {
     }

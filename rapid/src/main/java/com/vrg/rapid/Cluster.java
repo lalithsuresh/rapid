@@ -29,10 +29,10 @@ import com.vrg.rapid.pb.JoinStatusCode;
 import com.vrg.rapid.pb.Metadata;
 import com.vrg.rapid.pb.NodeId;
 import com.vrg.rapid.pb.PreJoinMessage;
+import com.vrg.rapid.pb.RapidRequest;
+import com.vrg.rapid.pb.RapidResponse;
 import io.grpc.ClientInterceptor;
 import io.grpc.ExperimentalApi;
-import io.grpc.Internal;
-import io.grpc.ServerInterceptor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -141,7 +141,6 @@ public final class Cluster {
         private final HostAndPort listenAddress;
         @Nullable private ILinkFailureDetectorFactory linkFailureDetector = null;
         private Metadata metadata = Metadata.getDefaultInstance();
-        private List<ServerInterceptor> serverInterceptors = Collections.emptyList();
         private List<ClientInterceptor> clientInterceptors = Collections.emptyList();
         private Settings settings = new Settings();
         private final Map<ClusterEvents, List<BiConsumer<Long, List<NodeStatusChange>>>> subscriptions =
@@ -216,24 +215,6 @@ public final class Cluster {
         }
 
         /**
-         * This is used by tests to inject message drop interceptors at the RpcServer.
-         */
-        @Internal
-        Builder setServerInterceptors(final List<ServerInterceptor> interceptors) {
-            this.serverInterceptors = interceptors;
-            return this;
-        }
-
-        /**
-         * This is used by tests to inject message drop interceptors at the client channels.
-         */
-        @Internal
-        Builder setClientInterceptors(final List<ClientInterceptor> interceptors) {
-            this.clientInterceptors = interceptors;
-            return this;
-        }
-
-        /**
          * Start a cluster without joining. Required to bootstrap a seed node.
          *
          * @throws IOException Thrown if we cannot successfully start a server
@@ -243,8 +224,7 @@ public final class Cluster {
             sharedResources = new SharedResources(listenAddress);
             messagingServer = messagingServer != null
                             ? messagingServer
-                            : new GrpcServer(listenAddress, sharedResources, serverInterceptors,
-                                             settings.getUseInProcessTransport());
+                            : new GrpcServer(listenAddress, sharedResources, settings.getUseInProcessTransport());
             messagingClient = messagingClient != null
                                 ? messagingClient
                                 : new GrpcClient(listenAddress, clientInterceptors, sharedResources, settings);
@@ -278,8 +258,7 @@ public final class Cluster {
             sharedResources = new SharedResources(listenAddress);
             messagingServer = messagingServer != null
                     ? messagingServer
-                    : new GrpcServer(listenAddress, sharedResources, serverInterceptors,
-                                     settings.getUseInProcessTransport());
+                    : new GrpcServer(listenAddress, sharedResources, settings.getUseInProcessTransport());
             messagingClient = messagingClient != null
                     ? messagingClient
                     : new GrpcClient(listenAddress, clientInterceptors, sharedResources, settings);
@@ -326,11 +305,15 @@ public final class Cluster {
                                                                 throws ExecutionException, InterruptedException {
             assert messagingClient != null;
             // First, get the configuration ID and the monitors to contact from the seed node.
-            final PreJoinMessage preJoinMessage = PreJoinMessage.newBuilder()
-                                                                .setSender(listenAddress.toString())
-                                                                .setNodeId(currentIdentifier)
-                                                                .build();
-            final JoinResponse joinPhaseOneResult = messagingClient.sendMessage(seedAddress, preJoinMessage).get();
+            final RapidRequest preJoinMessage = RapidRequest.newBuilder()
+                                                            .setPreJoinMessage(PreJoinMessage.newBuilder()
+                                                                                .setSender(listenAddress.toString())
+                                                                                .setNodeId(currentIdentifier)
+                                                                                .build())
+                                                            .build();
+            final JoinResponse joinPhaseOneResult = messagingClient.sendMessage(seedAddress, preJoinMessage)
+                                                                   .get()
+                                                                   .getJoinResponse();
 
             /*
              * Either the seed node indicates it is safe to join, or it indicates that we're already
@@ -361,6 +344,7 @@ public final class Cluster {
                     configurationToJoin, currentIdentifier)
                     .stream()
                     .filter(Objects::nonNull)
+                    .map(RapidResponse::getJoinResponse)
                     .filter(r -> r.getStatusCode() == JoinStatusCode.SAFE_TO_JOIN)
                     .filter(r -> r.getConfigurationId() != configurationToJoin)
                     .findFirst();
@@ -373,7 +357,7 @@ public final class Cluster {
         /**
          * Identifies the set of monitors to reach out to from the phase one message, and sends a join phase 2 message.
          */
-        private List<JoinResponse> sendJoinPhase2Messages(final JoinResponse joinPhaseOneResult,
+        private List<RapidResponse> sendJoinPhase2Messages(final JoinResponse joinPhaseOneResult,
                                         final long configurationToJoin, final NodeId currentIdentifier)
                                                             throws ExecutionException, InterruptedException {
             assert messagingClient != null;
@@ -390,7 +374,7 @@ public final class Cluster {
                 ringNumber++;
             }
 
-            final List<ListenableFuture<JoinResponse>> responseFutures = new ArrayList<>();
+            final List<ListenableFuture<RapidResponse>> responseFutures = new ArrayList<>();
             for (final Map.Entry<HostAndPort, List<Integer>> entry: ringNumbersPerMonitor.entrySet()) {
                 final JoinMessage msg = JoinMessage.newBuilder()
                         .setSender(listenAddress.toString())
@@ -398,9 +382,10 @@ public final class Cluster {
                         .setMetadata(metadata)
                         .setConfigurationId(configurationToJoin)
                         .addAllRingNumber(entry.getValue()).build();
+                final RapidRequest request = RapidRequest.newBuilder().setJoinMessage(msg).build();
                 LOG.info("{} is sending a join-p2 to {} for config {}",
                         listenAddress, entry.getKey(), configurationToJoin);
-                final ListenableFuture<JoinResponse> call = messagingClient.sendMessage(entry.getKey(), msg);
+                final ListenableFuture<RapidResponse> call = messagingClient.sendMessage(entry.getKey(), request);
                 responseFutures.add(call);
             }
             return Futures.successfulAsList(responseFutures).get();

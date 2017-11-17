@@ -13,18 +13,9 @@
 
 package com.vrg.rapid;
 
-import io.grpc.CallOptions;
-import io.grpc.Channel;
-import io.grpc.ClientCall;
-import io.grpc.ClientInterceptor;
-import io.grpc.Metadata;
-import io.grpc.MethodDescriptor;
-import io.grpc.ServerCall;
-import io.grpc.ServerCallHandler;
-import io.grpc.ServerInterceptor;
+import com.vrg.rapid.pb.RapidRequest;
 
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -32,53 +23,23 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 class ServerDropInterceptors {
     /**
-     * Drops messages with a fixed probability
-     */
-    static class FixedProbability implements ServerInterceptor {
-        private final double dropProbability;
-
-        FixedProbability(final double probability) {
-            if (probability < 0 || probability > 1.0) {
-                throw new IllegalArgumentException("Probability must be between 0 and 1.0");
-            }
-            this.dropProbability = probability;
-        }
-
-        @Override
-        public <ReqT, RespT> ServerCall.Listener<ReqT> interceptCall(final ServerCall<ReqT, RespT> serverCall,
-                                     final Metadata metadata, final ServerCallHandler<ReqT, RespT> serverCallHandler) {
-            if (dropProbability >= ThreadLocalRandom.current().nextDouble(1.0)) {
-                return new ServerCall.Listener<ReqT>() { };
-            }
-            else {
-                return serverCallHandler.startCall(serverCall, metadata);
-            }
-        }
-    }
-
-    /**
      * Drops the first N messages of a particular type.
      */
-    static class FirstN<T1, T2> implements ServerInterceptor {
+    static class FirstN {
         private final AtomicInteger counter;
-        private final MethodDescriptor<T1, T2> methodDescriptor;
+        private final RapidRequest.ContentCase requestCase;
 
-        FirstN(final int N, final MethodDescriptor<T1, T2> methodDescriptor) {
+        FirstN(final int N, final RapidRequest.ContentCase requestCase) {
             if (N < 1) {
                 throw new IllegalArgumentException("N must be >= 1");
             }
             this.counter = new AtomicInteger(N);
-            this.methodDescriptor = methodDescriptor;
+            this.requestCase = requestCase;
         }
 
-        @Override
-        public <ReqT, RespT> ServerCall.Listener<ReqT> interceptCall(final ServerCall<ReqT, RespT> serverCall,
-                                     final Metadata metadata, final ServerCallHandler<ReqT, RespT> serverCallHandler) {
-            if (methodDescriptor.getFullMethodName().equals(serverCall.getMethodDescriptor().getFullMethodName())
-                    && counter.getAndDecrement() >= 0) {
-                return new ServerCall.Listener<ReqT>() { };
-            }
-            return serverCallHandler.startCall(serverCall, metadata);
+        public boolean filter(final RapidRequest request) {
+            return !(request.getContentCase().equals(requestCase)
+                    && counter.getAndDecrement() >= 0);
         }
     }
 }
@@ -87,29 +48,27 @@ class ServerDropInterceptors {
  * Drops messages at the client of a gRPC call. Used for testing.
  */
 class ClientInterceptors {
-    static class Delayer<T1, T2> implements ClientInterceptor {
+    static class Delayer {
         private final CountDownLatch latch;
-        private final MethodDescriptor<T1, T2> methodToblock;
+        private final RapidRequest.ContentCase requestCase;
 
         /**
          * Drops messages of a specific type until the latch permits.
          */
-        Delayer(final CountDownLatch latch, final MethodDescriptor<T1, T2> methodToblock) {
+        Delayer(final CountDownLatch latch, final RapidRequest.ContentCase requestCase) {
             this.latch = latch;
-            this.methodToblock = methodToblock;
+            this.requestCase = requestCase;
         }
 
-        @Override
-        public <ReqT, RespT> ClientCall<ReqT, RespT> interceptCall(final MethodDescriptor<ReqT, RespT> methodDescriptor,
-                                                               final CallOptions callOptions, final Channel channel) {
-            if (methodToblock.getFullMethodName().equals(methodDescriptor.getFullMethodName())) {
+        public boolean filter(final RapidRequest request) {
+            if (request.getContentCase().equals(requestCase)) {
                 try {
                     latch.await();
                 } catch (final InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
             }
-            return channel.newCall(methodDescriptor, callOptions);
+            return true;
         }
     }
 }

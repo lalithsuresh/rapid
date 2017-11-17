@@ -21,9 +21,7 @@ import com.vrg.rapid.messaging.IMessagingServer;
 import com.vrg.rapid.messaging.impl.GrpcClient;
 import com.vrg.rapid.messaging.impl.GrpcServer;
 import com.vrg.rapid.monitoring.impl.PingPongFailureDetector;
-import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusProposal;
-import com.vrg.rapid.pb.ConsensusProposalResponse;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
@@ -31,8 +29,8 @@ import com.vrg.rapid.pb.NodeId;
 import com.vrg.rapid.pb.NodeStatus;
 import com.vrg.rapid.pb.PreJoinMessage;
 import com.vrg.rapid.pb.ProbeMessage;
-import com.vrg.rapid.pb.ProbeResponse;
-import io.grpc.ServerInterceptor;
+import com.vrg.rapid.pb.RapidRequest;
+import com.vrg.rapid.pb.RapidResponse;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -45,13 +43,14 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
+import static junit.framework.TestCase.assertTrue;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
@@ -119,7 +118,7 @@ public class MessagingTest {
         final HostAndPort serverAddr = HostAndPort.fromParts(LOCALHOST_IP, serverPort);
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, nodeIdentifier);
-        createAndStartMembershipService(serverAddr, new ArrayList<>(), membershipView);
+        createAndStartMembershipService(serverAddr, membershipView);
 
         // Try with the same host details as the server
         final HostAndPort clientAddr1 = HostAndPort.fromParts(LOCALHOST_IP, serverPort);
@@ -160,7 +159,7 @@ public class MessagingTest {
             membershipView.ringAdd(HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE + i),
                                    Utils.nodeIdFromUUID(UUID.randomUUID()));
         }
-        createAndStartMembershipService(serverAddr, new ArrayList<>(), membershipView);
+        createAndStartMembershipService(serverAddr, membershipView);
 
         final int clientPort = SERVER_PORT_BASE - 1;
         final HostAndPort joinerAddr = HostAndPort.fromParts(LOCALHOST_IP, clientPort);
@@ -200,8 +199,7 @@ public class MessagingTest {
                 mview.ringAdd(HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE + j),
                         Utils.nodeIdFromUUID(new UUID(0, j)));
             }
-            createAndStartMembershipService(HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE + i),
-                    new ArrayList<>(), mview);
+            createAndStartMembershipService(HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE + i), mview);
         }
 
         // Join protocol starts here
@@ -229,17 +227,18 @@ public class MessagingTest {
         }
 
         // Try #1: successfully join here.
-        final List<ListenableFuture<JoinResponse>> responseFutures = new ArrayList<>();
+        final List<ListenableFuture<RapidResponse>> responseFutures = new ArrayList<>();
         for (final Map.Entry<HostAndPort, List<Integer>> entry: ringNumbersPerMonitor.entrySet()) {
-            final JoinMessage msg = JoinMessage.newBuilder()
+            final RapidRequest msg = RapidRequest.newBuilder().setJoinMessage(JoinMessage.newBuilder()
                     .setSender(joinerAddr.toString())
                     .setNodeId(uuid)
                     .setConfigurationId(phaseOneResult.getConfigurationId())
-                    .addAllRingNumber(entry.getValue()).build();
-            final ListenableFuture<JoinResponse> call = joinerClient.sendMessage(entry.getKey(), msg);
+                    .addAllRingNumber(entry.getValue()).build()).build();
+            final ListenableFuture<RapidResponse> call = joinerClient.sendMessage(entry.getKey(), msg);
             responseFutures.add(call);
         }
-        final List<JoinResponse> joinResponses = Futures.successfulAsList(responseFutures).get();
+        final List<JoinResponse> joinResponses = Futures.successfulAsList(responseFutures).get()
+                .stream().filter(Objects::nonNull).map(RapidResponse::getJoinResponse).collect(Collectors.toList());
         assertEquals(ringNumbersPerMonitor.size(), joinResponses.size());
 
         for (final JoinResponse response: joinResponses) {
@@ -247,17 +246,18 @@ public class MessagingTest {
         }
 
         // Try #2. Should get back the full configuration from all nodes.
-        final List<ListenableFuture<JoinResponse>> retryFutures = new ArrayList<>();
+        final List<ListenableFuture<RapidResponse>> retryFutures = new ArrayList<>();
         for (final Map.Entry<HostAndPort, List<Integer>> entry: ringNumbersPerMonitor.entrySet()) {
-            final JoinMessage msg = JoinMessage.newBuilder()
+            final RapidRequest msg = RapidRequest.newBuilder().setJoinMessage(JoinMessage.newBuilder()
                     .setSender(joinerAddr.toString())
                     .setNodeId(uuid)
                     .setConfigurationId(phaseOneResult.getConfigurationId())
-                    .addAllRingNumber(entry.getValue()).build();
-            final ListenableFuture<JoinResponse> call = joinerClient.sendMessage(entry.getKey(), msg);
+                    .addAllRingNumber(entry.getValue()).build()).build();
+            final ListenableFuture<RapidResponse> call = joinerClient.sendMessage(entry.getKey(), msg);
             retryFutures.add(call);
         }
-        final List<JoinResponse> retriedJoinResponses = Futures.successfulAsList(retryFutures).get();
+        final List<JoinResponse> retriedJoinResponses = Futures.successfulAsList(retryFutures).get()
+                .stream().map(RapidResponse::getJoinResponse).collect(Collectors.toList());
         assertEquals(ringNumbersPerMonitor.size(), retriedJoinResponses.size());
 
         for (final JoinResponse response: retriedJoinResponses) {
@@ -276,8 +276,7 @@ public class MessagingTest {
         final HostAndPort serverAddr = HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE);
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, nodeIdentifier);
-        createAndStartMembershipService(serverAddr,
-                new ArrayList<>(), membershipView);
+        createAndStartMembershipService(serverAddr, membershipView);
 
         final int clientPort = SERVER_PORT_BASE - 1;
         final HostAndPort joinerAddress = HostAndPort.fromParts(LOCALHOST_IP, clientPort);
@@ -313,8 +312,7 @@ public class MessagingTest {
         final HostAndPort serverAddr = HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE);
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, nodeIdentifier);
-        createAndStartMembershipService(serverAddr,
-                new ArrayList<>(), membershipView);
+        createAndStartMembershipService(serverAddr, membershipView);
 
         final int clientPort = SERVER_PORT_BASE - 1;
         final HostAndPort joinerAddress = HostAndPort.fromParts(LOCALHOST_IP, clientPort);
@@ -338,10 +336,11 @@ public class MessagingTest {
             assertEquals(iterJoiner.next(), iterSeed.next());
         }
 
-        final ProbeResponse probeResponse = messagingClient.sendMessage(serverAddr,
-                                                                        ProbeMessage.getDefaultInstance()).get();
+        final RapidResponse probeResponse = messagingClient.sendMessage(serverAddr,
+                RapidRequest.newBuilder()
+                        .setProbeMessage(ProbeMessage.getDefaultInstance()).build()).get();
         assertNotNull(probeResponse);
-        assertEquals(NodeStatus.OK, probeResponse.getStatus());
+        assertEquals(NodeStatus.OK, probeResponse.getProbeResponse().getStatus());
     }
 
 
@@ -357,23 +356,24 @@ public class MessagingTest {
         final HostAndPort serverAddr2 = HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE + 1);
         final NodeId nodeIdentifier1 = Utils.nodeIdFromUUID(UUID.randomUUID());
         final NodeId nodeIdentifier2 = Utils.nodeIdFromUUID(UUID.randomUUID());
-        final IMessagingServer rpcServer = new GrpcServer(serverAddr2, resources, Collections.emptyList(), false);
+        final IMessagingServer rpcServer = new GrpcServer(serverAddr2, resources, false);
         rpcServer.start();
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr1, nodeIdentifier1);
         membershipView.ringAdd(serverAddr2, nodeIdentifier2); // This causes server1 to monitor server2
-        createAndStartMembershipService(serverAddr1,
-                new ArrayList<>(), membershipView);
-
+        createAndStartMembershipService(serverAddr1, membershipView);
         // While the above drives our failure detector logic, we explicitly test with a probe call
         // to make sure we get a BOOTSTRAPPING response from the RpcServer listening on serverAddr2.
         final GrpcClient joinerRpcClient = new GrpcClient(serverAddr2);
-        final ProbeResponse probeResponse1 = joinerRpcClient.sendMessage(serverAddr1,
-                                                                         ProbeMessage.getDefaultInstance()).get();
-        assertEquals(NodeStatus.OK, probeResponse1.getStatus());
-        final ProbeResponse probeResponse2 = joinerRpcClient.sendMessage(serverAddr2,
-                                                                         ProbeMessage.getDefaultInstance()).get();
-        assertEquals(NodeStatus.BOOTSTRAPPING, probeResponse2.getStatus());
+        final RapidResponse probeResponse1 = joinerRpcClient.sendMessage(serverAddr1,
+                RapidRequest.newBuilder()
+                            .setProbeMessage(ProbeMessage.getDefaultInstance()).build()).get();
+
+        assertEquals(NodeStatus.OK, probeResponse1.getProbeResponse().getStatus());
+        final RapidResponse probeResponse2 = joinerRpcClient.sendMessage(serverAddr2,
+                RapidRequest.newBuilder()
+                        .setProbeMessage(ProbeMessage.getDefaultInstance()).build()).get();
+        assertEquals(NodeStatus.BOOTSTRAPPING, probeResponse2.getProbeResponse().getStatus());
     }
 
 
@@ -385,15 +385,17 @@ public class MessagingTest {
             IOException, MembershipView.NodeAlreadyInRingException {
         final int serverPort = 1234;
         final HostAndPort serverAddr = HostAndPort.fromParts(LOCALHOST_IP, serverPort);
-        final List<ServerInterceptor> interceptors = new ArrayList<>();
-        interceptors.add(new ServerDropInterceptors.FixedProbability(1.0));
+        final List<ServerDropInterceptors.FirstN> interceptors = new ArrayList<>();
+        interceptors.add(new ServerDropInterceptors.FirstN(100, RapidRequest.ContentCase.PROBEMESSAGE));
         createAndStartMembershipService(serverAddr, interceptors);
 
         final HostAndPort clientAddr = HostAndPort.fromParts(LOCALHOST_IP, serverPort);
         final IMessagingClient client = new GrpcClient(clientAddr);
         boolean exceptionCaught = false;
         try {
-            client.sendMessage(serverAddr, ProbeMessage.getDefaultInstance()).get();
+            client.sendMessageBestEffort(serverAddr, RapidRequest.newBuilder()
+                    .setProbeMessage(ProbeMessage.getDefaultInstance())
+                    .build()).get();
         } catch (final ExecutionException e) {
             exceptionCaught = true;
         }
@@ -419,11 +421,13 @@ public class MessagingTest {
         final UnicastToAllBroadcaster broadcaster = new UnicastToAllBroadcaster(client);
         broadcaster.setMembership(hostList);
         for (int i = 0; i < 10; i++) {
-            final List<ListenableFuture<ConsensusProposalResponse>> futures =
-                    broadcaster.broadcast(ConsensusProposal.getDefaultInstance());
-            for (final ListenableFuture<ConsensusProposalResponse> future : futures) {
+            final List<ListenableFuture<RapidResponse>> futures =
+                    broadcaster.broadcast(RapidRequest.newBuilder()
+                                                      .setConsensusProposal(ConsensusProposal.getDefaultInstance())
+                                                      .build());
+            for (final ListenableFuture<RapidResponse> future : futures) {
                 assertNotNull(future);
-                final ConsensusProposalResponse response = future.get();
+                final RapidResponse response = future.get();
                 assertNotNull(response);
             }
         }
@@ -443,29 +447,10 @@ public class MessagingTest {
         final SharedResources resources = new SharedResources(clientAddr);
         final IMessagingClient client = new GrpcClient(clientAddr, Collections.emptyList(), resources, settings);
         try {
-            client.sendMessage(dst, ProbeMessage.getDefaultInstance()).get();
+            client.sendMessage(dst, RapidRequest.newBuilder()
+                    .setProbeMessage(ProbeMessage.getDefaultInstance()).build()).get();
             fail("sendProbeMessage did not throw an exception");
-        } catch (final ExecutionException ignored) {
-        }
-        try {
-            sendPreJoinMessage(client, dst, clientAddr, Utils.nodeIdFromUUID(UUID.randomUUID()));
-            fail("sendJoinMessage did not throw an exception");
-        } catch (final ExecutionException ignored) {
-        }
-        try {
-            client.sendMessage(dst, JoinMessage.getDefaultInstance()).get();
-            fail("sendJoinPhase2Message did not throw an exception");
-        } catch (final ExecutionException ignored) {
-        }
-        try {
-            client.sendMessage(dst, BatchedLinkUpdateMessage.getDefaultInstance()).get();
-            fail("sendLinkUpdateMessage did not throw an exception");
-        } catch (final ExecutionException ignored) {
-        }
-        try {
-            client.sendMessage(dst, ConsensusProposal.getDefaultInstance()).get();
-            fail("sendConsensusProposal did not throw an exception");
-        } catch (final ExecutionException ignored) {
+        } catch (final ExecutionException | GrpcClient.ShuttingDownException ignored) {
         }
         client.shutdown();
         resources.shutdown();
@@ -486,29 +471,10 @@ public class MessagingTest {
         client.shutdown();
         resources.shutdown();
         try {
-            client.sendMessage(dst, ProbeMessage.getDefaultInstance()).get();
+            client.sendMessage(dst, RapidRequest.newBuilder()
+                                                .setProbeMessage(ProbeMessage.getDefaultInstance()).build()).get();
             fail("sendProbeMessage did not throw an exception");
         } catch (final ExecutionException | GrpcClient.ShuttingDownException ignored) {
-        }
-        try {
-            sendPreJoinMessage(client, dst, clientAddr, Utils.nodeIdFromUUID(UUID.randomUUID()));
-            fail("sendJoinMessage did not throw an exception");
-        } catch (final ExecutionException ignored) {
-        }
-        try {
-            client.sendMessage(dst, JoinMessage.getDefaultInstance()).get();
-            fail("sendJoinPhase2Message did not throw an exception");
-        } catch (final ExecutionException ignored) {
-        }
-        try {
-            client.sendMessage(dst, BatchedLinkUpdateMessage.getDefaultInstance()).get();
-            fail("sendLinkUpdateMessage did not throw an exception");
-        } catch (final ExecutionException ignored) {
-        }
-        try {
-            client.sendMessage(dst, ConsensusProposal.getDefaultInstance()).get();
-            fail("sendConsensusProposal did not throw an exception");
-        } catch (final ExecutionException ignored) {
         }
     }
 
@@ -524,7 +490,7 @@ public class MessagingTest {
         final IMessagingClient client = new GrpcClient(serverAddr);
         final MembershipService service = new MembershipService(serverAddr, watermarkBuffer, membershipView, resources,
                 new Settings(), client, new PingPongFailureDetector.Factory(serverAddr, client));
-        final IMessagingServer rpcServer = new GrpcServer(serverAddr, resources, Collections.emptyList(), false);
+        final IMessagingServer rpcServer = new GrpcServer(serverAddr, resources, false);
         rpcServer.setMembershipService(service);
         rpcServer.start();
         rpcServers.add(rpcServer);
@@ -536,13 +502,13 @@ public class MessagingTest {
      * Create a membership service listenting on serverAddr that uses a list of server interceptors.
      */
     private IMessagingServer createAndStartMembershipService(final HostAndPort serverAddr,
-                                                      final List<ServerInterceptor> interceptors)
+                                                             final List<ServerDropInterceptors.FirstN> interceptors)
             throws IOException, MembershipView.NodeAlreadyInRingException {
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, Utils.nodeIdFromUUID(UUID.randomUUID()));
         final IMessagingClient client = new GrpcClient(serverAddr);
-        final IMessagingServer rpcServer = new GrpcServer(serverAddr, resources, interceptors, false);
+        final IMessagingServer rpcServer = new TestingGrpcServer(serverAddr, interceptors, false);
         final MembershipService service = new MembershipService(serverAddr, watermarkBuffer, membershipView, resources,
                 new Settings(), client, new PingPongFailureDetector.Factory(serverAddr, client));
         rpcServer.setMembershipService(service);
@@ -556,14 +522,13 @@ public class MessagingTest {
      * Create a membership service listening on serverAddr, with a supplied membershipView and server interceptors.
      */
     private IMessagingServer createAndStartMembershipService(final HostAndPort serverAddr,
-                                                      final List<ServerInterceptor> interceptors,
                                                       final MembershipView membershipView)
             throws IOException {
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
         final IMessagingClient client = new GrpcClient(serverAddr);
         final MembershipService service = new MembershipService(serverAddr, watermarkBuffer, membershipView, resources,
                 new Settings(), client, new PingPongFailureDetector.Factory(serverAddr, client));
-        final IMessagingServer rpcServer = new GrpcServer(serverAddr, resources, interceptors, false);
+        final IMessagingServer rpcServer = new GrpcServer(serverAddr, resources, false);
         rpcServer.setMembershipService(service);
         rpcServer.start();
         rpcServers.add(rpcServer);
@@ -574,9 +539,9 @@ public class MessagingTest {
     private JoinResponse sendPreJoinMessage(final IMessagingClient client, final HostAndPort serverAddr,
                                             final HostAndPort clientAddr, final NodeId identifier)
             throws ExecutionException, InterruptedException {
-        final PreJoinMessage preJoinMessage = PreJoinMessage.newBuilder()
+        final RapidRequest preJoinMessage = RapidRequest.newBuilder().setPreJoinMessage(PreJoinMessage.newBuilder()
                                                             .setSender(clientAddr.toString())
-                                                            .setNodeId(identifier).build();
-        return client.sendMessage(serverAddr, preJoinMessage).get();
+                                                            .setNodeId(identifier).build()).build();
+        return client.sendMessage(serverAddr, preJoinMessage).get().getJoinResponse();
     }
 }

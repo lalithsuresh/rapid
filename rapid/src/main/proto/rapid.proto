@@ -7,11 +7,39 @@ option java_outer_classname = "Remoting";
 package remoting;
 
 service MembershipService {
+  rpc sendRequest (RapidRequest) returns (RapidResponse) {}
   rpc receivePreJoinMessage (PreJoinMessage) returns (JoinResponse) {}
   rpc receiveJoinPhase2Message (JoinMessage) returns (JoinResponse) {}
   rpc receiveLinkUpdateMessage (BatchedLinkUpdateMessage) returns (Response) {}
-  rpc receiveConsensusProposal (ConsensusProposal) returns (ConsensusProposalResponse) {}
+  rpc receiveConsensusProposal (ConsensusProposal) returns (ConsensusResponse) {}
   rpc receiveProbe (ProbeMessage) returns (ProbeResponse) {}
+
+  rpc receivePrepare (Prepare) returns (ConsensusResponse) {}  // at acceptor
+  rpc receivePrepareResponse (PrepareResponse) returns (ConsensusResponse) {}  // at coordinator
+  rpc receiveAccept (Accept) returns (ConsensusResponse) {}  // at acceptor
+  rpc receiveAcceptResponse (AcceptResponse) returns (ConsensusResponse) {}  // at coordinator
+}
+
+// All-in-one message type
+message RapidRequest
+{
+   oneof content {
+        PreJoinMessage preJoinMessage = 1;
+        JoinMessage joinMessage = 2;
+        BatchedLinkUpdateMessage batchedLinkUpdateMessage = 3;
+        ConsensusProposal consensusProposal = 4;
+        ProbeMessage probeMessage = 5;
+   }
+}
+
+message RapidResponse
+{
+   oneof content {
+        JoinResponse joinResponse = 1;
+        Response response = 2;
+        ConsensusResponse consensusResponse = 3;
+        ProbeResponse probeResponse = 4;
+   }
 }
 
 
@@ -97,9 +125,46 @@ message ConsensusProposal
     repeated string hosts = 3;
 }
 
-message ConsensusProposalResponse
+message Rank
+{
+    int32 round = 1;
+    int32 nodeIndex = 2;
+}
+
+message Prepare
+{
+    string sender = 1;
+    int64 configurationId = 2;
+    Rank rank = 3;
+}
+
+message PrepareResponse
+{
+    string sender = 1;
+    int64 configurationId = 2;
+    Rank rnd = 3;
+    Rank vrnd = 4;
+    repeated string vval = 5;
+}
+
+message Accept
+{
+    string sender = 1;
+    int64 configurationId = 2;
+    repeated string vval = 5;
+}
+
+message AcceptResponse
+{
+    string sender = 1;
+    int64 configurationId = 2;
+    repeated string hosts = 3;
+}
+
+message ConsensusResponse
 {
 }
+
 
 // ******* Node Metadata *********
 message Metadata

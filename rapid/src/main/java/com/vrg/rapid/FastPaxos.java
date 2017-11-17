@@ -3,6 +3,7 @@ package com.vrg.rapid;
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.messaging.IBroadcaster;
 import com.vrg.rapid.pb.ConsensusProposal;
+import com.vrg.rapid.pb.RapidRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,15 +44,17 @@ class FastPaxos {
      * @param proposal the membership change proposal towards a configuration change.
      */
     void propose(final List<HostAndPort> proposal) {
-        final ConsensusProposal proposalMessage = ConsensusProposal.newBuilder()
-                .setConfigurationId(configurationId)
-                .addAllHosts(proposal
-                             .stream()
-                             .map(HostAndPort::toString)
-                             .sorted()
-                             .collect(Collectors.toList()))
-                .setSender(myAddr.toString())
-                .build();
+        final RapidRequest proposalMessage = RapidRequest.newBuilder()
+                                                     .setConsensusProposal(ConsensusProposal.newBuilder()
+                                                                            .setConfigurationId(configurationId)
+                                                                            .addAllHosts(proposal
+                                                                                         .stream()
+                                                                                         .map(HostAndPort::toString)
+                                                                                         .sorted()
+                                                                                         .collect(Collectors.toList()))
+                                                                            .setSender(myAddr.toString())
+                                                                            .build())
+                                                     .build();
         broadcaster.broadcast(proposalMessage);
     }
 
@@ -63,7 +66,7 @@ class FastPaxos {
     void handleFastRoundProposal(final ConsensusProposal proposalMessage) {
         if (proposalMessage.getConfigurationId() != configurationId) {
             LOG.trace("Settings ID mismatch for proposal: current_config:{} proposal:{}", configurationId,
-                    proposalMessage);
+                      proposalMessage);
             return;
         }
 

@@ -15,10 +15,8 @@ package com.vrg.rapid.messaging;
 
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.ListenableFuture;
-import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
-import com.vrg.rapid.pb.ConsensusProposal;
-import com.vrg.rapid.pb.ConsensusProposalResponse;
-import com.vrg.rapid.pb.Response;
+import com.vrg.rapid.pb.RapidRequest;
+import com.vrg.rapid.pb.RapidResponse;
 
 import java.util.List;
 
@@ -26,9 +24,7 @@ import java.util.List;
  * Supports different broadcast implementations (eager flooding, gossip, etc.).
  */
 public interface IBroadcaster {
-    List<ListenableFuture<Response>> broadcast(BatchedLinkUpdateMessage msg);
-
-    List<ListenableFuture<ConsensusProposalResponse>> broadcast(ConsensusProposal msg);
+    List<ListenableFuture<RapidResponse>> broadcast(RapidRequest rapidRequest);
 
     void setMembership(List<HostAndPort> recipients);
 }
