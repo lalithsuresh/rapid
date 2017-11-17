@@ -21,7 +21,6 @@ import com.vrg.rapid.messaging.IBroadcaster;
 import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.monitoring.ILinkFailureDetectorFactory;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
-import com.vrg.rapid.pb.ConsensusProposal;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
@@ -151,8 +150,8 @@ public final class MembershipService {
 
         // Prepare consensus instance
         this.fastPaxosInstance = new FastPaxos(myAddr, membershipView.getCurrentConfigurationId(),
-                                               membershipView.getMembershipSize(), this.broadcaster,
-                                               this::decideViewChange);
+                                               membershipView.getMembershipSize(), this.messagingClient,
+                                               this.broadcaster, this::decideViewChange);
         createFailureDetectorsForCurrentConfiguration();
 
         // Execute all VIEW_CHANGE callbacks. This informs applications that a start/join has successfully completed.
@@ -172,10 +171,14 @@ public final class MembershipService {
                 return handleMessage(msg.getJoinMessage());
             case BATCHEDLINKUPDATEMESSAGE:
                 return handleMessage(msg.getBatchedLinkUpdateMessage());
-            case CONSENSUSPROPOSAL:
-                return handleMessage(msg.getConsensusProposal());
             case PROBEMESSAGE:
                 return handleMessage(msg.getProbeMessage());
+            case FASTROUNDPHASE2BMESSAGE:
+            case PHASE1AMESSAGE:
+            case PHASE1BMESSAGE:
+            case PHASE2AMESSAGE:
+            case PHASE2BMESSAGE:
+                return handleConsensusMessages(msg);
             case CONTENT_NOT_SET:
             default:
                 throw new RuntimeException();
@@ -337,12 +340,9 @@ public final class MembershipService {
      * XXX: Implement recovery for the extremely rare possibility of conflicting proposals.
      *
      */
-    ListenableFuture<RapidResponse> handleMessage(final ConsensusProposal proposalMessage) {
+    ListenableFuture<RapidResponse> handleConsensusMessages(final RapidRequest request) {
         final SettableFuture<RapidResponse> future = SettableFuture.create();
-        sharedResources.getProtocolExecutor().execute(() -> {
-            fastPaxosInstance.handleFastRoundProposal(proposalMessage);
-            future.set(null);
-        });
+        sharedResources.getProtocolExecutor().execute(() -> future.set(fastPaxosInstance.handleMessages(request)));
         return future;
     }
 
@@ -390,7 +390,7 @@ public final class MembershipService {
         watermarkBuffer.clear();
         announcedProposal = false;
         fastPaxosInstance = new FastPaxos(myAddr, currentConfigurationId, membershipView.getMembershipSize(),
-                                          broadcaster, this::decideViewChange);
+                                          messagingClient, broadcaster, this::decideViewChange);
         broadcaster.setMembership(membershipView.getRing(0));
 
         // Inform LinkFailureDetector about membership change

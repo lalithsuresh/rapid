@@ -8,27 +8,21 @@ package remoting;
 
 service MembershipService {
   rpc sendRequest (RapidRequest) returns (RapidResponse) {}
-  rpc receivePreJoinMessage (PreJoinMessage) returns (JoinResponse) {}
-  rpc receiveJoinPhase2Message (JoinMessage) returns (JoinResponse) {}
-  rpc receiveLinkUpdateMessage (BatchedLinkUpdateMessage) returns (Response) {}
-  rpc receiveConsensusProposal (ConsensusProposal) returns (ConsensusResponse) {}
-  rpc receiveProbe (ProbeMessage) returns (ProbeResponse) {}
-
-  rpc receivePrepare (Prepare) returns (ConsensusResponse) {}  // at acceptor
-  rpc receivePrepareResponse (PrepareResponse) returns (ConsensusResponse) {}  // at coordinator
-  rpc receiveAccept (Accept) returns (ConsensusResponse) {}  // at acceptor
-  rpc receiveAcceptResponse (AcceptResponse) returns (ConsensusResponse) {}  // at coordinator
 }
 
-// All-in-one message type
+// All-in-one message type.
 message RapidRequest
 {
    oneof content {
         PreJoinMessage preJoinMessage = 1;
         JoinMessage joinMessage = 2;
         BatchedLinkUpdateMessage batchedLinkUpdateMessage = 3;
-        ConsensusProposal consensusProposal = 4;
-        ProbeMessage probeMessage = 5;
+        ProbeMessage probeMessage = 4;
+        FastRoundPhase2bMessage fastRoundPhase2bMessage = 5;
+        Phase1aMessage phase1aMessage = 6;
+        Phase1bMessage phase1bMessage = 7;
+        Phase2aMessage phase2aMessage = 8;
+        Phase2bMessage phase2bMessage = 9;
    }
 }
 
@@ -116,29 +110,31 @@ message Response
 }
 
 
-// ******* Fast Paxos Phase 2 messages *******
+// ******* Fast Paxos Phase 2 message *******
 
-message ConsensusProposal
+message FastRoundPhase2bMessage
 {
     string sender = 1;
     int64 configurationId = 2;
     repeated string hosts = 3;
 }
 
+
+// ******* Classic Paxos messages *********
 message Rank
 {
     int32 round = 1;
     int32 nodeIndex = 2;
 }
 
-message Prepare
+message Phase1aMessage
 {
     string sender = 1;
     int64 configurationId = 2;
     Rank rank = 3;
 }
 
-message PrepareResponse
+message Phase1bMessage
 {
     string sender = 1;
     int64 configurationId = 2;
@@ -147,19 +143,22 @@ message PrepareResponse
     repeated string vval = 5;
 }
 
-message Accept
+message Phase2aMessage
 {
     string sender = 1;
     int64 configurationId = 2;
+    Rank rnd = 3;
     repeated string vval = 5;
 }
 
-message AcceptResponse
+message Phase2bMessage
 {
     string sender = 1;
     int64 configurationId = 2;
-    repeated string hosts = 3;
+    Rank rnd = 3;
+    repeated string hosts = 4;
 }
+
 
 message ConsensusResponse
 {

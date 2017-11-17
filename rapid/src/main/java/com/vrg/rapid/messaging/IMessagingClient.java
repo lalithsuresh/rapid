@@ -2,6 +2,7 @@ package com.vrg.rapid.messaging;
 
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.ListenableFuture;
+import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.vrg.rapid.pb.RapidRequest;
 import com.vrg.rapid.pb.RapidResponse;
 
@@ -16,6 +17,7 @@ public interface IMessagingClient {
      * @param msg Message to send
      * @return A future that returns a RapidResponse if the call was successful.
      */
+    @CanIgnoreReturnValue
     ListenableFuture<RapidResponse> sendMessage(final HostAndPort remote, final RapidRequest msg);
 
     /**
@@ -25,6 +27,7 @@ public interface IMessagingClient {
      * @param msg Message to send
      * @return A future that returns a RapidResponse if the call was successful.
      */
+    @CanIgnoreReturnValue
     ListenableFuture<RapidResponse> sendMessageBestEffort(final HostAndPort remote, final RapidRequest msg);
 
     /**

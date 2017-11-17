@@ -21,7 +21,7 @@ import com.vrg.rapid.messaging.IMessagingServer;
 import com.vrg.rapid.messaging.impl.GrpcClient;
 import com.vrg.rapid.messaging.impl.GrpcServer;
 import com.vrg.rapid.monitoring.impl.PingPongFailureDetector;
-import com.vrg.rapid.pb.ConsensusProposal;
+import com.vrg.rapid.pb.FastRoundPhase2bMessage;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
@@ -423,8 +423,8 @@ public class MessagingTest {
         for (int i = 0; i < 10; i++) {
             final List<ListenableFuture<RapidResponse>> futures =
                     broadcaster.broadcast(RapidRequest.newBuilder()
-                                                      .setConsensusProposal(ConsensusProposal.getDefaultInstance())
-                                                      .build());
+                                              .setFastRoundPhase2BMessage(FastRoundPhase2bMessage.getDefaultInstance())
+                                              .build());
             for (final ListenableFuture<RapidResponse> future : futures) {
                 assertNotNull(future);
                 final RapidResponse response = future.get();
