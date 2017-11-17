@@ -142,7 +142,7 @@ public class SharedResources {
         final ThreadPoolExecutor tpe = new ThreadPoolExecutor(threads, threads,
                 0L, TimeUnit.MILLISECONDS,
                 new LinkedBlockingQueue<>(),
-                newNamedThreadFactory("bg", address));
+                newNamedThreadFactory(poolName, address));
         tpe.setRejectedExecutionHandler(new BackgroundExecutorRejectionHandler());
         return tpe;
     }
