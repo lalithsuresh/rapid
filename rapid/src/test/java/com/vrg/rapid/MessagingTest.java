@@ -229,11 +229,11 @@ public class MessagingTest {
         // Try #1: successfully join here.
         final List<ListenableFuture<RapidResponse>> responseFutures = new ArrayList<>();
         for (final Map.Entry<HostAndPort, List<Integer>> entry: ringNumbersPerMonitor.entrySet()) {
-            final RapidRequest msg = RapidRequest.newBuilder().setJoinMessage(JoinMessage.newBuilder()
+            final RapidRequest msg = Utils.toRapidRequest(JoinMessage.newBuilder()
                     .setSender(joinerAddr.toString())
                     .setNodeId(uuid)
                     .setConfigurationId(phaseOneResult.getConfigurationId())
-                    .addAllRingNumber(entry.getValue()).build()).build();
+                    .addAllRingNumber(entry.getValue()).build());
             final ListenableFuture<RapidResponse> call = joinerClient.sendMessage(entry.getKey(), msg);
             responseFutures.add(call);
         }
@@ -248,11 +248,11 @@ public class MessagingTest {
         // Try #2. Should get back the full configuration from all nodes.
         final List<ListenableFuture<RapidResponse>> retryFutures = new ArrayList<>();
         for (final Map.Entry<HostAndPort, List<Integer>> entry: ringNumbersPerMonitor.entrySet()) {
-            final RapidRequest msg = RapidRequest.newBuilder().setJoinMessage(JoinMessage.newBuilder()
+            final RapidRequest msg = Utils.toRapidRequest(JoinMessage.newBuilder()
                     .setSender(joinerAddr.toString())
                     .setNodeId(uuid)
                     .setConfigurationId(phaseOneResult.getConfigurationId())
-                    .addAllRingNumber(entry.getValue()).build()).build();
+                    .addAllRingNumber(entry.getValue()).build());
             final ListenableFuture<RapidResponse> call = joinerClient.sendMessage(entry.getKey(), msg);
             retryFutures.add(call);
         }
@@ -337,8 +337,7 @@ public class MessagingTest {
         }
 
         final RapidResponse probeResponse = messagingClient.sendMessage(serverAddr,
-                RapidRequest.newBuilder()
-                        .setProbeMessage(ProbeMessage.getDefaultInstance()).build()).get();
+                Utils.toRapidRequest(ProbeMessage.getDefaultInstance())).get();
         assertNotNull(probeResponse);
         assertEquals(NodeStatus.OK, probeResponse.getProbeResponse().getStatus());
     }
@@ -366,8 +365,7 @@ public class MessagingTest {
         // to make sure we get a BOOTSTRAPPING response from the RpcServer listening on serverAddr2.
         final GrpcClient joinerRpcClient = new GrpcClient(serverAddr2);
         final RapidResponse probeResponse1 = joinerRpcClient.sendMessage(serverAddr1,
-                RapidRequest.newBuilder()
-                            .setProbeMessage(ProbeMessage.getDefaultInstance()).build()).get();
+                Utils.toRapidRequest(ProbeMessage.getDefaultInstance())).get();
 
         assertEquals(NodeStatus.OK, probeResponse1.getProbeResponse().getStatus());
         final RapidResponse probeResponse2 = joinerRpcClient.sendMessage(serverAddr2,
@@ -393,9 +391,7 @@ public class MessagingTest {
         final IMessagingClient client = new GrpcClient(clientAddr);
         boolean exceptionCaught = false;
         try {
-            client.sendMessageBestEffort(serverAddr, RapidRequest.newBuilder()
-                    .setProbeMessage(ProbeMessage.getDefaultInstance())
-                    .build()).get();
+            client.sendMessageBestEffort(serverAddr, Utils.toRapidRequest(ProbeMessage.getDefaultInstance())).get();
         } catch (final ExecutionException e) {
             exceptionCaught = true;
         }
@@ -422,9 +418,7 @@ public class MessagingTest {
         broadcaster.setMembership(hostList);
         for (int i = 0; i < 10; i++) {
             final List<ListenableFuture<RapidResponse>> futures =
-                    broadcaster.broadcast(RapidRequest.newBuilder()
-                                              .setFastRoundPhase2BMessage(FastRoundPhase2bMessage.getDefaultInstance())
-                                              .build());
+                    broadcaster.broadcast(Utils.toRapidRequest(FastRoundPhase2bMessage.getDefaultInstance()));
             for (final ListenableFuture<RapidResponse> future : futures) {
                 assertNotNull(future);
                 final RapidResponse response = future.get();
@@ -447,8 +441,7 @@ public class MessagingTest {
         final SharedResources resources = new SharedResources(clientAddr);
         final IMessagingClient client = new GrpcClient(clientAddr, Collections.emptyList(), resources, settings);
         try {
-            client.sendMessage(dst, RapidRequest.newBuilder()
-                    .setProbeMessage(ProbeMessage.getDefaultInstance()).build()).get();
+            client.sendMessage(dst, Utils.toRapidRequest(ProbeMessage.getDefaultInstance())).get();
             fail("sendProbeMessage did not throw an exception");
         } catch (final ExecutionException | GrpcClient.ShuttingDownException ignored) {
         }
@@ -471,8 +464,7 @@ public class MessagingTest {
         client.shutdown();
         resources.shutdown();
         try {
-            client.sendMessage(dst, RapidRequest.newBuilder()
-                                                .setProbeMessage(ProbeMessage.getDefaultInstance()).build()).get();
+            client.sendMessage(dst, Utils.toRapidRequest(ProbeMessage.getDefaultInstance())).get();
             fail("sendProbeMessage did not throw an exception");
         } catch (final ExecutionException | GrpcClient.ShuttingDownException ignored) {
         }
@@ -539,9 +531,9 @@ public class MessagingTest {
     private JoinResponse sendPreJoinMessage(final IMessagingClient client, final HostAndPort serverAddr,
                                             final HostAndPort clientAddr, final NodeId identifier)
             throws ExecutionException, InterruptedException {
-        final RapidRequest preJoinMessage = RapidRequest.newBuilder().setPreJoinMessage(PreJoinMessage.newBuilder()
+        final RapidRequest preJoinMessage = Utils.toRapidRequest(PreJoinMessage.newBuilder()
                                                             .setSender(clientAddr.toString())
-                                                            .setNodeId(identifier).build()).build();
+                                                            .setNodeId(identifier).build());
         return client.sendMessage(serverAddr, preJoinMessage).get().getJoinResponse();
     }
 }

@@ -211,7 +211,7 @@ public final class MembershipService {
                         .map(HostAndPort::toString)
                         .collect(Collectors.toList()));
             }
-            future.set(RapidResponse.newBuilder().setJoinResponse(builder.build()).build());
+            future.set(Utils.toRapidResponse(builder.build()));
         });
         return future;
     }
@@ -276,8 +276,7 @@ public final class MembershipService {
                             joinMessage.getSender(), myAddr,
                             configuration.getConfigurationId(), configuration.hostAndPorts.size());
                 }
-                future.set(RapidResponse.newBuilder().setJoinResponse(responseBuilder.build())
-                                        .build()); // new configuration
+                future.set(Utils.toRapidResponse(responseBuilder.build())); // new configuration
             }
         });
         return future;
@@ -413,8 +412,7 @@ public final class MembershipService {
      */
     private ListenableFuture<RapidResponse> handleMessage(final ProbeMessage probeMessage) {
         LOG.trace("handleProbeMessage at {} from {}", myAddr, probeMessage.getSender());
-        return Futures.immediateFuture(RapidResponse.newBuilder()
-                .setProbeResponse(ProbeResponse.getDefaultInstance()).build());
+        return Futures.immediateFuture(Utils.toRapidResponse(ProbeResponse.getDefaultInstance()));
     }
 
 
@@ -568,9 +566,7 @@ public final class MembershipService {
                             .setSender(myAddr.toString())
                             .addAllMessages(messages)
                             .build();
-                    broadcaster.broadcast(RapidRequest.newBuilder()
-                                                      .setBatchedLinkUpdateMessage(batched)
-                                                      .build());
+                    broadcaster.broadcast(Utils.toRapidRequest(batched));
                 }
             }
             finally {
@@ -679,8 +675,7 @@ public final class MembershipService {
             if (joinersToRespondTo.containsKey(node)) {
                 backgroundTasksExecutor.execute(
                     () -> joinersToRespondTo.remove(node)
-                                            .forEach(settableFuture -> settableFuture.set(RapidResponse.newBuilder()
-                                                                                    .setJoinResponse(response).build()))
+                            .forEach(settableFuture -> settableFuture.set(Utils.toRapidResponse(response)))
                 );
             }
         }

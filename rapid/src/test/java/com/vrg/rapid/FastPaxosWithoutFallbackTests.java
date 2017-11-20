@@ -180,6 +180,6 @@ public class FastPaxosWithoutFallbackTests {
     }
 
     private RapidRequest asRapidMessage(final FastRoundPhase2bMessage proposal) {
-        return RapidRequest.newBuilder().setFastRoundPhase2BMessage(proposal).build();
+        return Utils.toRapidRequest(proposal);
     }
 }

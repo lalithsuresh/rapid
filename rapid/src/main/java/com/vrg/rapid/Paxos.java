@@ -91,7 +91,7 @@ public class Paxos {
                                        .setConfigurationId(configurationId)
                                        .setSender(myAddr.toString())
                                        .setRank(crnd).build();
-        final RapidRequest request = RapidRequest.newBuilder().setPhase1AMessage(prepare).build();
+        final RapidRequest request = Utils.toRapidRequest(prepare);
         LOG.trace("Broadcasting startPhase1a message: {}", TextFormat.shortDebugString(request));
         broadcaster.broadcast(request);
     }
@@ -123,7 +123,7 @@ public class Paxos {
                                       .addAllVval(vval.stream().map(HostAndPort::toString).sorted()
                                                   .collect(Collectors.toList()))
                                       .build();
-        final RapidRequest request = RapidRequest.newBuilder().setPhase1BMessage(phase1bMessage).build();
+        final RapidRequest request = Utils.toRapidRequest(phase1bMessage);
         final ListenableFuture<RapidResponse> rapidResponseListenableFuture =
                 client.sendMessage(HostAndPort.fromString(phase1aMessage.getSender()), request);
         Futures.addCallback(rapidResponseListenableFuture, new ResponseCallback());
@@ -164,7 +164,7 @@ public class Paxos {
                                                          .sorted()
                                                          .collect(Collectors.toList()))
                                                    .build();
-                final RapidRequest request = RapidRequest.newBuilder().setPhase2AMessage(phase2aMessage).build();
+                final RapidRequest request = Utils.toRapidRequest(phase2aMessage);
                 broadcaster.broadcast(request);
             }
         }
@@ -193,7 +193,7 @@ public class Paxos {
                                                                         .sorted()
                                                                         .collect(Collectors.toList()))
                                                           .build();
-            final RapidRequest request = RapidRequest.newBuilder().setPhase2BMessage(response).build();
+            final RapidRequest request = Utils.toRapidRequest(response);
             broadcaster.broadcast(request);
         }
     }

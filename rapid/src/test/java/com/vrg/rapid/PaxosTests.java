@@ -242,8 +242,7 @@ public class PaxosTests {
         @Override
         public ListenableFuture<RapidResponse> sendMessage(final HostAndPort remote, final RapidRequest msg) {
             executors.get(remote).execute(() -> paxosInstances.get(remote).handleMessages(msg));
-            return Futures.immediateFuture(RapidResponse.newBuilder()
-                    .setConsensusResponse(ConsensusResponse.getDefaultInstance()).build());
+            return Futures.immediateFuture(Utils.toRapidResponse(ConsensusResponse.getDefaultInstance()));
         }
 
         @Override

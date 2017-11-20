@@ -62,9 +62,7 @@ class FastPaxos {
                         .collect(Collectors.toList()))
                 .setSender(myAddr.toString())
                 .build();
-        final RapidRequest proposalMessage = RapidRequest.newBuilder()
-                .setFastRoundPhase2BMessage(consensusMessage)
-                .build();
+        final RapidRequest proposalMessage = Utils.toRapidRequest(consensusMessage);
         broadcaster.broadcast(proposalMessage);
     }
 
@@ -135,7 +133,7 @@ class FastPaxos {
             default:
                 throw new IllegalArgumentException("Unexpected message case: " + request.getContentCase());
         }
-        return RapidResponse.newBuilder().setConsensusResponse(ConsensusResponse.getDefaultInstance()).build();
+        return Utils.toRapidResponse(ConsensusResponse.getDefaultInstance());
     }
 
     /**

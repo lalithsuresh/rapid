@@ -305,12 +305,10 @@ public final class Cluster {
                                                                 throws ExecutionException, InterruptedException {
             assert messagingClient != null;
             // First, get the configuration ID and the monitors to contact from the seed node.
-            final RapidRequest preJoinMessage = RapidRequest.newBuilder()
-                                                            .setPreJoinMessage(PreJoinMessage.newBuilder()
-                                                                                .setSender(listenAddress.toString())
-                                                                                .setNodeId(currentIdentifier)
-                                                                                .build())
-                                                            .build();
+            final RapidRequest preJoinMessage = Utils.toRapidRequest(PreJoinMessage.newBuilder()
+                                                                            .setSender(listenAddress.toString())
+                                                                            .setNodeId(currentIdentifier)
+                                                                            .build());
             final JoinResponse joinPhaseOneResult = messagingClient.sendMessage(seedAddress, preJoinMessage)
                                                                    .get()
                                                                    .getJoinResponse();
@@ -382,7 +380,7 @@ public final class Cluster {
                         .setMetadata(metadata)
                         .setConfigurationId(configurationToJoin)
                         .addAllRingNumber(entry.getValue()).build();
-                final RapidRequest request = RapidRequest.newBuilder().setJoinMessage(msg).build();
+                final RapidRequest request = Utils.toRapidRequest(msg);
                 LOG.info("{} is sending a join-p2 to {} for config {}",
                         listenAddress, entry.getKey(), configurationToJoin);
                 final ListenableFuture<RapidResponse> call = messagingClient.sendMessage(entry.getKey(), request);
