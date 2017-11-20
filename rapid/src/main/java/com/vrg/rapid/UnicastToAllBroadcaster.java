@@ -18,10 +18,8 @@ import com.google.common.util.concurrent.ListenableFuture;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.vrg.rapid.messaging.IBroadcaster;
 import com.vrg.rapid.messaging.IMessagingClient;
-import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
-import com.vrg.rapid.pb.ConsensusProposal;
-import com.vrg.rapid.pb.ConsensusProposalResponse;
-import com.vrg.rapid.pb.Response;
+import com.vrg.rapid.pb.RapidRequest;
+import com.vrg.rapid.pb.RapidResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,20 +43,10 @@ final class UnicastToAllBroadcaster implements IBroadcaster {
 
     @Override
     @CanIgnoreReturnValue
-    public synchronized List<ListenableFuture<Response>> broadcast(final BatchedLinkUpdateMessage msg) {
-        final List<ListenableFuture<Response>> futures = new ArrayList<>(recipients.size());
+    public synchronized List<ListenableFuture<RapidResponse>> broadcast(final RapidRequest msg) {
+        final List<ListenableFuture<RapidResponse>> futures = new ArrayList<>(recipients.size());
         for (final HostAndPort recipient: recipients) {
-            futures.add(messagingClient.sendMessage(recipient, msg));
-        }
-        return futures;
-    }
-
-    @Override
-    @CanIgnoreReturnValue
-    public synchronized List<ListenableFuture<ConsensusProposalResponse>> broadcast(final ConsensusProposal msg) {
-        final List<ListenableFuture<ConsensusProposalResponse>> futures = new ArrayList<>(recipients.size());
-        for (final HostAndPort recipient: recipients) {
-            futures.add(messagingClient.sendMessage(recipient, msg));
+            futures.add(messagingClient.sendMessageBestEffort(recipient, msg));
         }
         return futures;
     }

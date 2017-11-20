@@ -15,10 +15,8 @@ package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
 import com.google.protobuf.ByteString;
-import com.vrg.rapid.pb.MembershipServiceGrpc;
-import io.grpc.ClientInterceptor;
-import io.grpc.MethodDescriptor;
-import io.grpc.ServerInterceptor;
+import com.vrg.rapid.messaging.impl.GrpcClient;
+import com.vrg.rapid.pb.RapidRequest;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -60,8 +58,8 @@ public class ClusterTest {
     private static final Logger NETTY_LOGGER;
     private final Map<HostAndPort, Cluster> instances = new ConcurrentHashMap<>();
     private final Map<HostAndPort, StaticFailureDetector.Factory> staticFds = new ConcurrentHashMap<>();
-    private final Map<HostAndPort, List<ServerInterceptor>> serverInterceptors = new ConcurrentHashMap<>();
-    private final Map<HostAndPort, List<ClientInterceptor>> clientInterceptors = new ConcurrentHashMap<>();
+    private final Map<HostAndPort, List<ServerDropInterceptors.FirstN>> serverInterceptors = new ConcurrentHashMap<>();
+    private final Map<HostAndPort, List<ClientInterceptors.Delayer>> clientInterceptors = new ConcurrentHashMap<>();
     private boolean useStaticFd = false;
     private boolean addMetadata = true;
     @Nullable private Random random = null;
@@ -309,7 +307,7 @@ public class ClusterTest {
                 getRandomHosts(basePort + 1, basePort + numNodes, numFailingNodes);
         // Since the random function returns a set of failed nodes,
         // we may have less than numFailedNodes entries in the set
-        failedNodes.forEach(host -> dropFirstNAtServer(host, 100, MembershipServiceGrpc.METHOD_RECEIVE_PROBE));
+        failedNodes.forEach(host -> dropFirstNAtServer(host, 100, RapidRequest.ContentCase.PROBEMESSAGE));
         createCluster(numNodes, seedHost);
         waitAndVerifyAgreement(numNodes - failedNodes.size(), 10, 1000, seedHost);
         verifyNumClusterInstances(numNodes);
@@ -325,7 +323,7 @@ public class ClusterTest {
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         // Drop join-phase-2 attempts by nextNode, but only enough that the RPC retries make it past
         dropFirstNAtServer(seedHost, (settings.getGrpcDefaultRetries()) - 1,
-                   MembershipServiceGrpc.METHOD_RECEIVE_JOIN_PHASE2MESSAGE);
+                RapidRequest.ContentCase.JOINMESSAGE);
         createCluster(1, seedHost);
         extendCluster(1, seedHost);
         waitAndVerifyAgreement(2, 15, 1000, seedHost);
@@ -342,7 +340,7 @@ public class ClusterTest {
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         // Drop join-phase-2 attempts by nextNode such that it re-attempts a join under a new settings
         dropFirstNAtServer(seedHost, (settings.getGrpcDefaultRetries()) + 1,
-                   MembershipServiceGrpc.METHOD_RECEIVE_JOIN_PHASE2MESSAGE);
+                RapidRequest.ContentCase.JOINMESSAGE);
         createCluster(1, seedHost);
         extendCluster(1, seedHost);
         waitAndVerifyAgreement(2, 15, 1000, seedHost);
@@ -359,7 +357,7 @@ public class ClusterTest {
         // Drop join-phase-2 attempts by nextNode such that it re-attempts a join under a new settings
         createCluster(1, seedHost);
         // The next host to join will have its join-phase2-message blocked.
-        final CountDownLatch latch = blockAtClient(joinerHost, MembershipServiceGrpc.METHOD_RECEIVE_JOIN_PHASE2MESSAGE);
+        final CountDownLatch latch = blockAtClient(joinerHost, RapidRequest.ContentCase.JOINMESSAGE);
         extendClusterNonBlocking(1, seedHost);
         // The following node is now free to join. This will render the settings received by the previous
         // joiner node stale
@@ -696,10 +694,17 @@ public class ClusterTest {
             staticFds.put(host, fdFactory);
         }
         if (serverInterceptors.containsKey(host)) {
-            builder = builder.setServerInterceptors(serverInterceptors.get(host));
+            builder = builder.setMessagingClientAndServer(new GrpcClient(host, settings),
+                                                          new TestingGrpcServer(host,
+                                                          serverInterceptors.get(host),
+                                                                  settings.getUseInProcessTransport()));
         }
         if (clientInterceptors.containsKey(host)) {
-            builder = builder.setClientInterceptors(clientInterceptors.get(host));
+            builder = builder.setMessagingClientAndServer(new TestingGrpcClient(host, settings,
+                                                                                clientInterceptors.get(host)),
+                    new TestingGrpcServer(host,
+                            Collections.emptyList(),
+                            settings.getUseInProcessTransport()));
         }
         if (addMetadata) {
             final ByteString byteString = ByteString.copyFrom(host.toString(), Charset.defaultCharset());
@@ -711,16 +716,16 @@ public class ClusterTest {
 
     // Helper that drops the first N requests at a server of a given type
     private <T, E> void dropFirstNAtServer(final HostAndPort host, final int N,
-                                           final MethodDescriptor<T, E> messageType) {
+                                           final RapidRequest.ContentCase contentCase) {
         serverInterceptors.computeIfAbsent(host, (k) -> new ArrayList<>(1))
-                .add(new ServerDropInterceptors.FirstN<>(N, messageType));
+                .add(new ServerDropInterceptors.FirstN(N, contentCase));
     }
 
     // Helper that delays requests of a given type at the client
-    private <T, E> CountDownLatch blockAtClient(final HostAndPort host, final MethodDescriptor<T, E> messageType) {
+    private <T, E> CountDownLatch blockAtClient(final HostAndPort host, final RapidRequest.ContentCase messageType) {
         final CountDownLatch latch = new CountDownLatch(1);
         clientInterceptors.computeIfAbsent(host, (k) -> new ArrayList<>(1))
-                .add(new ClientInterceptors.Delayer<>(latch, messageType));
+                .add(new ClientInterceptors.Delayer(latch, messageType));
         return latch;
     }
 

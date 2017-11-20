@@ -13,6 +13,7 @@
 
 package com.vrg.rapid.messaging.impl;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
@@ -27,17 +28,10 @@ import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.vrg.rapid.Settings;
 import com.vrg.rapid.SharedResources;
 import com.vrg.rapid.messaging.IMessagingClient;
-import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
-import com.vrg.rapid.pb.ConsensusProposal;
-import com.vrg.rapid.pb.ConsensusProposalResponse;
-import com.vrg.rapid.pb.JoinMessage;
-import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.MembershipServiceGrpc;
 import com.vrg.rapid.pb.MembershipServiceGrpc.MembershipServiceFutureStub;
-import com.vrg.rapid.pb.PreJoinMessage;
-import com.vrg.rapid.pb.ProbeMessage;
-import com.vrg.rapid.pb.ProbeResponse;
-import com.vrg.rapid.pb.Response;
+import com.vrg.rapid.pb.RapidRequest;
+import com.vrg.rapid.pb.RapidResponse;
 import io.grpc.Channel;
 import io.grpc.ClientInterceptor;
 import io.grpc.Status;
@@ -64,7 +58,7 @@ import java.util.function.Supplier;
 /**
  * MessagingServiceGrpc client.
  */
-public final class GrpcClient implements IMessagingClient {
+public class GrpcClient implements IMessagingClient {
     private static final Logger LOG = LoggerFactory.getLogger(GrpcClient.class);
     private static final int DEFAULT_BUF_SIZE = 4096;
     public static final boolean DEFAULT_GRPC_USE_IN_PROCESS_TRANSPORT = false;
@@ -82,9 +76,14 @@ public final class GrpcClient implements IMessagingClient {
     private AtomicBoolean isShuttingDown = new AtomicBoolean(false);
     private final ISettings settings;
 
-
+    @VisibleForTesting
     public GrpcClient(final HostAndPort address) {
         this(address, Collections.emptyList(), new SharedResources(address), new Settings());
+    }
+
+    @VisibleForTesting
+    public GrpcClient(final HostAndPort address, final ISettings settings) {
+        this(address, Collections.emptyList(), new SharedResources(address), settings);
     }
 
     public GrpcClient(final HostAndPort address, final List<ClientInterceptor> interceptors,
@@ -109,105 +108,36 @@ public final class GrpcClient implements IMessagingClient {
     }
 
     /**
-     * Send a protobuf ProbeMessage to a remote host.
-     *
-     * @param remote Remote host to send the message to
-     * @param probeMessage Probing message for the remote node's failure detector module.
-     * @return A future that returns a ProbeResponse if the call was successful.
+     * From IMessagingClient
      */
     @Override
-    public ListenableFuture<ProbeResponse> sendMessage(final HostAndPort remote, final ProbeMessage probeMessage) {
-        Objects.requireNonNull(remote);
-        Objects.requireNonNull(probeMessage);
-
-        final MembershipServiceFutureStub stub = getFutureStub(remote);
-        return stub.withDeadlineAfter(settings.getGrpcProbeTimeoutMs(), TimeUnit.MILLISECONDS)
-                   .receiveProbe(probeMessage);
-    }
-
-    /**
-     * Create and send a protobuf JoinMessage to a remote host.
-     *
-     * @param remote Remote host to send the message to
-     * @param preJoinMessage The node sending the join message
-     * @return A future that returns a JoinResponse if the call was successful.
-     */
-    @Override
-    public ListenableFuture<JoinResponse> sendMessage(final HostAndPort remote, final PreJoinMessage preJoinMessage) {
-        Objects.requireNonNull(remote);
-        Objects.requireNonNull(preJoinMessage);
-
-        final Supplier<ListenableFuture<JoinResponse>> call = () -> {
-            final MembershipServiceFutureStub stub = getFutureStub(remote)
-                    .withDeadlineAfter(settings.getGrpcJoinTimeoutMs(),
-                            TimeUnit.MILLISECONDS);
-            return stub.receivePreJoinMessage(preJoinMessage);
-        };
-        return callWithRetries(call, remote, 0);
-    }
-
-    /**
-     * Create and send a protobuf JoinPhase2Message to a remote host.
-     *
-     * @param remote Remote host to send the message to. This node is expected to initiate LinkUpdate-UP messages.
-     * @param msg The JoinMessage for phase two.
-     * @return A future that returns a JoinResponse if the call was successful.
-     */
-    @Override
-    public ListenableFuture<JoinResponse> sendMessage(final HostAndPort remote, final JoinMessage msg) {
+    public ListenableFuture<RapidResponse> sendMessage(final HostAndPort remote, final RapidRequest msg) {
         Objects.requireNonNull(remote);
         Objects.requireNonNull(msg);
 
-        final Supplier<ListenableFuture<JoinResponse>> call = () -> {
-            final MembershipServiceFutureStub stub;
-            stub = getFutureStub(remote).withDeadlineAfter(settings.getGrpcJoinTimeoutMs(), TimeUnit.MILLISECONDS);
-            return stub.receiveJoinPhase2Message(msg);
+        final Supplier<ListenableFuture<RapidResponse>> call = () -> {
+            final MembershipServiceFutureStub stub = getFutureStub(remote)
+                    .withDeadlineAfter(getTimeoutForMessageMs(msg),
+                            TimeUnit.MILLISECONDS);
+            return stub.sendRequest(msg);
         };
         return callWithRetries(call, remote, settings.getGrpcDefaultRetries());
     }
 
     /**
-     * Sends a consensus proposal to a remote node
-     *
-     * @param remote Remote host to send the message to.
-     * @param msg Consensus proposal message
+     * From IMessagingClient
      */
     @Override
-    public ListenableFuture<ConsensusProposalResponse> sendMessage(final HostAndPort remote,
-                                                                             final ConsensusProposal msg) {
+    public ListenableFuture<RapidResponse> sendMessageBestEffort(final HostAndPort remote, final RapidRequest msg) {
         Objects.requireNonNull(msg);
         try {
             return backgroundExecutor.submit(() -> {
-                final Supplier<ListenableFuture<ConsensusProposalResponse>> call = () -> {
-                    final MembershipServiceFutureStub stub = getFutureStub(remote)
-                            .withDeadlineAfter(settings.getGrpcTimeoutMs(), TimeUnit.MILLISECONDS);
-                    return stub.receiveConsensusProposal(msg);
-                };
-                return callWithRetries(call, remote, settings.getGrpcDefaultRetries());
-            }).get();
-        } catch (final InterruptedException | ExecutionException e) {
-            return Futures.immediateFailedFuture(e);
-        }
-    }
-
-    /**
-     * Sends a link update message to a remote node
-     *
-     * @param remote Remote host to send the message to.
-     * @param msg A BatchedLinkUpdateMessage that contains one or more LinkUpdateMessages
-     */
-    @Override
-    public ListenableFuture<Response> sendMessage(final HostAndPort remote,
-                                                            final BatchedLinkUpdateMessage msg) {
-        Objects.requireNonNull(msg);
-        try {
-            return backgroundExecutor.submit(() -> {
-                final Supplier<ListenableFuture<Response>> call = () -> {
+                final Supplier<ListenableFuture<RapidResponse>> call = () -> {
                     final MembershipServiceFutureStub stub;
-                    stub = getFutureStub(remote).withDeadlineAfter(settings.getGrpcTimeoutMs(), TimeUnit.MILLISECONDS);
-                    return stub.receiveLinkUpdateMessage(msg);
+                    stub = getFutureStub(remote).withDeadlineAfter(getTimeoutForMessageMs(msg), TimeUnit.MILLISECONDS);
+                    return stub.sendRequest(msg);
                 };
-                return callWithRetries(call, remote, settings.getGrpcDefaultRetries());
+                return callWithRetries(call, remote, 0);
             }).get();
         } catch (final InterruptedException | ExecutionException e) {
             return Futures.immediateFailedFuture(e);
@@ -332,6 +262,23 @@ public final class GrpcClient implements IMessagingClient {
         }
 
         return channel;
+    }
+
+    /**
+     * TODO: These timeouts should be on the Rapid side of the IMessagingClient API.
+     *
+     * @param msg RapidRequest
+     * @return timeout to use for the RapidRequest message
+     */
+    private int getTimeoutForMessageMs(final RapidRequest msg) {
+        switch (msg.getContentCase()) {
+            case PROBEMESSAGE:
+                return settings.getGrpcProbeTimeoutMs();
+            case JOINMESSAGE:
+                return settings.getGrpcJoinTimeoutMs();
+            default:
+                return settings.getGrpcTimeoutMs();
+        }
     }
 
     public interface ISettings {

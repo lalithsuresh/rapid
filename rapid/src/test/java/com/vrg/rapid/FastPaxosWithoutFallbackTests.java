@@ -4,7 +4,8 @@ import com.google.common.net.HostAndPort;
 import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.messaging.impl.GrpcClient;
 import com.vrg.rapid.monitoring.impl.PingPongFailureDetector;
-import com.vrg.rapid.pb.ConsensusProposal;
+import com.vrg.rapid.pb.FastRoundPhase2bMessage;
+import com.vrg.rapid.pb.RapidRequest;
 import junitparams.JUnitParamsRunner;
 import junitparams.Parameters;
 import junitparams.naming.TestCaseName;
@@ -27,7 +28,7 @@ import static org.junit.Assert.assertEquals;
  * Unit tests for the MembershipService class without the messaging.
  */
 @RunWith(JUnitParamsRunner.class)
-public class MembershipServiceTest {
+public class FastPaxosWithoutFallbackTests {
     private static final int K = 10;
     private static final int H = 8;
     private static final int L = 3;
@@ -57,14 +58,15 @@ public class MembershipServiceTest {
         final MembershipService service = createAndStartMembershipService(node, view);
         assertEquals(N, service.getMembershipSize());
         final long currentId = view.getCurrentConfigurationId();
-        final ConsensusProposal.Builder proposal =
+        final FastRoundPhase2bMessage.Builder proposal =
                 getProposal(currentId, Collections.singletonList(proposalNode));
 
         for (int i = 0; i < quorum - 1; i++) {
-            service.handleMessage(proposal.setSender(addrForBase(i).toString()).build()).get();
+            service.handleMessage(asRapidMessage(proposal.setSender(addrForBase(i).toString()).build())).get();
             assertEquals(N, service.getMembershipSize());
         }
-        service.handleMessage(proposal.setSender(addrForBase(quorum - 1).toString()).build()).get();
+        service.handleMessage(asRapidMessage(proposal.setSender(addrForBase(quorum - 1).toString()).build()))
+               .get();
         assertEquals(N - 1, service.getMembershipSize());
     }
 
@@ -95,21 +97,21 @@ public class MembershipServiceTest {
         assertEquals(N, service.getMembershipSize());
         final long currentId = view.getCurrentConfigurationId();
 
-        final ConsensusProposal.Builder proposal =
+        final FastRoundPhase2bMessage.Builder proposal =
                 getProposal(currentId, Collections.singletonList(proposalNode));
-        final ConsensusProposal.Builder proposalConflict =
+        final FastRoundPhase2bMessage.Builder proposalConflict =
                 getProposal(currentId, Collections.singletonList(proposalNodeConflict));
         for (int i = 0; i < numConflicts; i++) {
-            service.handleMessage(proposalConflict.setSender(addrForBase(i).toString()).build()).get();
+            service.handleMessage(asRapidMessage(proposalConflict.setSender(addrForBase(i).toString()).build())).get();
             assertEquals(N, service.getMembershipSize());
         }
         final int nonConflictCount = Math.min(numConflicts + quorum - 1, N - 1);
         for (int i = numConflicts; i < nonConflictCount; i++) {
-            service.handleMessage(proposal.setSender(addrForBase(i).toString()).build()).get();
+            service.handleMessage(asRapidMessage(proposal.setSender(addrForBase(i).toString()).build())).get();
             assertEquals(N, service.getMembershipSize());
         }
-        service.handleMessage(proposal.setSender(addrForBase(nonConflictCount)
-                                                 .toString()).build()).get();
+        service.handleMessage(asRapidMessage(proposal.setSender(addrForBase(nonConflictCount)
+                                                 .toString()).build())).get();
         assertEquals(changeExpected ? N - 1 : N, service.getMembershipSize());
     }
 
@@ -162,8 +164,9 @@ public class MembershipServiceTest {
     /**
      * Returns a proposal message without the sender set.
      */
-    private ConsensusProposal.Builder getProposal(final long currentConfigurationId, final List<HostAndPort> proposal) {
-        return ConsensusProposal.newBuilder()
+    private FastRoundPhase2bMessage.Builder getProposal(final long currentConfigurationId,
+                                                        final List<HostAndPort> proposal) {
+        return FastRoundPhase2bMessage.newBuilder()
                 .setConfigurationId(currentConfigurationId)
                 .addAllHosts(proposal
                         .stream()
@@ -176,4 +179,7 @@ public class MembershipServiceTest {
         return HostAndPort.fromParts("127.0.0.1", port);
     }
 
+    private RapidRequest asRapidMessage(final FastRoundPhase2bMessage proposal) {
+        return Utils.toRapidRequest(proposal);
+    }
 }

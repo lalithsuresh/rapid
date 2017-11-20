@@ -21,7 +21,6 @@ import com.vrg.rapid.messaging.IBroadcaster;
 import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.monitoring.ILinkFailureDetectorFactory;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
-import com.vrg.rapid.pb.ConsensusProposal;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
@@ -32,6 +31,8 @@ import com.vrg.rapid.pb.NodeId;
 import com.vrg.rapid.pb.PreJoinMessage;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
+import com.vrg.rapid.pb.RapidRequest;
+import com.vrg.rapid.pb.RapidResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -75,7 +76,7 @@ public final class MembershipService {
     private final WatermarkBuffer watermarkBuffer;
     private final HostAndPort myAddr;
     private final IBroadcaster broadcaster;
-    private final Map<HostAndPort, LinkedBlockingDeque<SettableFuture<JoinResponse>>> joinersToRespondTo =
+    private final Map<HostAndPort, LinkedBlockingDeque<SettableFuture<RapidResponse>>> joinersToRespondTo =
             new HashMap<>();
     private final Map<HostAndPort, NodeId> joinerUuid = new HashMap<>();
     private final Map<HostAndPort, Metadata> joinerMetadata = new HashMap<>();
@@ -149,8 +150,8 @@ public final class MembershipService {
 
         // Prepare consensus instance
         this.fastPaxosInstance = new FastPaxos(myAddr, membershipView.getCurrentConfigurationId(),
-                                               membershipView.getMembershipSize(), this.broadcaster,
-                                               this::decideViewChange);
+                                               membershipView.getMembershipSize(), this.messagingClient,
+                                               this.broadcaster, this::decideViewChange);
         createFailureDetectorsForCurrentConfiguration();
 
         // Execute all VIEW_CHANGE callbacks. This informs applications that a start/join has successfully completed.
@@ -160,12 +161,37 @@ public final class MembershipService {
     }
 
     /**
+     * Entry point for all messages.
+     */
+    public ListenableFuture<RapidResponse> handleMessage(final RapidRequest msg) {
+        switch (msg.getContentCase()) {
+            case PREJOINMESSAGE:
+                return handleMessage(msg.getPreJoinMessage());
+            case JOINMESSAGE:
+                return handleMessage(msg.getJoinMessage());
+            case BATCHEDLINKUPDATEMESSAGE:
+                return handleMessage(msg.getBatchedLinkUpdateMessage());
+            case PROBEMESSAGE:
+                return handleMessage(msg.getProbeMessage());
+            case FASTROUNDPHASE2BMESSAGE:
+            case PHASE1AMESSAGE:
+            case PHASE1BMESSAGE:
+            case PHASE2AMESSAGE:
+            case PHASE2BMESSAGE:
+                return handleConsensusMessages(msg);
+            case CONTENT_NOT_SET:
+            default:
+                throw new RuntimeException();
+        }
+    }
+
+    /**
      * This is invoked by a new node joining the network at a seed node.
      * The seed responds with the current configuration ID and a list of monitors
      * for the joiner, who then moves on to phase 2 of the protocol with its monitors.
      */
-    public ListenableFuture<JoinResponse> handleMessage(final PreJoinMessage msg) {
-        final SettableFuture<JoinResponse> future = SettableFuture.create();
+    private ListenableFuture<RapidResponse> handleMessage(final PreJoinMessage msg) {
+        final SettableFuture<RapidResponse> future = SettableFuture.create();
 
         sharedResources.getProtocolExecutor().execute(() -> {
             final HostAndPort joiningHost = HostAndPort.fromString(msg.getSender());
@@ -185,7 +211,7 @@ public final class MembershipService {
                         .map(HostAndPort::toString)
                         .collect(Collectors.toList()));
             }
-            future.set(builder.build());
+            future.set(Utils.toRapidResponse(builder.build()));
         });
         return future;
     }
@@ -196,8 +222,8 @@ public final class MembershipService {
      * and consensus succeeds, the monitor informs the joiner about the new configuration it
      * is now a part of.
      */
-    public ListenableFuture<JoinResponse> handleMessage(final JoinMessage joinMessage) {
-        final SettableFuture<JoinResponse> future = SettableFuture.create();
+    private ListenableFuture<RapidResponse> handleMessage(final JoinMessage joinMessage) {
+        final SettableFuture<RapidResponse> future = SettableFuture.create();
 
         sharedResources.getProtocolExecutor().execute(() -> {
             final long currentConfiguration = membershipView.getCurrentConfigurationId();
@@ -250,7 +276,7 @@ public final class MembershipService {
                             joinMessage.getSender(), myAddr,
                             configuration.getConfigurationId(), configuration.hostAndPorts.size());
                 }
-                future.set(responseBuilder.build()); // new configuration
+                future.set(Utils.toRapidResponse(responseBuilder.build())); // new configuration
             }
         });
         return future;
@@ -265,9 +291,9 @@ public final class MembershipService {
      * Link update messages that do not affect an ongoing proposal
      * needs to be dropped.
      */
-    public ListenableFuture<Void> handleMessage(final BatchedLinkUpdateMessage messageBatch) {
+    private ListenableFuture<RapidResponse> handleMessage(final BatchedLinkUpdateMessage messageBatch) {
         Objects.requireNonNull(messageBatch);
-        final SettableFuture<Void> future = SettableFuture.create();
+        final SettableFuture<RapidResponse> future = SettableFuture.create();
 
         sharedResources.getProtocolExecutor().execute(() -> {
             // We already have a proposal for this round
@@ -313,12 +339,9 @@ public final class MembershipService {
      * XXX: Implement recovery for the extremely rare possibility of conflicting proposals.
      *
      */
-    public ListenableFuture<Void> handleMessage(final ConsensusProposal proposalMessage) {
-        final SettableFuture<Void> future = SettableFuture.create();
-        sharedResources.getProtocolExecutor().execute(() -> {
-            fastPaxosInstance.handleFastRoundProposal(proposalMessage);
-            future.set(null);
-        });
+    ListenableFuture<RapidResponse> handleConsensusMessages(final RapidRequest request) {
+        final SettableFuture<RapidResponse> future = SettableFuture.create();
+        sharedResources.getProtocolExecutor().execute(() -> future.set(fastPaxosInstance.handleMessages(request)));
         return future;
     }
 
@@ -366,7 +389,7 @@ public final class MembershipService {
         watermarkBuffer.clear();
         announcedProposal = false;
         fastPaxosInstance = new FastPaxos(myAddr, currentConfigurationId, membershipView.getMembershipSize(),
-                                          broadcaster, this::decideViewChange);
+                                          messagingClient, broadcaster, this::decideViewChange);
         broadcaster.setMembership(membershipView.getRing(0));
 
         // Inform LinkFailureDetector about membership change
@@ -387,9 +410,9 @@ public final class MembershipService {
     /**
      * Invoked by monitors of a node for failure detection.
      */
-    public ListenableFuture<ProbeResponse> handleMessage(final ProbeMessage probeMessage) {
+    private ListenableFuture<RapidResponse> handleMessage(final ProbeMessage probeMessage) {
         LOG.trace("handleProbeMessage at {} from {}", myAddr, probeMessage.getSender());
-        return Futures.immediateFuture(ProbeResponse.getDefaultInstance());
+        return Futures.immediateFuture(Utils.toRapidResponse(ProbeResponse.getDefaultInstance()));
     }
 
 
@@ -543,7 +566,7 @@ public final class MembershipService {
                             .setSender(myAddr.toString())
                             .addAllMessages(messages)
                             .build();
-                    broadcaster.broadcast(batched);
+                    broadcaster.broadcast(Utils.toRapidRequest(batched));
                 }
             }
             finally {
@@ -652,7 +675,7 @@ public final class MembershipService {
             if (joinersToRespondTo.containsKey(node)) {
                 backgroundTasksExecutor.execute(
                     () -> joinersToRespondTo.remove(node)
-                                            .forEach(settableFuture -> settableFuture.set(response))
+                            .forEach(settableFuture -> settableFuture.set(Utils.toRapidResponse(response)))
                 );
             }
         }

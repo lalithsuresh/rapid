@@ -21,6 +21,8 @@ import com.vrg.rapid.monitoring.ILinkFailureDetectorFactory;
 import com.vrg.rapid.pb.NodeStatus;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
+import com.vrg.rapid.pb.RapidRequest;
+import com.vrg.rapid.pb.RapidResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,7 +51,7 @@ public class PingPongFailureDetector implements Runnable {
     private boolean notified = false;
 
     // A cache for probe messages. Avoids creating an unnecessary copy of a probe message each time.
-    private final ProbeMessage probeMessage;
+    private final RapidRequest probeMessage;
 
     private PingPongFailureDetector(final HostAndPort address, final HostAndPort monitoree,
                                     final IMessagingClient rpcClient, final Runnable notifier) {
@@ -59,7 +61,8 @@ public class PingPongFailureDetector implements Runnable {
         this.notifier = notifier;
         this.failureCount = new AtomicInteger(0);
         this.bootstrapResponseCount = new AtomicInteger(0);
-        this.probeMessage = ProbeMessage.newBuilder().setSender(address.toString()).build();
+        this.probeMessage = RapidRequest.newBuilder().setProbeMessage(
+                ProbeMessage.newBuilder().setSender(address.toString()).build()).build();
     }
 
     // Executed at monitor
@@ -75,12 +78,12 @@ public class PingPongFailureDetector implements Runnable {
         }
         else {
             LOG.trace("{} sending probe to {}", address, monitoree);
-            Futures.addCallback(rpcClient.sendMessage(monitoree, probeMessage),
+            Futures.addCallback(rpcClient.sendMessageBestEffort(monitoree, probeMessage),
                     new ProbeCallback(monitoree));
         }
     }
 
-    private class ProbeCallback implements FutureCallback<ProbeResponse> {
+    private class ProbeCallback implements FutureCallback<RapidResponse> {
         final HostAndPort monitoree;
 
         ProbeCallback(final HostAndPort monitoree) {
@@ -88,11 +91,12 @@ public class PingPongFailureDetector implements Runnable {
         }
 
         @Override
-        public void onSuccess(@Nullable final ProbeResponse probeResponse) {
-            if (probeResponse == null) {
+        public void onSuccess(@Nullable final RapidResponse response) {
+            if (response == null) {
                 handleProbeOnFailure(new RuntimeException("null probe response received"));
                 return;
             }
+            final ProbeResponse probeResponse = response.getProbeResponse();
             if (probeResponse.getStatus().equals(NodeStatus.BOOTSTRAPPING)) {
                 final int numBootstrapResponses = bootstrapResponseCount.incrementAndGet();
                 if (numBootstrapResponses > BOOTSTRAP_COUNT_THRESHOLD) {

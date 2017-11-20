@@ -13,7 +13,6 @@
 
 package com.vrg.rapid.messaging.impl;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
@@ -21,21 +20,13 @@ import com.google.common.util.concurrent.ListenableFuture;
 import com.vrg.rapid.MembershipService;
 import com.vrg.rapid.SharedResources;
 import com.vrg.rapid.messaging.IMessagingServer;
-import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
-import com.vrg.rapid.pb.ConsensusProposal;
-import com.vrg.rapid.pb.ConsensusProposalResponse;
-import com.vrg.rapid.pb.PreJoinMessage;
-import com.vrg.rapid.pb.JoinMessage;
-import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.MembershipServiceGrpc;
 import com.vrg.rapid.pb.NodeStatus;
-import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
-import com.vrg.rapid.pb.Response;
+import com.vrg.rapid.pb.RapidRequest;
+import com.vrg.rapid.pb.RapidResponse;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
-import io.grpc.ServerInterceptor;
-import io.grpc.ServerInterceptors;
 import io.grpc.inprocess.InProcessServerBuilder;
 import io.grpc.netty.NettyServerBuilder;
 import io.grpc.stub.StreamObserver;
@@ -44,8 +35,6 @@ import io.netty.channel.EventLoopGroup;
 import javax.annotation.Nullable;
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
@@ -54,28 +43,26 @@ import java.util.concurrent.TimeUnit;
  * gRPC server object. It defers receiving messages until it is ready to
  * host a MembershipService object.
  */
-public final class GrpcServer extends MembershipServiceGrpc.MembershipServiceImplBase implements IMessagingServer {
+public class GrpcServer extends MembershipServiceGrpc.MembershipServiceImplBase implements IMessagingServer {
     private final ExecutorService grpcExecutor;
     @Nullable private final EventLoopGroup eventLoopGroup;
-    private static final ProbeResponse BOOTSTRAPPING_MESSAGE =
-            ProbeResponse.newBuilder().setStatus(NodeStatus.BOOTSTRAPPING).build();
+    private static final RapidResponse BOOTSTRAPPING_MESSAGE =
+            RapidResponse.newBuilder().setProbeResponse(ProbeResponse.newBuilder()
+                                                        .setStatus(NodeStatus.BOOTSTRAPPING).build()).build();
     private final HostAndPort address;
-    @Nullable private MembershipService membershipService;
+    @Nullable
+    private MembershipService membershipService;
     @Nullable private Server server;
-    private final List<ServerInterceptor> interceptors;
     private final boolean useInProcessServer;
 
     // Used to queue messages in the RPC layer until we are ready with
     // a MembershipService object
-    private final DeferredReceiveInterceptor deferringInterceptor = new DeferredReceiveInterceptor();
-
     public GrpcServer(final HostAndPort address, final SharedResources sharedResources,
-                      final List<ServerInterceptor> interceptors, final boolean useInProcessTransport) {
+                      final boolean useInProcessTransport) {
         this.address = address;
         this.grpcExecutor = sharedResources.getServerExecutor();
         this.eventLoopGroup = useInProcessTransport ? null : sharedResources.getEventLoopGroup();
         this.useInProcessServer = useInProcessTransport;
-        this.interceptors = interceptors;
     }
 
 
@@ -83,59 +70,13 @@ public final class GrpcServer extends MembershipServiceGrpc.MembershipServiceImp
      * Defined in rapid.proto.
      */
     @Override
-    public void receivePreJoinMessage(final PreJoinMessage joinMessage,
-                                      final StreamObserver<JoinResponse> responseObserver) {
-        assert membershipService != null;
-        final ListenableFuture<JoinResponse> result = membershipService.handleMessage(joinMessage);
-        Futures.addCallback(result, new JoinResponseCallback(responseObserver), grpcExecutor);
-    }
-
-    /**
-     * Defined in rapid.proto.
-     */
-    @Override
-    public void receiveJoinPhase2Message(final JoinMessage joinMessage,
-                                         final StreamObserver<JoinResponse> responseObserver) {
-        assert membershipService != null;
-        final ListenableFuture<JoinResponse> result = membershipService.handleMessage(joinMessage);
-        Futures.addCallback(result, new JoinResponseCallback(responseObserver), grpcExecutor);
-    }
-
-    /**
-     * Defined in rapid.proto.
-     */
-    @Override
-    public void receiveLinkUpdateMessage(final BatchedLinkUpdateMessage request,
-                                         final StreamObserver<Response> responseObserver) {
-        assert membershipService != null;
-        Futures.addCallback(membershipService.handleMessage(request), new VoidResponseCallback(), grpcExecutor);
-        responseObserver.onNext(Response.getDefaultInstance());
-        responseObserver.onCompleted();
-    }
-
-    /**
-     * Defined in rapid.proto.
-     */
-    @Override
-    public void receiveConsensusProposal(final ConsensusProposal request,
-                                         final StreamObserver<ConsensusProposalResponse> responseObserver) {
-        assert membershipService != null;
-        Futures.addCallback(membershipService.handleMessage(request), new VoidResponseCallback(), grpcExecutor);
-        responseObserver.onNext(ConsensusProposalResponse.getDefaultInstance());
-        responseObserver.onCompleted();
-    }
-
-    /**
-     * Defined in rapid.proto.
-     */
-    @Override
-    public void receiveProbe(final ProbeMessage probeMessage,
-                             final StreamObserver<ProbeResponse> probeResponseObserver) {
+    public void sendRequest(final RapidRequest rapidRequest,
+                            final StreamObserver<RapidResponse> responseObserver) {
         if (membershipService != null) {
-            final ListenableFuture<ProbeResponse> result = membershipService.handleMessage(probeMessage);
-            Futures.addCallback(result, new ProbeResponseCallback(probeResponseObserver), grpcExecutor);
+            final ListenableFuture<RapidResponse> result = membershipService.handleMessage(rapidRequest);
+            Futures.addCallback(result, new ResponseCallback(responseObserver), grpcExecutor);
         }
-        else {
+        else if (rapidRequest.getContentCase().equals(RapidRequest.ContentCase.PROBEMESSAGE)) {
             /*
              * This is a special case which indicates that:
              *  1) the system is configured to use a failure detector that relies on Rapid's probe messages
@@ -145,8 +86,8 @@ public final class GrpcServer extends MembershipServiceGrpc.MembershipServiceImp
              *     still bootstrapping. This extra information may or may not be respected by the failure detector,
              *     but is useful in large deployments.
              */
-            probeResponseObserver.onNext(BOOTSTRAPPING_MESSAGE);
-            probeResponseObserver.onCompleted();
+            responseObserver.onNext(BOOTSTRAPPING_MESSAGE);
+            responseObserver.onCompleted();
         }
     }
 
@@ -163,7 +104,6 @@ public final class GrpcServer extends MembershipServiceGrpc.MembershipServiceImp
             throw new RuntimeException("setMembershipService called more than once");
         }
         this.membershipService = service;
-        deferringInterceptor.unblock();
     }
 
 
@@ -186,25 +126,16 @@ public final class GrpcServer extends MembershipServiceGrpc.MembershipServiceImp
      */
     @Override
     public void start() throws IOException {
-        startServer(interceptors);
-    }
-
-    private void startServer(final List<ServerInterceptor> interceptors) throws IOException {
-        Objects.requireNonNull(interceptors);
-        final ImmutableList.Builder<ServerInterceptor> listBuilder = ImmutableList.builder();
-        final List<ServerInterceptor> interceptorList = listBuilder.add(deferringInterceptor)
-                                                                   .addAll(interceptors) // called first by grpc
-                                                                   .build();
         if (useInProcessServer) {
             final ServerBuilder builder = InProcessServerBuilder.forName(address.toString());
-            server = builder.addService(ServerInterceptors.intercept(this, interceptorList))
+            server = builder.addService(this)
                     .executor(grpcExecutor)
                     .build()
                     .start();
         } else {
             server = NettyServerBuilder.forAddress(new InetSocketAddress(address.getHost(), address.getPort()))
                     .workerEventLoopGroup(eventLoopGroup)
-                    .addService(ServerInterceptors.intercept(this, interceptorList))
+                    .addService(this)
                     .executor(grpcExecutor)
                     .build()
                     .start();
@@ -215,47 +146,17 @@ public final class GrpcServer extends MembershipServiceGrpc.MembershipServiceImp
     }
 
     // Callbacks
-    private static class JoinResponseCallback implements FutureCallback<JoinResponse> {
-        private final StreamObserver<JoinResponse> responseObserver;
+    private static class ResponseCallback implements FutureCallback<RapidResponse> {
+        private final StreamObserver<RapidResponse> responseObserver;
 
-        JoinResponseCallback(final StreamObserver<JoinResponse> responseObserver) {
+        ResponseCallback(final StreamObserver<RapidResponse> responseObserver) {
             this.responseObserver = responseObserver;
         }
 
         @Override
-        public void onSuccess(@Nullable final JoinResponse response) {
+        public void onSuccess(@Nullable final RapidResponse response) {
             responseObserver.onNext(response);
             responseObserver.onCompleted();
-        }
-
-        @Override
-        public void onFailure(final Throwable throwable) {
-            throwable.printStackTrace();
-        }
-    }
-
-    private static class ProbeResponseCallback implements FutureCallback<ProbeResponse> {
-        private final StreamObserver<ProbeResponse> responseObserver;
-
-        ProbeResponseCallback(final StreamObserver<ProbeResponse> responseObserver) {
-            this.responseObserver = responseObserver;
-        }
-
-        @Override
-        public void onSuccess(@Nullable final ProbeResponse response) {
-            responseObserver.onNext(response);
-            responseObserver.onCompleted();
-        }
-
-        @Override
-        public void onFailure(final Throwable throwable) {
-            throwable.printStackTrace();
-        }
-    }
-
-    private static class VoidResponseCallback implements FutureCallback<Void> {
-        @Override
-        public void onSuccess(@Nullable final Void response) {
         }
 
         @Override
