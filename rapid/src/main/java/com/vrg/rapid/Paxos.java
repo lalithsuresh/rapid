@@ -19,6 +19,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
+import javax.annotation.concurrent.NotThreadSafe;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -37,6 +38,7 @@ import java.util.stream.Collectors;
  *  only round that is a fast round. A round is identified by a tuple (rnd-number, nodeId), where nodeId is a unique
  *  identifier per node that initiates phase1.
  */
+@NotThreadSafe
 public class Paxos {
     private static final Logger LOG = LoggerFactory.getLogger(Paxos.class);
 
@@ -59,8 +61,8 @@ public class Paxos {
     private final Consumer<List<HostAndPort>> onDecide;
     private boolean decided = false;
 
-    public Paxos(final HostAndPort myAddr, final long configurationId, final int N, final IBroadcaster broadcaster,
-                 final IMessagingClient client, final Consumer<List<HostAndPort>> onDecide) {
+    public Paxos(final HostAndPort myAddr, final long configurationId, final int N, final IMessagingClient client,
+                 final IBroadcaster broadcaster, final Consumer<List<HostAndPort>> onDecide) {
         this.myAddr = myAddr;
         this.configurationId = configurationId;
         this.N = N;

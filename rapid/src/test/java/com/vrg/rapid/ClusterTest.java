@@ -120,9 +120,9 @@ public class ClusterTest {
     public void singleNodeJoinsThroughSeed() throws IOException, InterruptedException, ExecutionException {
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         createCluster(1, seedHost);
-        verifyCluster(1, seedHost);
+        verifyCluster(1);
         extendCluster(1, seedHost);
-        verifyCluster(2, seedHost);
+        verifyCluster(2);
     }
 
     /**
@@ -133,7 +133,7 @@ public class ClusterTest {
         final int numNodes = 10;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         createCluster(1, seedHost); // Only bootstrap a seed.
-        verifyCluster(1, seedHost);
+        verifyCluster(1);
         for (int i = 0; i < numNodes; i++) {
             extendCluster(1, seedHost);
             waitAndVerifyAgreement(i + 2, 5, 1000, seedHost);
@@ -148,7 +148,7 @@ public class ClusterTest {
         final int numNodes = 20;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         createCluster(1, seedHost); // Only bootstrap a seed.
-        verifyCluster(1, seedHost);
+        verifyCluster(1);
 
         for (int i = 0; i < numNodes; i++) {
             extendCluster(1, seedHost);
@@ -168,7 +168,7 @@ public class ClusterTest {
         final int numNodes = 100; // Includes the size of the cluster
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         createCluster(numNodes, seedHost);
-        verifyCluster(numNodes, seedHost);
+        verifyCluster(numNodes);
         verifyClusterMetadata(0);
     }
 
@@ -197,7 +197,7 @@ public class ClusterTest {
         final int numNodes = 5;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         createCluster(numNodes, seedHost);
-        verifyCluster(numNodes, seedHost);
+        verifyCluster(numNodes);
         final HostAndPort nodeToFail = HostAndPort.fromParts("127.0.0.1", basePort + 2);
         failSomeNodes(Collections.singletonList(nodeToFail));
         waitAndVerifyAgreement(numNodes - 1, 10, 1000, seedHost);
@@ -215,7 +215,7 @@ public class ClusterTest {
         final int phaseTwojoiners = 10;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         createCluster(numNodes, seedHost);
-        verifyCluster(numNodes, seedHost);
+        verifyCluster(numNodes);
         failSomeNodes(IntStream.range(basePort + 2, basePort + 2 + failingNodes)
                                .mapToObj(i -> HostAndPort.fromParts("127.0.0.1", i))
                                .collect(Collectors.toList()));
@@ -235,7 +235,7 @@ public class ClusterTest {
         final int phaseTwojoiners = 6;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         createCluster(numNodes, seedHost);
-        verifyCluster(numNodes, seedHost);
+        verifyCluster(numNodes);
         final Random r = new Random();
 
         for (int i = 0; i < phaseOneJoiners / 2; i++) {
@@ -261,15 +261,41 @@ public class ClusterTest {
         final int numFailingNodes = 12;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         createCluster(numNodes, seedHost);
-        verifyCluster(numNodes, seedHost);
+        verifyCluster(numNodes);
         // Fail the first 3 nodes.
         final Set<HostAndPort> failingNodes = getRandomHosts(numFailingNodes);
         staticFds.values().forEach(e -> e.addFailedNodes(failingNodes));
+        failingNodes.forEach(h -> instances.remove(h).shutdown());
         waitAndVerifyAgreement(numNodes - failingNodes.size(), 20, 1000, seedHost);
         // Nodes do not actually shutdown(), but are detected faulty. The faulty nodes have active
         // cluster instances and identify themselves as kicked out.
-        verifyNumClusterInstances(numNodes);
+        verifyNumClusterInstances(numNodes - failingNodes.size());
     }
+
+
+    /**
+     * This test starts with a 50 node cluster. We then fail 16 nodes to see if the monitoring mechanism
+     * identifies the crashed nodes, and arrives at a decision.
+     *
+     */
+    @Test(timeout = 30000)
+    public void failRandomThirdOfNodes() throws IOException, InterruptedException {
+        useStaticFd = true;
+        final int numNodes = 50;
+        final int numFailingNodes = 16;
+        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
+        createCluster(numNodes, seedHost);
+        verifyCluster(numNodes);
+        // Fail the first 3 nodes.
+        final Set<HostAndPort> failingNodes = getRandomHosts(numFailingNodes);
+        staticFds.values().forEach(e -> e.addFailedNodes(failingNodes));
+        failingNodes.forEach(h -> instances.remove(h).shutdown());
+        waitAndVerifyAgreement(numNodes - failingNodes.size(), 20, 1000, seedHost);
+        // Nodes do not actually shutdown(), but are detected faulty. The faulty nodes have active
+        // cluster instances and identify themselves as kicked out.
+        verifyNumClusterInstances(numNodes - failingNodes.size());
+    }
+
 
     /**
      * This test starts with a 50 node cluster. We then use the static failure detector to fail
@@ -282,7 +308,7 @@ public class ClusterTest {
         final int numFailingNodes = 10;
         final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
         createCluster(numNodes, seedHost);
-        verifyCluster(numNodes, seedHost);
+        verifyCluster(numNodes);
         // Fail the first 3 nodes.
         final Set<HostAndPort> failingNodes = getRandomHosts(numFailingNodes);
         staticFds.values().forEach(e -> e.addFailedNodes(failingNodes));
@@ -604,12 +630,12 @@ public class ClusterTest {
      * list of members as the seed node.
      *
      * @param expectedSize expected size of each cluster
-     * @param seedHost seed node to validate the cluster view against
      */
-    private void verifyCluster(final int expectedSize, final HostAndPort seedHost) {
+    private void verifyCluster(final int expectedSize) {
+        final List<HostAndPort> any = instances.entrySet().iterator().next().getValue().getMemberlist();
         for (final Cluster cluster : instances.values()) {
             assertEquals(cluster.toString(), expectedSize, cluster.getMemberlist().size());
-            assertEquals(cluster.getMemberlist(), instances.get(seedHost).getMemberlist());
+            assertEquals(cluster.getMemberlist(), any);
             if (addMetadata) {
                 assertEquals(cluster.toString(), expectedSize, cluster.getClusterMetadata().size());
             }
@@ -651,9 +677,10 @@ public class ClusterTest {
         int tries = maxTries;
         while (--tries > 0) {
             boolean ready = true;
+            final List<HostAndPort> any = instances.entrySet().iterator().next().getValue().getMemberlist();
             for (final Cluster cluster : instances.values()) {
                 if (!(cluster.getMemberlist().size() == expectedSize
-                        && cluster.getMemberlist().equals(instances.get(seedNode).getMemberlist()))) {
+                        && cluster.getMemberlist().equals(any))) {
                     ready = false;
                 }
             }
@@ -664,7 +691,7 @@ public class ClusterTest {
             }
         }
 
-        verifyCluster(expectedSize, seedNode);
+        verifyCluster(expectedSize);
     }
 
     // Helper that provides a list of N random nodes that have already been added to the instances map

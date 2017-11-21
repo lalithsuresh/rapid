@@ -27,6 +27,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.function.Consumer;
 
 import static org.junit.Assert.assertEquals;
@@ -59,8 +60,7 @@ public class PaxosTests {
         final Map.Entry<HostAndPort, FastPaxos> any = instances.entrySet().stream().findAny().get();
         final List<HostAndPort> proposal = Collections.singletonList(HostAndPort.fromString("172.14.12.3"));
         executorService.execute(() -> {
-            any.getValue().propose(proposal);
-            any.getValue().startClassicPaxosRound();
+            any.getValue().propose(proposal, 50);
         });
         waitAndVerifyAgreement(numNodes, 20, 50, decisions);
         assertAll(proposal, decisions);
@@ -78,7 +78,9 @@ public class PaxosTests {
         final LinkedBlockingDeque<List<HostAndPort>> decisions = new LinkedBlockingDeque<>();
         final Consumer<List<HostAndPort>> onDecide = decisions::add;
         final Map<HostAndPort, FastPaxos> instances = createNFastPaxosInstances(numNodes, onDecide);
-        instances.forEach((host, fp) -> executorService.execute(() -> fp.propose(Collections.singletonList(host))));
+        final long recoveryDelayInMs = 100;
+        instances.forEach((host, fp) -> executorService.execute(() -> fp.propose(Collections.singletonList(host),
+                                                                                 recoveryDelayInMs)));
         waitAndVerifyAgreement(numNodes, 20, 50, decisions);
         for (final List<HostAndPort> decision: decisions) {
             assertTrue(decision.size() > 1);
@@ -189,11 +191,12 @@ public class PaxosTests {
         final Map<HostAndPort, ExecutorService> executorServiceMap = new ConcurrentHashMap<>();
         final DirectMessagingClient messagingClient = new DirectMessagingClient(instances, executorServiceMap);
         final DirectBroadcaster directBroadcaster = new DirectBroadcaster(instances, messagingClient);
+        final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(5);
         for (int i = 0; i < numNodes; i++) {
             final HostAndPort addr = HostAndPort.fromParts("127.0.0.1", 1234 + i);
             executorServiceMap.put(addr, Executors.newSingleThreadExecutor());
             final FastPaxos paxos = new FastPaxos(addr, 1, numNodes, messagingClient, directBroadcaster,
-                                                  onDecide);
+                                                  scheduler, onDecide);
             instances.put(addr, paxos);
         }
         return instances;

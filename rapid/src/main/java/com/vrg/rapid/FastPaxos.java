@@ -1,6 +1,5 @@
 package com.vrg.rapid;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.net.HostAndPort;
 import com.google.protobuf.TextFormat;
 import com.vrg.rapid.messaging.IBroadcaster;
@@ -12,11 +11,17 @@ import com.vrg.rapid.pb.RapidResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nullable;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -26,6 +31,8 @@ import java.util.stream.Collectors;
  */
 class FastPaxos {
     private static final Logger LOG = LoggerFactory.getLogger(FastPaxos.class);
+    private static final long BASE_DELAY = 1000;
+    private final double jitterRate;
     private final HostAndPort myAddr;
     private final long configurationId;
     private final long membershipSize;
@@ -34,26 +41,42 @@ class FastPaxos {
     private final Map<List<String>, AtomicInteger> votesPerProposal = new HashMap<>();
     private final Set<String> votesReceived = new HashSet<>(); // Should be a bitset
     private final Paxos paxos;
-    private boolean decided = false;
+    private final ScheduledExecutorService scheduledExecutorService;
+    private final Object paxosLock = new Object();
+    private final AtomicBoolean decided = new AtomicBoolean(false);
+    @Nullable private ScheduledFuture<?> scheduledClassicRoundTask = null;
 
     FastPaxos(final HostAndPort myAddr, final long configurationId, final int membershipSize,
               final IMessagingClient client, final IBroadcaster broadcaster,
-              final Consumer<List<HostAndPort>> onDecide) {
+              final ScheduledExecutorService scheduledExecutorService, final Consumer<List<HostAndPort>> onDecide) {
         this.myAddr = myAddr;
         this.configurationId = configurationId;
         this.onDecide = onDecide;
         this.membershipSize = membershipSize;
         this.broadcaster = broadcaster;
-        this.paxos = new Paxos(myAddr, configurationId, membershipSize, broadcaster, client, onDecide);
+
+        // The rate of a random expovariate variable, used to determine a jitter over a base delay to start classic
+        // rounds. This determines how many classic rounds we want to start per second on average. Does not
+        // affect correctness of the protocol, but having too many nodes starting rounds will increase messaging load,
+        // especially for very large clusters.
+        this.jitterRate = 1 / (double) membershipSize;
+        this.scheduledExecutorService = scheduledExecutorService;
+        final Consumer<List<HostAndPort>> onDecideWrapped = hostAndPorts -> {
+            decided.set(true);
+            onDecide.accept(hostAndPorts);
+        };
+        this.paxos = new Paxos(myAddr, configurationId, membershipSize, client, broadcaster, onDecideWrapped);
     }
 
     /**
-     * Propose a value for a fast round.
+     * Propose a value for a fast round with a delay to trigger the recovery protocol.
      *
      * @param proposal the membership change proposal towards a configuration change.
      */
-    void propose(final List<HostAndPort> proposal) {
-        paxos.registerFastRoundVote(proposal);
+    void propose(final List<HostAndPort> proposal, final long recoveryDelayInMs) {
+        synchronized (paxosLock) {
+            paxos.registerFastRoundVote(proposal);
+        }
         final FastRoundPhase2bMessage consensusMessage = FastRoundPhase2bMessage.newBuilder()
                 .setConfigurationId(configurationId)
                 .addAllHosts(proposal.stream()
@@ -64,6 +87,18 @@ class FastPaxos {
                 .build();
         final RapidRequest proposalMessage = Utils.toRapidRequest(consensusMessage);
         broadcaster.broadcast(proposalMessage);
+        LOG.trace("Scheduling classic round with delay: {}", recoveryDelayInMs);
+        scheduledClassicRoundTask = scheduledExecutorService.schedule(this::startClassicPaxosRound, recoveryDelayInMs,
+                TimeUnit.MILLISECONDS);
+    }
+
+    /**
+     * Propose a value for a fast round.
+     *
+     * @param proposal the membership change proposal towards a configuration change.
+     */
+    void propose(final List<HostAndPort> proposal) {
+        propose(proposal, getRandomDelayMs());
     }
 
 
@@ -83,7 +118,7 @@ class FastPaxos {
             return;
         }
 
-        if (decided) {
+        if (decided.get()) {
             return;
         }
         votesReceived.add(proposalMessage.getSender());
@@ -99,11 +134,13 @@ class FastPaxos {
                         .stream()
                         .map(HostAndPort::fromString)
                         .collect(Collectors.toList()));
-                decided = true;
+                decided.set(true);
+                if (scheduledClassicRoundTask != null) {
+                    scheduledClassicRoundTask.cancel(true);
+                }
             } else {
                 // fallback protocol here
                 LOG.trace("{} fast round may not succeed for {}", myAddr, proposalMessage.getHostsList());
-                startClassicPaxosRound();
             }
         }
     }
@@ -139,8 +176,19 @@ class FastPaxos {
     /**
      * Trigger Paxos phase1a.
      */
-    @VisibleForTesting
     void startClassicPaxosRound() {
-        paxos.startPhase1a(1);
+        if (!decided.get()) {
+            synchronized (paxosLock) {
+                paxos.startPhase1a(1);
+            }
+        }
+    }
+
+    /**
+     * Random expovariate variable plus a base delay.
+     */
+    private long getRandomDelayMs() {
+        final long jitter = (long) (-1000 * Math.log(1 - ThreadLocalRandom.current().nextDouble()) / jitterRate);
+        return jitter + BASE_DELAY;
     }
 }

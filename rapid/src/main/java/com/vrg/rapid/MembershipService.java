@@ -151,7 +151,7 @@ public final class MembershipService {
         // Prepare consensus instance
         this.fastPaxosInstance = new FastPaxos(myAddr, membershipView.getCurrentConfigurationId(),
                                                membershipView.getMembershipSize(), this.messagingClient,
-                                               this.broadcaster, this::decideViewChange);
+                                               this.broadcaster, this.backgroundTasksExecutor, this::decideViewChange);
         createFailureDetectorsForCurrentConfiguration();
 
         // Execute all VIEW_CHANGE callbacks. This informs applications that a start/join has successfully completed.
@@ -389,7 +389,8 @@ public final class MembershipService {
         watermarkBuffer.clear();
         announcedProposal = false;
         fastPaxosInstance = new FastPaxos(myAddr, currentConfigurationId, membershipView.getMembershipSize(),
-                                          messagingClient, broadcaster, this::decideViewChange);
+                                          messagingClient, broadcaster, backgroundTasksExecutor,
+                                          this::decideViewChange);
         broadcaster.setMembership(membershipView.getRing(0));
 
         // Inform LinkFailureDetector about membership change
