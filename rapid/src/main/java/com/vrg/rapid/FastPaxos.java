@@ -36,7 +36,7 @@ class FastPaxos {
     private final HostAndPort myAddr;
     private final long configurationId;
     private final long membershipSize;
-    private final Consumer<List<HostAndPort>> onDecide;
+    private final Consumer<List<HostAndPort>> onDecidedWrapped;
     private final IBroadcaster broadcaster;
     private final Map<List<String>, AtomicInteger> votesPerProposal = new HashMap<>();
     private final Set<String> votesReceived = new HashSet<>(); // Should be a bitset
@@ -51,7 +51,6 @@ class FastPaxos {
               final ScheduledExecutorService scheduledExecutorService, final Consumer<List<HostAndPort>> onDecide) {
         this.myAddr = myAddr;
         this.configurationId = configurationId;
-        this.onDecide = onDecide;
         this.membershipSize = membershipSize;
         this.broadcaster = broadcaster;
 
@@ -61,11 +60,14 @@ class FastPaxos {
         // especially for very large clusters.
         this.jitterRate = 1 / (double) membershipSize;
         this.scheduledExecutorService = scheduledExecutorService;
-        final Consumer<List<HostAndPort>> onDecideWrapped = hostAndPorts -> {
+        this.onDecidedWrapped = hostAndPorts -> {
             decided.set(true);
+            if (scheduledClassicRoundTask != null) {
+                scheduledClassicRoundTask.cancel(true);
+            }
             onDecide.accept(hostAndPorts);
         };
-        this.paxos = new Paxos(myAddr, configurationId, membershipSize, client, broadcaster, onDecideWrapped);
+        this.paxos = new Paxos(myAddr, configurationId, membershipSize, client, broadcaster, onDecidedWrapped);
     }
 
     /**
@@ -130,14 +132,10 @@ class FastPaxos {
             if (count >= membershipSize - F) {
                 LOG.trace("{} has decided on a view change: {}", myAddr, proposalMessage.getHostsList());
                 // We have a successful proposal. Consume it.
-                onDecide.accept(proposalMessage.getHostsList()
-                        .stream()
-                        .map(HostAndPort::fromString)
-                        .collect(Collectors.toList()));
-                decided.set(true);
-                if (scheduledClassicRoundTask != null) {
-                    scheduledClassicRoundTask.cancel(true);
-                }
+                onDecidedWrapped.accept(proposalMessage.getHostsList()
+                                .stream()
+                                .map(HostAndPort::fromString)
+                                .collect(Collectors.toList()));
             } else {
                 // fallback protocol here
                 LOG.trace("{} fast round may not succeed for {}", myAddr, proposalMessage.getHostsList());
