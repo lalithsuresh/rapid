@@ -1,10 +1,10 @@
 package com.vrg.rapid;
 
-import com.google.common.net.HostAndPort;
 import com.google.protobuf.TextFormat;
 import com.vrg.rapid.messaging.IBroadcaster;
 import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.pb.ConsensusResponse;
+import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.FastRoundPhase2bMessage;
 import com.vrg.rapid.pb.RapidRequest;
 import com.vrg.rapid.pb.RapidResponse;
@@ -24,7 +24,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
 
 /**
  * Single-decree consensus. We always start with a Fast round.
@@ -33,22 +32,22 @@ class FastPaxos {
     private static final Logger LOG = LoggerFactory.getLogger(FastPaxos.class);
     private static final long BASE_DELAY = 1000;
     private final double jitterRate;
-    private final HostAndPort myAddr;
+    private final Endpoint myAddr;
     private final long configurationId;
     private final long membershipSize;
-    private final Consumer<List<HostAndPort>> onDecidedWrapped;
+    private final Consumer<List<Endpoint>> onDecidedWrapped;
     private final IBroadcaster broadcaster;
-    private final Map<List<String>, AtomicInteger> votesPerProposal = new HashMap<>();
-    private final Set<String> votesReceived = new HashSet<>(); // Should be a bitset
+    private final Map<List<Endpoint>, AtomicInteger> votesPerProposal = new HashMap<>();
+    private final Set<Endpoint> votesReceived = new HashSet<>(); // Should be a bitset
     private final Paxos paxos;
     private final ScheduledExecutorService scheduledExecutorService;
     private final Object paxosLock = new Object();
     private final AtomicBoolean decided = new AtomicBoolean(false);
     @Nullable private ScheduledFuture<?> scheduledClassicRoundTask = null;
 
-    FastPaxos(final HostAndPort myAddr, final long configurationId, final int membershipSize,
+    FastPaxos(final Endpoint myAddr, final long configurationId, final int membershipSize,
               final IMessagingClient client, final IBroadcaster broadcaster,
-              final ScheduledExecutorService scheduledExecutorService, final Consumer<List<HostAndPort>> onDecide) {
+              final ScheduledExecutorService scheduledExecutorService, final Consumer<List<Endpoint>> onDecide) {
         this.myAddr = myAddr;
         this.configurationId = configurationId;
         this.membershipSize = membershipSize;
@@ -60,12 +59,12 @@ class FastPaxos {
         // especially for very large clusters.
         this.jitterRate = 1 / (double) membershipSize;
         this.scheduledExecutorService = scheduledExecutorService;
-        this.onDecidedWrapped = hostAndPorts -> {
+        this.onDecidedWrapped = Hosts -> {
             decided.set(true);
             if (scheduledClassicRoundTask != null) {
                 scheduledClassicRoundTask.cancel(true);
             }
-            onDecide.accept(hostAndPorts);
+            onDecide.accept(Hosts);
         };
         this.paxos = new Paxos(myAddr, configurationId, membershipSize, client, broadcaster, onDecidedWrapped);
     }
@@ -75,17 +74,14 @@ class FastPaxos {
      *
      * @param proposal the membership change proposal towards a configuration change.
      */
-    void propose(final List<HostAndPort> proposal, final long recoveryDelayInMs) {
+    void propose(final List<Endpoint> proposal, final long recoveryDelayInMs) {
         synchronized (paxosLock) {
             paxos.registerFastRoundVote(proposal);
         }
         final FastRoundPhase2bMessage consensusMessage = FastRoundPhase2bMessage.newBuilder()
                 .setConfigurationId(configurationId)
-                .addAllHosts(proposal.stream()
-                        .map(HostAndPort::toString)
-                        .sorted()
-                        .collect(Collectors.toList()))
-                .setSender(myAddr.toString())
+                .addAllEndpoints(proposal)
+                .setSender(myAddr)
                 .build();
         final RapidRequest proposalMessage = Utils.toRapidRequest(consensusMessage);
         broadcaster.broadcast(proposalMessage);
@@ -99,7 +95,7 @@ class FastPaxos {
      *
      * @param proposal the membership change proposal towards a configuration change.
      */
-    void propose(final List<HostAndPort> proposal) {
+    void propose(final List<Endpoint> proposal) {
         propose(proposal, getRandomDelayMs());
     }
 
@@ -124,21 +120,18 @@ class FastPaxos {
             return;
         }
         votesReceived.add(proposalMessage.getSender());
-        final AtomicInteger proposalsReceived = votesPerProposal.computeIfAbsent(proposalMessage.getHostsList(),
+        final AtomicInteger proposalsReceived = votesPerProposal.computeIfAbsent(proposalMessage.getEndpointsList(),
                 k -> new AtomicInteger(0));
         final int count = proposalsReceived.incrementAndGet();
         final int F = (int) Math.floor((membershipSize - 1) / 4.0); // Fast Paxos resiliency.
         if (votesReceived.size() >= membershipSize - F) {
             if (count >= membershipSize - F) {
-                LOG.trace("{} has decided on a view change: {}", myAddr, proposalMessage.getHostsList());
+                LOG.trace("Decided on a view change: {}", proposalMessage.getEndpointsList());
                 // We have a successful proposal. Consume it.
-                onDecidedWrapped.accept(proposalMessage.getHostsList()
-                                .stream()
-                                .map(HostAndPort::fromString)
-                                .collect(Collectors.toList()));
+                onDecidedWrapped.accept(proposalMessage.getEndpointsList());
             } else {
                 // fallback protocol here
-                LOG.trace("{} fast round may not succeed for {}", myAddr, proposalMessage.getHostsList());
+                LOG.trace("Fast round may not succeed for proposal: {}", proposalMessage.getEndpointsList());
             }
         }
     }
@@ -177,7 +170,7 @@ class FastPaxos {
     void startClassicPaxosRound() {
         if (!decided.get()) {
             synchronized (paxosLock) {
-                paxos.startPhase1a(1);
+                paxos.startPhase1a(2);
             }
         }
     }

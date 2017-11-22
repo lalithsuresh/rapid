@@ -13,7 +13,7 @@
 
 package com.vrg.rapid;
 
-import com.google.common.net.HostAndPort;
+import com.vrg.rapid.pb.Endpoint;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.vrg.rapid.messaging.IBroadcaster;
@@ -35,7 +35,7 @@ import java.util.concurrent.ThreadLocalRandom;
 final class UnicastToAllBroadcaster implements IBroadcaster {
     private static final Logger LOG = LoggerFactory.getLogger(UnicastToAllBroadcaster.class);
     private final IMessagingClient messagingClient;
-    private List<HostAndPort> recipients = Collections.emptyList();
+    private List<Endpoint> recipients = Collections.emptyList();
 
     UnicastToAllBroadcaster(final IMessagingClient messagingClient) {
         this.messagingClient = messagingClient;
@@ -45,17 +45,17 @@ final class UnicastToAllBroadcaster implements IBroadcaster {
     @CanIgnoreReturnValue
     public synchronized List<ListenableFuture<RapidResponse>> broadcast(final RapidRequest msg) {
         final List<ListenableFuture<RapidResponse>> futures = new ArrayList<>(recipients.size());
-        for (final HostAndPort recipient: recipients) {
+        for (final Endpoint recipient: recipients) {
             futures.add(messagingClient.sendMessageBestEffort(recipient, msg));
         }
         return futures;
     }
 
     @Override
-    public synchronized void setMembership(final List<HostAndPort> recipients) {
+    public synchronized void setMembership(final List<Endpoint> recipients) {
         LOG.trace("setMembership {}", recipients);
         // Randomize the sequence of nodes that will receive a broadcast from this node for each configuration
-        final List<HostAndPort> arr = new ArrayList<>(recipients);
+        final List<Endpoint> arr = new ArrayList<>(recipients);
         Collections.shuffle(arr, ThreadLocalRandom.current());
         this.recipients = arr;
     }

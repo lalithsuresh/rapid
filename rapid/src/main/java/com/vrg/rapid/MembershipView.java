@@ -14,7 +14,7 @@
 package com.vrg.rapid;
 
 import com.google.common.collect.ImmutableList;
-import com.google.common.net.HostAndPort;
+import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.JoinStatusCode;
 import com.vrg.rapid.pb.NodeId;
 import net.openhft.hashing.LongHashFunction;
@@ -46,7 +46,7 @@ final class MembershipView {
     private final int K;
     private static final LongHashFunction HASH_FUNCTION = LongHashFunction.xx(0);
     private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
-    @GuardedBy("rwLock") private final Map<Integer, NavigableSet<HostAndPort>> rings;
+    @GuardedBy("rwLock") private final Map<Integer, NavigableSet<Endpoint>> rings;
     @GuardedBy("rwLock") private final Set<NodeId> identifiersSeen = new TreeSet<>(NodeIdComparator.INSTANCE);
     @GuardedBy("rwLock") private long currentConfigurationId = -1;
     @GuardedBy("rwLock") private Configuration currentConfiguration;
@@ -66,13 +66,13 @@ final class MembershipView {
      * Used to bootstrap a membership view from the fields of a MembershipView.Settings object.
      */
     MembershipView(final int K, final Collection<NodeId> nodeIds,
-                   final Collection<HostAndPort> hostAndPorts) {
+                   final Collection<Endpoint> endpoints) {
         assert K > 0;
         this.K = K;
         this.rings = new HashMap<>(K);
         for (int k = 0; k < K; k++) {
             this.rings.put(k, new TreeSet<>(AddressComparator.getComparatorWithSeed(k)));
-            this.rings.get(k).addAll(hostAndPorts);
+            this.rings.get(k).addAll(endpoints);
         }
         this.identifiersSeen.addAll(nodeIds);
         this.currentConfiguration = new Configuration(identifiersSeen, rings.get(0));
@@ -87,7 +87,7 @@ final class MembershipView {
      *         UUID_ALREADY_IN_RING if the {@code uuid} is already seen before.
      *         SAFE_TO_JOIN otherwise.
      */
-    JoinStatusCode isSafeToJoin(final HostAndPort node, final NodeId uuid) {
+    JoinStatusCode isSafeToJoin(final Endpoint node, final NodeId uuid) {
         rwLock.readLock().lock();
         try {
             if (rings.get(0).contains(node)) {
@@ -110,7 +110,7 @@ final class MembershipView {
      * @param node the node to be added
      * @param nodeId the logical identifier of the node being added
      */
-    void ringAdd(final HostAndPort node, final NodeId nodeId) {
+    void ringAdd(final Endpoint node, final NodeId nodeId) {
         Objects.requireNonNull(node);
         Objects.requireNonNull(nodeId);
 
@@ -140,7 +140,7 @@ final class MembershipView {
      *
      * @param node the host to be removed
      */
-    void ringDelete(final HostAndPort node) {
+    void ringDelete(final Endpoint node) {
         Objects.requireNonNull(node);
         rwLock.writeLock().lock();
         try {
@@ -166,7 +166,7 @@ final class MembershipView {
      * @return the set of monitors for {@code node}
      * @throws NodeNotInRingException thrown if {@code node} is not in the ring
      */
-    List<HostAndPort> getMonitorsOf(final HostAndPort node) {
+    List<Endpoint> getMonitorsOf(final Endpoint node) {
         Objects.requireNonNull(node);
         rwLock.readLock().lock();
         try {
@@ -178,11 +178,11 @@ final class MembershipView {
                 return Collections.emptyList();
             }
 
-            final List<HostAndPort> monitors = new ArrayList<>();
+            final List<Endpoint> monitors = new ArrayList<>();
 
             for (int k = 0; k < K; k++) {
-                final NavigableSet<HostAndPort> list = rings.get(k);
-                final HostAndPort successor = list.higher(node);
+                final NavigableSet<Endpoint> list = rings.get(k);
+                final Endpoint successor = list.higher(node);
                 if (successor == null) {
                     monitors.add(list.first());
                 }
@@ -203,7 +203,7 @@ final class MembershipView {
      * @return the set of nodes monitored by {@code node}
      * @throws NodeNotInRingException thrown if {@code node} is not in the ring
      */
-    List<HostAndPort> getMonitoreesOf(final HostAndPort node) {
+    List<Endpoint> getMonitoreesOf(final Endpoint node) {
         Objects.requireNonNull(node);
         rwLock.readLock().lock();
         try {
@@ -228,7 +228,7 @@ final class MembershipView {
      * @param node input node
      * @return the list of nodes monitored by {@code node}. Empty list if the membership is empty.
      */
-    List<HostAndPort> getExpectedMonitorsOf(final HostAndPort node) {
+    List<Endpoint> getExpectedMonitorsOf(final Endpoint node) {
         Objects.requireNonNull(node);
         rwLock.readLock().lock();
         try {
@@ -244,12 +244,12 @@ final class MembershipView {
     /**
      * Used by getExpectedMonitorsOf() and getMonitorsOf().
      */
-    private List<HostAndPort> getPredecessorsOf(final HostAndPort node) {
-        final List<HostAndPort> monitorees = new ArrayList<>();
+    private List<Endpoint> getPredecessorsOf(final Endpoint node) {
+        final List<Endpoint> monitorees = new ArrayList<>();
 
         for (int k = 0; k < K; k++) {
-            final NavigableSet<HostAndPort> list = rings.get(k);
-            final HostAndPort predecessor = list.lower(node);
+            final NavigableSet<Endpoint> list = rings.get(k);
+            final Endpoint predecessor = list.lower(node);
             if (predecessor == null) {
                 monitorees.add(list.last());
             }
@@ -266,7 +266,7 @@ final class MembershipView {
      * @param address the host
      * @return True if the node is present in the membership view and false otherwise.
      */
-    boolean isHostPresent(final HostAndPort address) {
+    boolean isHostPresent(final Endpoint address) {
         rwLock.readLock().lock();
         try {
             return rings.get(0).contains(address);
@@ -311,12 +311,12 @@ final class MembershipView {
     }
 
     /**
-     * Get the list of hosts in the k'th ring.
+     * Get the list of endpoints in the k'th ring.
      *
      * @param k the index of the ring to query
-     * @return the list of hosts in the k'th ring.
+     * @return the list of endpoints in the k'th ring.
      */
-    List<HostAndPort> getRing(final int k) {
+    List<Endpoint> getRing(final int k) {
         rwLock.readLock().lock();
         try {
             assert k >= 0;
@@ -333,18 +333,18 @@ final class MembershipView {
      * @param monitoree The monitoree node
      * @return the indexes k such that {@code monitoree} is a successor of {@code monitoree} on ring[k].
      */
-    List<Integer> getRingNumbers(final HostAndPort monitor, final HostAndPort monitoree) {
+    List<Integer> getRingNumbers(final Endpoint monitor, final Endpoint monitoree) {
         rwLock.readLock().lock();
         try {
             // TODO: do this in one scan
-            final List<HostAndPort> monitorees = getMonitoreesOf(monitor);
+            final List<Endpoint> monitorees = getMonitoreesOf(monitor);
             if (monitorees.isEmpty()) {
                 return Collections.emptyList();
             }
 
             final List<Integer> ringIndexes = new ArrayList<>();
             int ringNumber = 0;
-            for (final HostAndPort node: monitorees) {
+            for (final Endpoint node: monitorees) {
                 if (node.equals(monitoree)) {
                     ringIndexes.add(ringNumber);
                 }
@@ -401,9 +401,9 @@ final class MembershipView {
     }
 
     /**
-     * Used to order hosts in the different rings.
+     * Used to order endpoints in the different rings.
      */
-    private static final class AddressComparator implements Comparator<HostAndPort>, Serializable {
+    private static final class AddressComparator implements Comparator<Endpoint>, Serializable {
         private static final long serialVersionUID = -4891729390L;
         private static final Map<Integer, AddressComparator> INSTANCES = new HashMap<>();
         private final LongHashFunction hashFunction;
@@ -413,9 +413,9 @@ final class MembershipView {
         }
 
         @Override
-        public final int compare(final HostAndPort c1, final HostAndPort c2) {
-            final long hash1 = hashFunction.hashChars(c1.getHost()) * 31 + hashFunction.hashInt(c1.getPort());
-            final long hash2 = hashFunction.hashChars(c2.getHost()) * 31 + hashFunction.hashInt(c2.getPort());
+        public final int compare(final Endpoint c1, final Endpoint c2) {
+            final long hash1 = hashFunction.hashChars(c1.getHostname()) * 31 + hashFunction.hashInt(c1.getPort());
+            final long hash2 = hashFunction.hashChars(c2.getHostname()) * 31 + hashFunction.hashInt(c2.getPort());
             return Long.compare(hash1, hash2);
         }
 
@@ -453,20 +453,20 @@ final class MembershipView {
     }
 
     static class NodeAlreadyInRingException extends RuntimeException {
-        NodeAlreadyInRingException(final HostAndPort node) {
+        NodeAlreadyInRingException(final Endpoint node) {
             super(node.toString());
         }
     }
 
     static class NodeNotInRingException extends RuntimeException {
-        NodeNotInRingException(final HostAndPort node) {
+        NodeNotInRingException(final Endpoint node) {
             super(node.toString());
         }
     }
 
     static class UUIDAlreadySeenException extends RuntimeException {
-        UUIDAlreadySeenException(final HostAndPort node, final NodeId nodeId) {
-            super("Host add attempt with identifier already seen:" +
+        UUIDAlreadySeenException(final Endpoint node, final NodeId nodeId) {
+            super("Endpoint add attempt with identifier already seen:" +
                     " {host: " + node + ", identifier: " + nodeId + "}:");
         }
     }
@@ -478,32 +478,32 @@ final class MembershipView {
      */
     static class Configuration {
         final List<NodeId> nodeIds;
-        final List<HostAndPort> hostAndPorts;
+        final List<Endpoint> endpoints;
 
-        public Configuration(final Set<NodeId> nodeIds, final Set<HostAndPort> hostAndPorts) {
+        public Configuration(final Set<NodeId> nodeIds, final Set<Endpoint> endpoints) {
             this.nodeIds = ImmutableList.copyOf(nodeIds);
-            this.hostAndPorts = ImmutableList.copyOf(hostAndPorts);
+            this.endpoints = ImmutableList.copyOf(endpoints);
         }
 
         /**
-         * Gets the configuration ID for the list of hosts and identifiers.
+         * Gets the configuration ID for the list of endpoints and identifiers.
          *
          * @return a configuration identifier.
          */
         public long getConfigurationId() {
-            return getConfigurationId(this.nodeIds, this.hostAndPorts);
+            return getConfigurationId(this.nodeIds, this.endpoints);
         }
 
         static long getConfigurationId(final Collection<NodeId> identifiers,
-                                       final Collection<HostAndPort> hostAndPorts) {
+                                       final Collection<Endpoint> endpoints) {
             long hash = 1;
             for (final NodeId id: identifiers) {
                 hash = hash * 37 + HASH_FUNCTION.hashLong(id.getHigh());
                 hash = hash * 37 + HASH_FUNCTION.hashLong(id.getLow());
             }
-            for (final HostAndPort hostAndPort: hostAndPorts) {
-                hash = hash * 37 + HASH_FUNCTION.hashChars(hostAndPort.getHost());
-                hash = hash * 37 + HASH_FUNCTION.hashInt(hostAndPort.getPort());
+            for (final Endpoint endpoint : endpoints) {
+                hash = hash * 37 + HASH_FUNCTION.hashChars(endpoint.getHostname());
+                hash = hash * 37 + HASH_FUNCTION.hashInt(endpoint.getPort());
             }
             return hash;
         }

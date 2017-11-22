@@ -10,6 +10,13 @@ service MembershipService {
   rpc sendRequest (RapidRequest) returns (RapidResponse) {}
 }
 
+message Endpoint
+{
+    string hostname = 1;
+    int32 port = 2;
+}
+
+
 // All-in-one message type.
 message RapidRequest
 {
@@ -48,7 +55,7 @@ message NodeId
 // TODO: JoinMessage and JoinResponse are overloaded because they are being used for phase 1 and 2 of the bootstrap.
 message PreJoinMessage
 {
-   string sender = 1;
+   Endpoint sender = 1;
    NodeId nodeId = 2;
    repeated int32 ringNumber = 3;
    int64 configurationId = 4;
@@ -56,7 +63,7 @@ message PreJoinMessage
 
 message JoinMessage
 {
-   string sender = 1;
+   Endpoint sender = 1;
    NodeId nodeId = 2;
    repeated int32 ringNumber = 3;
    int64 configurationId = 4;
@@ -65,10 +72,10 @@ message JoinMessage
 
 message JoinResponse
 {
-   string sender = 1;
+   Endpoint sender = 1;
    JoinStatusCode statusCode = 2;
    int64 configurationId = 3;
-   repeated string hosts = 4;
+   repeated Endpoint endpoints = 4;
    repeated NodeId identifiers = 5;
    map<string, Metadata> clusterMetadata = 6;
 }
@@ -85,14 +92,14 @@ enum JoinStatusCode {
 
 message BatchedLinkUpdateMessage
 {
-    string sender = 1;
+    Endpoint sender = 1;
     repeated LinkUpdateMessage messages = 3;
 }
 
 message LinkUpdateMessage
 {
-    string linkSrc = 1;
-    string linkDst = 2;
+    Endpoint linkSrc = 1;
+    Endpoint linkDst = 2;
     LinkStatus linkStatus = 3;
     int64 configurationId = 4;
     repeated int32 ringNumber = 5;
@@ -114,9 +121,9 @@ message Response
 
 message FastRoundPhase2bMessage
 {
-    string sender = 1;
+    Endpoint sender = 1;
     int64 configurationId = 2;
-    repeated string hosts = 3;
+    repeated Endpoint endpoints = 3;
 }
 
 
@@ -129,34 +136,34 @@ message Rank
 
 message Phase1aMessage
 {
-    string sender = 1;
+    Endpoint sender = 1;
     int64 configurationId = 2;
     Rank rank = 3;
 }
 
 message Phase1bMessage
 {
-    string sender = 1;
+    Endpoint sender = 1;
     int64 configurationId = 2;
     Rank rnd = 3;
     Rank vrnd = 4;
-    repeated string vval = 5;
+    repeated Endpoint vval = 5;
 }
 
 message Phase2aMessage
 {
-    string sender = 1;
+    Endpoint sender = 1;
     int64 configurationId = 2;
     Rank rnd = 3;
-    repeated string vval = 5;
+    repeated Endpoint vval = 5;
 }
 
 message Phase2bMessage
 {
-    string sender = 1;
+    Endpoint sender = 1;
     int64 configurationId = 2;
     Rank rnd = 3;
-    repeated string hosts = 4;
+    repeated Endpoint endpoints = 4;
 }
 
 
@@ -176,7 +183,7 @@ message Metadata
 
 message ProbeMessage
 {
-    string sender = 1;
+    Endpoint sender = 1;
     repeated bytes payload = 3;
 }
 

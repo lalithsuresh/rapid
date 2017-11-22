@@ -1,7 +1,11 @@
 package com.vrg.rapid;
 
+import com.google.common.net.HostAndPort;
+import com.google.protobuf.GeneratedMessageV3;
+import com.google.protobuf.TextFormat;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
 import com.vrg.rapid.pb.ConsensusResponse;
+import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.FastRoundPhase2bMessage;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
@@ -17,6 +21,7 @@ import com.vrg.rapid.pb.RapidRequest;
 import com.vrg.rapid.pb.RapidResponse;
 import com.vrg.rapid.pb.Response;
 
+import java.util.Collection;
 import java.util.UUID;
 
 /**
@@ -27,9 +32,99 @@ final class Utils {
     private Utils() {
     }
 
+    /**
+     * Helpers for type conversions
+     */
     static NodeId nodeIdFromUUID(final UUID uuid) {
         return NodeId.newBuilder().setHigh(uuid.getMostSignificantBits())
                                   .setLow(uuid.getLeastSignificantBits()).build();
+    }
+
+    /**
+     * Validate incoming host:port strings using Guava's HostAndPort
+     */
+    static Endpoint hostFromString(final String hostString) {
+        final HostAndPort hostAndPort = HostAndPort.fromString(hostString);    // Validates input
+        return Endpoint.newBuilder().setHostname(hostAndPort.getHost())
+                                           .setPort(hostAndPort.getPort())
+                                           .build();
+    }
+
+    /**
+     * Validate incoming host:port strings using Guava's HostAndPort
+     */
+    static Endpoint hostFromParts(final String hostname, final int port) {
+        final HostAndPort hostAndPort = HostAndPort.fromParts(hostname, port); // Validates input
+        return Endpoint.newBuilder().setHostname(hostAndPort.getHost())
+                .setPort(hostAndPort.getPort())
+                .build();
+    }
+
+    /**
+     * Protobuf messages have a toString() method that uses newlines, which does not bode
+     * well with logging. This class allows a deferred toString() call on the protobuf object.
+     */
+    private static class Loggable<T extends GeneratedMessageV3> {
+        private final T protobufObject;
+
+        Loggable(final T protobufObject) {
+            this.protobufObject = protobufObject;
+        }
+
+        @Override
+        public String toString() {
+            if (protobufObject instanceof Endpoint) {
+                return ((Endpoint) protobufObject).getHostname() + ":" + ((Endpoint) protobufObject).getPort();
+            }
+            else {
+                return TextFormat.shortDebugString(protobufObject);
+            }
+        }
+    }
+
+    /**
+     * Wraps a protobuf object such that it has a logging friendly toString().
+     * @param object protobuf object
+     * @param <T> Any protobuf generated type
+     * @return a Loggable instance which wraps the protobuf object.
+     */
+    static <T extends GeneratedMessageV3> Loggable loggable(final T object) {
+        return new Loggable<>(object);
+    }
+
+    /**
+     * Protobuf messages have a toString() method that uses newlines, which does not bode
+     * well with logging. This class accepts a collection of such protobuf objects and returns
+     * a toString implementation without newlines.
+     */
+    private static class LoggableCollection {
+        private final Collection<? extends GeneratedMessageV3> protobufObjects;
+
+        LoggableCollection(final Collection<? extends GeneratedMessageV3> protobufObjects) {
+            this.protobufObjects = protobufObjects;
+        }
+
+        @Override
+        public String toString() {
+            final StringBuilder sb = new StringBuilder();
+            sb.append("[");
+            for (final GeneratedMessageV3 obj: protobufObjects) {
+                sb.append(TextFormat.shortDebugString(obj));
+                sb.append(",");
+            }
+            sb.append("]");
+            return sb.toString();
+        }
+    }
+
+    /**
+     * Wraps a collection of protobuf objects such that it has a logging friendly toString().
+     * @param object collection of protobuf objects
+     * @param <T> Any protobuf generated type
+     * @return a Loggable instance which wraps the protobuf collection.
+     */
+    static LoggableCollection loggable(final Collection<? extends GeneratedMessageV3> object) {
+        return new LoggableCollection(object);
     }
 
     /**

@@ -13,7 +13,6 @@
 
 package com.vrg.rapid;
 
-import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
@@ -21,6 +20,7 @@ import com.vrg.rapid.messaging.IBroadcaster;
 import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.monitoring.ILinkFailureDetectorFactory;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
+import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
@@ -74,12 +74,12 @@ public final class MembershipService {
     static final int DEFAULT_FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
     private final MembershipView membershipView;
     private final WatermarkBuffer watermarkBuffer;
-    private final HostAndPort myAddr;
+    private final Endpoint myAddr;
     private final IBroadcaster broadcaster;
-    private final Map<HostAndPort, LinkedBlockingDeque<SettableFuture<RapidResponse>>> joinersToRespondTo =
+    private final Map<Endpoint, LinkedBlockingDeque<SettableFuture<RapidResponse>>> joinersToRespondTo =
             new HashMap<>();
-    private final Map<HostAndPort, NodeId> joinerUuid = new HashMap<>();
-    private final Map<HostAndPort, Metadata> joinerMetadata = new HashMap<>();
+    private final Map<Endpoint, NodeId> joinerUuid = new HashMap<>();
+    private final Map<Endpoint, Metadata> joinerMetadata = new HashMap<>();
     private final IMessagingClient messagingClient;
     private final MetadataManager metadataManager;
 
@@ -109,7 +109,7 @@ public final class MembershipService {
     private final ISettings settings;
 
 
-    MembershipService(final HostAndPort myAddr, final WatermarkBuffer watermarkBuffer,
+    MembershipService(final Endpoint myAddr, final WatermarkBuffer watermarkBuffer,
                       final MembershipView membershipView, final SharedResources sharedResources,
                       final ISettings settings, final IMessagingClient messagingClient,
                       final ILinkFailureDetectorFactory linkFailureDetector) {
@@ -117,10 +117,10 @@ public final class MembershipService {
              Collections.emptyMap(), new EnumMap<>(ClusterEvents.class));
     }
 
-    MembershipService(final HostAndPort myAddr, final WatermarkBuffer watermarkBuffer,
+    MembershipService(final Endpoint myAddr, final WatermarkBuffer watermarkBuffer,
                       final MembershipView membershipView, final SharedResources sharedResources,
                       final ISettings settings, final IMessagingClient messagingClient,
-                      final ILinkFailureDetectorFactory linkFailureDetector, final Map<String, Metadata> metadataMap,
+                      final ILinkFailureDetectorFactory linkFailureDetector, final Map<Endpoint, Metadata> metadataMap,
                       final Map<ClusterEvents, List<BiConsumer<Long, List<NodeStatusChange>>>> subscriptions) {
         this.myAddr = myAddr;
         this.settings = settings;
@@ -194,22 +194,19 @@ public final class MembershipService {
         final SettableFuture<RapidResponse> future = SettableFuture.create();
 
         sharedResources.getProtocolExecutor().execute(() -> {
-            final HostAndPort joiningHost = HostAndPort.fromString(msg.getSender());
-            final JoinStatusCode statusCode = membershipView.isSafeToJoin(joiningHost, msg.getNodeId());
+            final Endpoint joiningEndpoint = msg.getSender();
+            final JoinStatusCode statusCode = membershipView.isSafeToJoin(joiningEndpoint, msg.getNodeId());
             final JoinResponse.Builder builder = JoinResponse.newBuilder()
-                    .setSender(this.myAddr.toString())
+                    .setSender(myAddr)
                     .setConfigurationId(membershipView.getCurrentConfigurationId())
                     .setStatusCode(statusCode);
-            LOG.trace("Join at seed for {seed:{}, sender:{}, config:{}, size:{}}",
-                    myAddr, msg.getSender(),
+            LOG.info("Join at seed for {seed:{}, sender:{}, config:{}, size:{}}",
+                    Utils.loggable(myAddr), Utils.loggable(msg.getSender()),
                     membershipView.getCurrentConfigurationId(), membershipView.getMembershipSize());
             if (statusCode.equals(JoinStatusCode.SAFE_TO_JOIN)
                     || statusCode.equals(JoinStatusCode.HOSTNAME_ALREADY_IN_RING)) {
                 // Return a list of monitors for the joiner to contact for phase 2 of the protocol
-                builder.addAllHosts(membershipView.getExpectedMonitorsOf(joiningHost)
-                        .stream()
-                        .map(HostAndPort::toString)
-                        .collect(Collectors.toList()));
+                builder.addAllEndpoints(membershipView.getExpectedMonitorsOf(joiningEndpoint));
             }
             future.set(Utils.toRapidResponse(builder.build()));
         });
@@ -228,15 +225,15 @@ public final class MembershipService {
         sharedResources.getProtocolExecutor().execute(() -> {
             final long currentConfiguration = membershipView.getCurrentConfigurationId();
             if (currentConfiguration == joinMessage.getConfigurationId()) {
-                LOG.trace("Enqueuing SAFE_TO_JOIN for {sender:{}, monitor:{}, config:{}, size:{}}",
-                        joinMessage.getSender(), myAddr,
-                        currentConfiguration, membershipView.getMembershipSize());
+                LOG.trace("Enqueuing SAFE_TO_JOIN for {sender:{}, config:{}, size:{}}",
+                        Utils.loggable(joinMessage.getSender()), currentConfiguration,
+                        membershipView.getMembershipSize());
 
-                joinersToRespondTo.computeIfAbsent(HostAndPort.fromString(joinMessage.getSender()),
+                joinersToRespondTo.computeIfAbsent(joinMessage.getSender(),
                         k -> new LinkedBlockingDeque<>()).add(future);
 
                 final LinkUpdateMessage msg = LinkUpdateMessage.newBuilder()
-                        .setLinkSrc(this.myAddr.toString())
+                        .setLinkSrc(myAddr)
                         .setLinkDst(joinMessage.getSender())
                         .setLinkStatus(LinkStatus.UP)
                         .setConfigurationId(currentConfiguration)
@@ -249,32 +246,29 @@ public final class MembershipService {
                 // This handles the corner case where the configuration changed between phase 1 and phase 2
                 // of the joining node's bootstrap. It should attempt to rejoin the network.
                 final MembershipView.Configuration configuration = membershipView.getConfiguration();
-                LOG.info("Wrong configuration for {sender:{}, monitor:{}, config:{}, myConfig:{}, size:{}}",
-                        joinMessage.getSender(), myAddr, joinMessage.getConfigurationId(),
+                LOG.info("Wrong configuration for {sender:{}, config:{}, myConfig:{}, size:{}}",
+                        Utils.loggable(joinMessage.getSender()), joinMessage.getConfigurationId(),
                         currentConfiguration, membershipView.getMembershipSize());
                 JoinResponse.Builder responseBuilder = JoinResponse.newBuilder()
-                        .setSender(this.myAddr.toString())
+                        .setSender(myAddr)
                         .setConfigurationId(configuration.getConfigurationId());
-                if (membershipView.isHostPresent(HostAndPort.fromString(joinMessage.getSender()))
+                if (membershipView.isHostPresent(joinMessage.getSender())
                         && membershipView.isIdentifierPresent(joinMessage.getNodeId())) {
-                    LOG.info("Joining host already present : {sender:{}, monitor:{}, config:{}, myConfig:{}, size:{}}",
-                            joinMessage.getSender(), myAddr, joinMessage.getConfigurationId(),
+                    LOG.info("Joining host already present : {sender:{}, config:{}, myConfig:{}, size:{}}",
+                            Utils.loggable(joinMessage.getSender()), joinMessage.getConfigurationId(),
                             currentConfiguration, membershipView.getMembershipSize());
                     // Race condition where a monitor already crossed H messages for the joiner and changed
                     // the configuration, but the JoinPhase2 messages show up at the monitor
                     // after it has already added the joiner. In this case, we simply
                     // tell the sender that they're safe to join.
                     responseBuilder = responseBuilder.setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
-                            .addAllHosts(configuration.hostAndPorts
-                                    .stream()
-                                    .map(HostAndPort::toString)
-                                    .collect(Collectors.toList()))
+                            .addAllEndpoints(configuration.endpoints)
                             .addAllIdentifiers(configuration.nodeIds);
                 } else {
                     responseBuilder = responseBuilder.setStatusCode(JoinStatusCode.CONFIG_CHANGED);
-                    LOG.info("Returning CONFIG_CHANGED for {sender:{}, monitor:{}, config:{}, size:{}}",
-                            joinMessage.getSender(), myAddr,
-                            configuration.getConfigurationId(), configuration.hostAndPorts.size());
+                    LOG.info("Returning CONFIG_CHANGED for {sender:{}, config:{}, size:{}}",
+                            Utils.loggable(joinMessage.getSender()), configuration.getConfigurationId(),
+                            configuration.endpoints.size());
                 }
                 future.set(Utils.toRapidResponse(responseBuilder.build())); // new configuration
             }
@@ -303,7 +297,7 @@ public final class MembershipService {
             }
             final long currentConfigurationId = membershipView.getCurrentConfigurationId();
             final int membershipSize = membershipView.getMembershipSize();
-            final Set<HostAndPort> proposal = messageBatch.getMessagesList().stream()
+            final Set<Endpoint> proposal = messageBatch.getMessagesList().stream()
                     // First, we filter out invalid messages that violate membership invariants.
                     .filter(msg -> filterLinkUpdateMessages(messageBatch, msg, membershipSize, currentConfigurationId))
                     // We then apply all the valid messages into our condition detector to obtain a view change proposal
@@ -316,7 +310,7 @@ public final class MembershipService {
 
             // If we have a proposal for this stage, start an instance of consensus on it.
             if (!proposal.isEmpty()) {
-                LOG.info("Node {} has a proposal of size {}: {}", myAddr, proposal.size(), proposal);
+                LOG.info("Proposing membership change of size {}: {}", proposal.size(), Utils.loggable(proposal));
                 announcedProposal = true;
 
                 if (subscriptions.containsKey(ClusterEvents.VIEW_CHANGE_PROPOSAL)) {
@@ -352,13 +346,13 @@ public final class MembershipService {
      * Any node that is not in the membership list will be added to the cluster,
      * and any node that is currently in the membership list will be removed from it.
      */
-    private void decideViewChange(final List<HostAndPort> proposal) {
+    private void decideViewChange(final List<Endpoint> proposal) {
         // The first step is to disable our failure detectors in anticipation of new ones to be created.
         cancelFailureDetectorJobs();
 
         final List<NodeStatusChange> statusChanges = new ArrayList<>(proposal.size());
         synchronized (membershipUpdateLock) {
-            for (final HostAndPort node : proposal) {
+            for (final Endpoint node : proposal) {
                 final boolean isPresent = membershipView.isHostPresent(node);
                 // If the node is already in the ring, remove it. Else, add it.
                 // XXX: Maybe there's a cleaner way to do this in the future because
@@ -374,7 +368,7 @@ public final class MembershipService {
                     membershipView.ringAdd(node, nodeId);
                     final Metadata metadata = joinerMetadata.remove(node);
                     if (metadata.getMetadataCount() > 0) {
-                        metadataManager.addMetadata(Collections.singletonMap(node.toString(), metadata));
+                        metadataManager.addMetadata(Collections.singletonMap(node, metadata));
                     }
                     statusChanges.add(new NodeStatusChange(node, LinkStatus.UP, metadata));
                 }
@@ -400,7 +394,7 @@ public final class MembershipService {
         else {
             // We need to gracefully exit by calling a user handler and invalidating
             // the current session.
-            LOG.trace("{} got kicked out and is shutting down.", myAddr);
+            LOG.trace("Got kicked out and is shutting down.");
             subscriptions.get(ClusterEvents.KICKED).forEach(cb -> cb.accept(currentConfigurationId, statusChanges));
         }
 
@@ -412,7 +406,7 @@ public final class MembershipService {
      * Invoked by monitors of a node for failure detection.
      */
     private ListenableFuture<RapidResponse> handleMessage(final ProbeMessage probeMessage) {
-        LOG.trace("handleProbeMessage at {} from {}", myAddr, probeMessage.getSender());
+        LOG.trace("handleProbeMessage from {}", Utils.loggable(probeMessage.getSender()));
         return Futures.immediateFuture(Utils.toRapidResponse(ProbeResponse.getDefaultInstance()));
     }
 
@@ -434,23 +428,23 @@ public final class MembershipService {
      *
      * @param monitoree The monitoree that has failed.
      */
-    private void linkFailureNotification(final HostAndPort monitoree, final long configurationId) {
+    private void linkFailureNotification(final Endpoint monitoree, final long configurationId) {
         sharedResources.getProtocolExecutor().execute(() -> {
             if (configurationId != membershipView.getCurrentConfigurationId()) {
                 LOG.info("Ignoring failure notification from old configuration" +
-                                " {monitoree:{}, monitor:{}, config:{}, oldConfiguration:{}}",
-                        monitoree, myAddr, membershipView.getCurrentConfigurationId(), configurationId);
+                                " {monitoree:{}, config:{}, oldConfiguration:{}}",
+                        Utils.loggable(monitoree), membershipView.getCurrentConfigurationId(), configurationId);
                 return;
             }
             if (LOG.isDebugEnabled()) {
                 final int size = membershipView.getMembershipSize();
                 LOG.debug("Announcing LinkFail event {monitoree:{}, monitor:{}, config:{}, size:{}}",
-                        monitoree, myAddr, configurationId, size);
+                        Utils.loggable(monitoree), configurationId, size);
             }
             // Note: setUuid is deliberately missing here because it does not affect leaves.
             final LinkUpdateMessage msg = LinkUpdateMessage.newBuilder()
-                    .setLinkSrc(myAddr.toString())
-                    .setLinkDst(monitoree.toString())
+                    .setLinkSrc(myAddr)
+                    .setLinkDst(monitoree)
                     .setLinkStatus(LinkStatus.DOWN)
                     .addAllRingNumber(membershipView.getRingNumbers(myAddr, monitoree))
                     .setConfigurationId(configurationId)
@@ -461,20 +455,20 @@ public final class MembershipService {
 
 
     /**
-     * Gets the list of hosts currently in the membership view.
+     * Gets the list of endpoints currently in the membership view.
      *
-     * @return list of hosts in the membership view
+     * @return list of endpoints in the membership view
      */
-    List<HostAndPort> getMembershipView() {
+    List<Endpoint> getMembershipView() {
         synchronized (membershipUpdateLock) {
             return membershipView.getRing(0);
         }
     }
 
     /**
-     * Gets the list of hosts currently in the membership view.
+     * Gets the list of endpoints currently in the membership view.
      *
-     * @return list of hosts in the membership view
+     * @return list of endpoints in the membership view
      */
     int getMembershipSize() {
         synchronized (membershipUpdateLock) {
@@ -484,9 +478,9 @@ public final class MembershipService {
 
 
     /**
-     * Gets the list of hosts currently in the membership view.
+     * Gets the list of endpoints currently in the membership view.
      *
-     * @return list of hosts in the membership view
+     * @return list of endpoints in the membership view
      */
     Map<String, Metadata> getMetadata() {
         synchronized (membershipUpdateLock) {
@@ -522,9 +516,9 @@ public final class MembershipService {
     /**
      * Formats a proposal or a view change for application subscriptions.
      */
-    private List<NodeStatusChange> createNodeStatusChangeList(final Collection<HostAndPort> proposal) {
+    private List<NodeStatusChange> createNodeStatusChangeList(final Collection<Endpoint> proposal) {
         final List<NodeStatusChange> list = new ArrayList<>(proposal.size());
-        for (final HostAndPort node: proposal) {
+        for (final Endpoint node: proposal) {
             final LinkStatus status = membershipView.isHostPresent(node) ? LinkStatus.DOWN : LinkStatus.UP;
             list.add(new NodeStatusChange(node, status, metadataManager.get(node)));
         }
@@ -538,7 +532,7 @@ public final class MembershipService {
      */
     private List<NodeStatusChange> getInitialViewChange() {
         final List<NodeStatusChange> list = new ArrayList<>(membershipView.getMembershipSize());
-        for (final HostAndPort node: membershipView.getRing(0)) {
+        for (final Endpoint node: membershipView.getRing(0)) {
             final LinkStatus status = LinkStatus.UP;
             list.add(new NodeStatusChange(node, status, metadataManager.get(node)));
         }
@@ -559,12 +553,12 @@ public final class MembershipService {
                 // Wait one BATCH_WINDOW_IN_MS since last add before sending out
                 if (!sendQueue.isEmpty() && lastEnqueueTimestamp > 0
                         && (System.currentTimeMillis() - lastEnqueueTimestamp) > BATCH_WINDOW_IN_MS) {
-                    LOG.trace("{}'s scheduler is sending out {} messages", myAddr, sendQueue.size());
+                    LOG.trace("Scheduler is sending out {} messages", sendQueue.size());
                     final ArrayList<LinkUpdateMessage> messages = new ArrayList<>(sendQueue.size());
                     final int numDrained = sendQueue.drainTo(messages);
                     assert numDrained > 0;
                     final BatchedLinkUpdateMessage batched = BatchedLinkUpdateMessage.newBuilder()
-                            .setSender(myAddr.toString())
+                            .setSender(myAddr)
                             .addAllMessages(messages)
                             .build();
                     broadcaster.broadcast(Utils.toRapidRequest(batched));
@@ -585,12 +579,10 @@ public final class MembershipService {
                                              final LinkUpdateMessage linkUpdateMessage,
                                              final int membershipSize,
                                              final long currentConfigurationId) {
-        final HostAndPort destination = HostAndPort.fromString(linkUpdateMessage.getLinkDst());
-        LOG.trace("LinkUpdateMessage received {sender:{}, receiver:{}, config:{}, size:{}, status:{}}",
-                batchedLinkUpdateMessage.getSender(), myAddr,
-                linkUpdateMessage.getConfigurationId(),
-                membershipSize,
-                linkUpdateMessage.getLinkStatus());
+        final Endpoint destination = linkUpdateMessage.getLinkDst();
+        LOG.trace("LinkUpdateMessage received {sender:{}, config:{}, size:{}, status:{}}",
+                Utils.loggable(batchedLinkUpdateMessage.getSender()), linkUpdateMessage.getConfigurationId(),
+                membershipSize, linkUpdateMessage.getLinkStatus());
 
         if (currentConfigurationId != linkUpdateMessage.getConfigurationId()) {
             LOG.trace("LinkUpdateMessage for configuration {} received during configuration {}",
@@ -603,13 +595,13 @@ public final class MembershipService {
         if (linkUpdateMessage.getLinkStatus().equals(LinkStatus.UP)
                 && membershipView.isHostPresent(destination)) {
             LOG.trace("LinkUpdateMessage with status UP received for node {} already in configuration {} ",
-                    linkUpdateMessage.getLinkDst(), currentConfigurationId);
+                    Utils.loggable(linkUpdateMessage.getLinkDst()), currentConfigurationId);
             return false;
         }
         if (linkUpdateMessage.getLinkStatus().equals(LinkStatus.DOWN)
                 && !membershipView.isHostPresent(destination)) {
             LOG.trace("LinkUpdateMessage with status DOWN received for node {} already in configuration {} ",
-                    linkUpdateMessage.getLinkDst(), currentConfigurationId);
+                    Utils.loggable(linkUpdateMessage.getLinkDst()), currentConfigurationId);
             return false;
         }
 
@@ -624,7 +616,7 @@ public final class MembershipService {
     /**
      * Invoked eventually by link failure detectors to notify MembershipService of failed nodes
      */
-    private Runnable createNotifierForMonitoree(final HostAndPort monitoree) {
+    private Runnable createNotifierForMonitoree(final Endpoint monitoree) {
         return () -> linkFailureNotification(monitoree, membershipView.getCurrentConfigurationId());
     }
 
@@ -653,26 +645,23 @@ public final class MembershipService {
     /**
      * Respond with the current configuration to all nodes that attempted to join through this node.
      */
-    private void respondToJoiners(final List<HostAndPort> proposal) {
+    private void respondToJoiners(final List<Endpoint> proposal) {
         // This should yield the new configuration.
         final MembershipView.Configuration configuration = membershipView.getConfiguration();
-        assert !configuration.hostAndPorts.isEmpty();
+        assert !configuration.endpoints.isEmpty();
         assert !configuration.nodeIds.isEmpty();
 
         final JoinResponse response = JoinResponse.newBuilder()
-                .setSender(this.myAddr.toString())
+                .setSender(myAddr)
                 .setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
                 .setConfigurationId(configuration.getConfigurationId())
-                .addAllHosts(configuration.hostAndPorts
-                        .stream()
-                        .map(HostAndPort::toString)
-                        .collect(Collectors.toList()))
+                .addAllEndpoints(configuration.endpoints)
                 .addAllIdentifiers(configuration.nodeIds)
                 .putAllClusterMetadata(metadataManager.getAllMetadata())
                 .build();
 
         // Send out responses to all the nodes waiting to join.
-        for (final HostAndPort node: proposal) {
+        for (final Endpoint node: proposal) {
             if (joinersToRespondTo.containsKey(node)) {
                 backgroundTasksExecutor.execute(
                     () -> joinersToRespondTo.remove(node)

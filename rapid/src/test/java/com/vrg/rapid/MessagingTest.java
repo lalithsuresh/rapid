@@ -13,7 +13,7 @@
 
 package com.vrg.rapid;
 
-import com.google.common.net.HostAndPort;
+import com.vrg.rapid.pb.Endpoint;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.vrg.rapid.messaging.IMessagingClient;
@@ -69,7 +69,7 @@ public class MessagingTest {
 
     @Before
     public void prepare() throws InterruptedException {
-        resources = new SharedResources(HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE));
+        resources = new SharedResources(Utils.hostFromParts(LOCALHOST_IP, SERVER_PORT_BASE));
     }
 
     @After
@@ -94,16 +94,16 @@ public class MessagingTest {
             MembershipView.NodeAlreadyInRingException, ExecutionException {
         final int serverPort = 1234;
         final int clientPort = 1235;
-        final HostAndPort serverAddr = HostAndPort.fromParts(LOCALHOST_IP, serverPort);
+        final Endpoint serverAddr = Utils.hostFromParts(LOCALHOST_IP, serverPort);
         createAndStartMembershipService(serverAddr);
 
-        final HostAndPort clientAddr = HostAndPort.fromParts(LOCALHOST_IP, clientPort);
+        final Endpoint clientAddr = Utils.hostFromParts(LOCALHOST_IP, clientPort);
         final GrpcClient client = new GrpcClient(clientAddr);
         final JoinResponse result = sendPreJoinMessage(client, serverAddr, clientAddr,
                                                        Utils.nodeIdFromUUID(UUID.randomUUID()));
         assertNotNull(result);
         assertEquals(JoinStatusCode.SAFE_TO_JOIN, result.getStatusCode());
-        assertEquals(K, result.getHostsCount());
+        assertEquals(K, result.getEndpointsCount());
     }
 
     /**
@@ -115,30 +115,30 @@ public class MessagingTest {
             throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException, ExecutionException {
         final int serverPort = 1234;
         final NodeId nodeIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
-        final HostAndPort serverAddr = HostAndPort.fromParts(LOCALHOST_IP, serverPort);
+        final Endpoint serverAddr = Utils.hostFromParts(LOCALHOST_IP, serverPort);
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, nodeIdentifier);
         createAndStartMembershipService(serverAddr, membershipView);
 
         // Try with the same host details as the server
-        final HostAndPort clientAddr1 = HostAndPort.fromParts(LOCALHOST_IP, serverPort);
+        final Endpoint clientAddr1 = Utils.hostFromParts(LOCALHOST_IP, serverPort);
         final GrpcClient client1 = new GrpcClient(clientAddr1);
         final JoinResponse result1 = sendPreJoinMessage(client1, serverAddr, clientAddr1,
                                                              Utils.nodeIdFromUUID(UUID.randomUUID()));
         assertNotNull(result1);
         assertEquals(JoinStatusCode.HOSTNAME_ALREADY_IN_RING, result1.getStatusCode());
-        assertEquals(K, result1.getHostsCount());
+        assertEquals(K, result1.getEndpointsCount());
         assertEquals(0, result1.getIdentifiersCount());
 
         // Try again with a different port, this should fail because we're using the same
         // uuid as the server.
         final int clientPort2 = 1235;
-        final HostAndPort clientAddr2 = HostAndPort.fromParts(LOCALHOST_IP, clientPort2);
+        final Endpoint clientAddr2 = Utils.hostFromParts(LOCALHOST_IP, clientPort2);
         final GrpcClient client2 = new GrpcClient(clientAddr2);
         final JoinResponse result2 = sendPreJoinMessage(client2, serverAddr, clientAddr2, nodeIdentifier);
         assertNotNull(result2);
         assertEquals(JoinStatusCode.UUID_ALREADY_IN_RING, result2.getStatusCode());
-        assertEquals(0, result2.getHostsCount());
+        assertEquals(0, result2.getEndpointsCount());
         assertEquals(0, result2.getIdentifiersCount());
     }
 
@@ -152,29 +152,27 @@ public class MessagingTest {
             throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException, ExecutionException {
         final NodeId nodeIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
         final int numNodes = 1000;
-        final HostAndPort serverAddr = HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE);
+        final Endpoint serverAddr = Utils.hostFromParts(LOCALHOST_IP, SERVER_PORT_BASE);
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, nodeIdentifier);
         for (int i = 1; i < numNodes; i++) {
-            membershipView.ringAdd(HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE + i),
+            membershipView.ringAdd(Utils.hostFromParts(LOCALHOST_IP, SERVER_PORT_BASE + i),
                                    Utils.nodeIdFromUUID(UUID.randomUUID()));
         }
         createAndStartMembershipService(serverAddr, membershipView);
 
         final int clientPort = SERVER_PORT_BASE - 1;
-        final HostAndPort joinerAddr = HostAndPort.fromParts(LOCALHOST_IP, clientPort);
+        final Endpoint joinerAddr = Utils.hostFromParts(LOCALHOST_IP, clientPort);
         final GrpcClient joinerClient = new GrpcClient(joinerAddr);
         final JoinResponse phaseOneResult = sendPreJoinMessage(joinerClient, serverAddr, joinerAddr,
                                                                Utils.nodeIdFromUUID(UUID.randomUUID()));
         assertNotNull(phaseOneResult);
         assertEquals(JoinStatusCode.SAFE_TO_JOIN, phaseOneResult.getStatusCode());
-        assertEquals(K, phaseOneResult.getHostsCount()); // this is the monitor list
+        assertEquals(K, phaseOneResult.getEndpointsCount()); // this is the monitor list
 
         // Verify that the monitors retrieved from the seed are the same
-        final List<HostAndPort> hostsAtClient = phaseOneResult.getHostsList().stream()
-                                            .map(HostAndPort::fromString)
-                                            .collect(Collectors.toList());
-        final List<HostAndPort> monitorsOriginal = membershipView.getExpectedMonitorsOf(joinerAddr);
+        final List<Endpoint> hostsAtClient = phaseOneResult.getEndpointsList();
+        final List<Endpoint> monitorsOriginal = membershipView.getExpectedMonitorsOf(joinerAddr);
 
         final Iterator iter1 = hostsAtClient.iterator();
         final Iterator iter2 = monitorsOriginal.iterator();
@@ -192,45 +190,43 @@ public class MessagingTest {
             throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException, ExecutionException {
         // Initialize 10 node cluster
         final int numNodes = 10;
-        final HostAndPort serverAddr = HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE);
+        final Endpoint serverAddr = Utils.hostFromParts(LOCALHOST_IP, SERVER_PORT_BASE);
         for (int i = 0; i < numNodes; i++) {
             final MembershipView mview = new MembershipView(K);
             for (int j = 0; j < numNodes; j++) {
-                mview.ringAdd(HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE + j),
+                mview.ringAdd(Utils.hostFromParts(LOCALHOST_IP, SERVER_PORT_BASE + j),
                         Utils.nodeIdFromUUID(new UUID(0, j)));
             }
-            createAndStartMembershipService(HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE + i), mview);
+            createAndStartMembershipService(Utils.hostFromParts(LOCALHOST_IP, SERVER_PORT_BASE + i), mview);
         }
 
         // Join protocol starts here
         final int clientPort = SERVER_PORT_BASE - 1;
-        final HostAndPort joinerAddr = HostAndPort.fromParts(LOCALHOST_IP, clientPort);
+        final Endpoint joinerAddr = Utils.hostFromParts(LOCALHOST_IP, clientPort);
         final GrpcClient joinerClient = new GrpcClient(joinerAddr);
         final NodeId uuid = Utils.nodeIdFromUUID(UUID.randomUUID());
         final JoinResponse phaseOneResult = sendPreJoinMessage(joinerClient, serverAddr, joinerAddr, uuid);
 
         assertNotNull(phaseOneResult);
         assertEquals(JoinStatusCode.SAFE_TO_JOIN, phaseOneResult.getStatusCode());
-        assertEquals(K, phaseOneResult.getHostsCount()); // this is the monitor list
+        assertEquals(K, phaseOneResult.getEndpointsCount()); // this is the monitor list
 
         // Verify that the monitors retrieved from the seed are the same
-        final List<HostAndPort> hostsAtClient = phaseOneResult.getHostsList().stream()
-                .map(HostAndPort::fromString)
-                .collect(Collectors.toList());
-        final Map<HostAndPort, List<Integer>> ringNumbersPerMonitor = new HashMap<>(K);
+        final List<Endpoint> hostsAtClient = phaseOneResult.getEndpointsList();
+        final Map<Endpoint, List<Integer>> ringNumbersPerMonitor = new HashMap<>(K);
 
         // Batch together requests to the same node.
         int ringNumber = 0;
-        for (final HostAndPort monitor: hostsAtClient) {
+        for (final Endpoint monitor: hostsAtClient) {
             ringNumbersPerMonitor.computeIfAbsent(monitor, k -> new ArrayList<>()).add(ringNumber);
             ringNumber++;
         }
 
         // Try #1: successfully join here.
         final List<ListenableFuture<RapidResponse>> responseFutures = new ArrayList<>();
-        for (final Map.Entry<HostAndPort, List<Integer>> entry: ringNumbersPerMonitor.entrySet()) {
+        for (final Map.Entry<Endpoint, List<Integer>> entry: ringNumbersPerMonitor.entrySet()) {
             final RapidRequest msg = Utils.toRapidRequest(JoinMessage.newBuilder()
-                    .setSender(joinerAddr.toString())
+                    .setSender(joinerAddr)
                     .setNodeId(uuid)
                     .setConfigurationId(phaseOneResult.getConfigurationId())
                     .addAllRingNumber(entry.getValue()).build());
@@ -247,9 +243,9 @@ public class MessagingTest {
 
         // Try #2. Should get back the full configuration from all nodes.
         final List<ListenableFuture<RapidResponse>> retryFutures = new ArrayList<>();
-        for (final Map.Entry<HostAndPort, List<Integer>> entry: ringNumbersPerMonitor.entrySet()) {
+        for (final Map.Entry<Endpoint, List<Integer>> entry: ringNumbersPerMonitor.entrySet()) {
             final RapidRequest msg = Utils.toRapidRequest(JoinMessage.newBuilder()
-                    .setSender(joinerAddr.toString())
+                    .setSender(joinerAddr)
                     .setNodeId(uuid)
                     .setConfigurationId(phaseOneResult.getConfigurationId())
                     .addAllRingNumber(entry.getValue()).build());
@@ -262,7 +258,7 @@ public class MessagingTest {
 
         for (final JoinResponse response: retriedJoinResponses) {
             assertEquals(JoinStatusCode.SAFE_TO_JOIN, response.getStatusCode());
-            assertEquals(numNodes + 1, response.getHostsCount());
+            assertEquals(numNodes + 1, response.getEndpointsCount());
         }
     }
 
@@ -273,29 +269,27 @@ public class MessagingTest {
     public void joinWithSingleNodeBootstrap()
             throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException, ExecutionException {
         final NodeId nodeIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
-        final HostAndPort serverAddr = HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE);
+        final Endpoint serverAddr = Utils.hostFromParts(LOCALHOST_IP, SERVER_PORT_BASE);
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, nodeIdentifier);
         createAndStartMembershipService(serverAddr, membershipView);
 
         final int clientPort = SERVER_PORT_BASE - 1;
-        final HostAndPort joinerAddress = HostAndPort.fromParts(LOCALHOST_IP, clientPort);
+        final Endpoint joinerAddress = Utils.hostFromParts(LOCALHOST_IP, clientPort);
         final IMessagingClient messagingClient = new GrpcClient(joinerAddress);
         final NodeId joinerUuid = Utils.nodeIdFromUUID(UUID.randomUUID());
         final JoinResponse response = sendPreJoinMessage(messagingClient, serverAddr, joinerAddress, joinerUuid);
         assertNotNull(response);
         assertEquals(JoinStatusCode.SAFE_TO_JOIN, response.getStatusCode());
-        assertEquals(K, response.getHostsCount());
+        assertEquals(K, response.getEndpointsCount());
         assertEquals(response.getConfigurationId(), membershipView.getCurrentConfigurationId());
 
         // Verify that the hostnames retrieved at the joining peer
         // matches that of the seed node.
-        final List<HostAndPort> monitorList = response.getHostsList().stream()
-                .map(HostAndPort::fromString)
-                .collect(Collectors.toList());
+        final List<Endpoint> monitorList = response.getEndpointsList();
 
-        final Iterator<HostAndPort> iterJoiner = monitorList.iterator();
-        final Iterator<HostAndPort> iterSeed = membershipView.getExpectedMonitorsOf(joinerAddress).iterator();
+        final Iterator<Endpoint> iterJoiner = monitorList.iterator();
+        final Iterator<Endpoint> iterSeed = membershipView.getExpectedMonitorsOf(joinerAddress).iterator();
         for (int i = 0; i < K; i++) {
             assertEquals(iterJoiner.next(), iterSeed.next());
         }
@@ -309,29 +303,27 @@ public class MessagingTest {
     public void bootstrapAndThenProbeTest()
             throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException, ExecutionException {
         final NodeId nodeIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
-        final HostAndPort serverAddr = HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE);
+        final Endpoint serverAddr = Utils.hostFromParts(LOCALHOST_IP, SERVER_PORT_BASE);
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, nodeIdentifier);
         createAndStartMembershipService(serverAddr, membershipView);
 
         final int clientPort = SERVER_PORT_BASE - 1;
-        final HostAndPort joinerAddress = HostAndPort.fromParts(LOCALHOST_IP, clientPort);
+        final Endpoint joinerAddress = Utils.hostFromParts(LOCALHOST_IP, clientPort);
         final IMessagingClient messagingClient = new GrpcClient(joinerAddress);
         final NodeId joinerUuid = Utils.nodeIdFromUUID(UUID.randomUUID());
         final JoinResponse response = sendPreJoinMessage(messagingClient, serverAddr, joinerAddress, joinerUuid);
         assertNotNull(response);
         assertEquals(JoinStatusCode.SAFE_TO_JOIN, response.getStatusCode());
-        assertEquals(K, response.getHostsCount());
+        assertEquals(K, response.getEndpointsCount());
         assertEquals(response.getConfigurationId(), membershipView.getCurrentConfigurationId());
 
         // Verify that the hostnames retrieved at the joining peer
         // matches that of the seed node.
-        final List<HostAndPort> monitorList = response.getHostsList().stream()
-                .map(HostAndPort::fromString)
-                .collect(Collectors.toList());
+        final List<Endpoint> monitorList = response.getEndpointsList();
 
-        final Iterator<HostAndPort> iterJoiner = monitorList.iterator();
-        final Iterator<HostAndPort> iterSeed = membershipView.getExpectedMonitorsOf(joinerAddress).iterator();
+        final Iterator<Endpoint> iterJoiner = monitorList.iterator();
+        final Iterator<Endpoint> iterSeed = membershipView.getExpectedMonitorsOf(joinerAddress).iterator();
         for (int i = 0; i < K; i++) {
             assertEquals(iterJoiner.next(), iterSeed.next());
         }
@@ -351,8 +343,8 @@ public class MessagingTest {
     @Test
     public void probeBeforeBootstrapTest()
             throws InterruptedException, IOException, MembershipView.NodeAlreadyInRingException, ExecutionException {
-        final HostAndPort serverAddr1 = HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE);
-        final HostAndPort serverAddr2 = HostAndPort.fromParts(LOCALHOST_IP, SERVER_PORT_BASE + 1);
+        final Endpoint serverAddr1 = Utils.hostFromParts(LOCALHOST_IP, SERVER_PORT_BASE);
+        final Endpoint serverAddr2 = Utils.hostFromParts(LOCALHOST_IP, SERVER_PORT_BASE + 1);
         final NodeId nodeIdentifier1 = Utils.nodeIdFromUUID(UUID.randomUUID());
         final NodeId nodeIdentifier2 = Utils.nodeIdFromUUID(UUID.randomUUID());
         final IMessagingServer rpcServer = new GrpcServer(serverAddr2, resources, false);
@@ -382,12 +374,12 @@ public class MessagingTest {
     public void droppedMessage() throws InterruptedException,
             IOException, MembershipView.NodeAlreadyInRingException {
         final int serverPort = 1234;
-        final HostAndPort serverAddr = HostAndPort.fromParts(LOCALHOST_IP, serverPort);
+        final Endpoint serverAddr = Utils.hostFromParts(LOCALHOST_IP, serverPort);
         final List<ServerDropInterceptors.FirstN> interceptors = new ArrayList<>();
         interceptors.add(new ServerDropInterceptors.FirstN(100, RapidRequest.ContentCase.PROBEMESSAGE));
         createAndStartMembershipService(serverAddr, interceptors);
 
-        final HostAndPort clientAddr = HostAndPort.fromParts(LOCALHOST_IP, serverPort);
+        final Endpoint clientAddr = Utils.hostFromParts(LOCALHOST_IP, serverPort);
         final IMessagingClient client = new GrpcClient(clientAddr);
         boolean exceptionCaught = false;
         try {
@@ -404,18 +396,18 @@ public class MessagingTest {
     @Test
     public void broadcasterTest() throws IOException, ExecutionException, InterruptedException {
         final int N = 100;
-        final List<HostAndPort> hostList = new ArrayList<>(N);
+        final List<Endpoint> endpointList = new ArrayList<>(N);
         final int serverPort = 1234;
         for (int i = 0; i < N; i++) {
-            final HostAndPort serverAddr = HostAndPort.fromParts(LOCALHOST_IP, serverPort + i + 1);
+            final Endpoint serverAddr = Utils.hostFromParts(LOCALHOST_IP, serverPort + i + 1);
             createAndStartMembershipService(serverAddr);
-            hostList.add(serverAddr);
+            endpointList.add(serverAddr);
         }
-        final HostAndPort clientAddr = HostAndPort.fromParts(LOCALHOST_IP, serverPort);
+        final Endpoint clientAddr = Utils.hostFromParts(LOCALHOST_IP, serverPort);
         final Settings settings = new Settings();
         final IMessagingClient client = new GrpcClient(clientAddr, Collections.emptyList(), resources, settings);
         final UnicastToAllBroadcaster broadcaster = new UnicastToAllBroadcaster(client);
-        broadcaster.setMembership(hostList);
+        broadcaster.setMembership(endpointList);
         for (int i = 0; i < 10; i++) {
             final List<ListenableFuture<RapidResponse>> futures =
                     broadcaster.broadcast(Utils.toRapidRequest(FastRoundPhase2bMessage.getDefaultInstance()));
@@ -435,8 +427,8 @@ public class MessagingTest {
     @Test
     public void rpcClientErrorHandling() throws InterruptedException {
         final int basePort = 1234;
-        final HostAndPort clientAddr = HostAndPort.fromParts(LOCALHOST_IP, basePort);
-        final HostAndPort dst = HostAndPort.fromParts(LOCALHOST_IP, 4321);
+        final Endpoint clientAddr = Utils.hostFromParts(LOCALHOST_IP, basePort);
+        final Endpoint dst = Utils.hostFromParts(LOCALHOST_IP, 4321);
         final Settings settings = new Settings();
         final SharedResources resources = new SharedResources(clientAddr);
         final IMessagingClient client = new GrpcClient(clientAddr, Collections.emptyList(), resources, settings);
@@ -456,8 +448,8 @@ public class MessagingTest {
     @Test
     public void rpcClientErrorHandlingAfterShutdown() throws InterruptedException {
         final int basePort = 1234;
-        final HostAndPort clientAddr = HostAndPort.fromParts(LOCALHOST_IP, basePort);
-        final HostAndPort dst = HostAndPort.fromParts(LOCALHOST_IP, 4321);
+        final Endpoint clientAddr = Utils.hostFromParts(LOCALHOST_IP, basePort);
+        final Endpoint dst = Utils.hostFromParts(LOCALHOST_IP, 4321);
         final SharedResources resources = new SharedResources(clientAddr);
         final Settings settings = new Settings();
         final IMessagingClient client = new GrpcClient(clientAddr, Collections.emptyList(), resources, settings);
@@ -474,7 +466,7 @@ public class MessagingTest {
     /**
      * Create a membership service listenting on serverAddr
      */
-    private IMessagingServer createAndStartMembershipService(final HostAndPort serverAddr)
+    private IMessagingServer createAndStartMembershipService(final Endpoint serverAddr)
             throws IOException, MembershipView.NodeAlreadyInRingException {
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
         final MembershipView membershipView = new MembershipView(K);
@@ -493,7 +485,7 @@ public class MessagingTest {
     /**
      * Create a membership service listenting on serverAddr that uses a list of server interceptors.
      */
-    private IMessagingServer createAndStartMembershipService(final HostAndPort serverAddr,
+    private IMessagingServer createAndStartMembershipService(final Endpoint serverAddr,
                                                              final List<ServerDropInterceptors.FirstN> interceptors)
             throws IOException, MembershipView.NodeAlreadyInRingException {
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
@@ -513,7 +505,7 @@ public class MessagingTest {
     /**
      * Create a membership service listening on serverAddr, with a supplied membershipView and server interceptors.
      */
-    private IMessagingServer createAndStartMembershipService(final HostAndPort serverAddr,
+    private IMessagingServer createAndStartMembershipService(final Endpoint serverAddr,
                                                       final MembershipView membershipView)
             throws IOException {
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
@@ -528,11 +520,11 @@ public class MessagingTest {
         return rpcServer;
     }
 
-    private JoinResponse sendPreJoinMessage(final IMessagingClient client, final HostAndPort serverAddr,
-                                            final HostAndPort clientAddr, final NodeId identifier)
+    private JoinResponse sendPreJoinMessage(final IMessagingClient client, final Endpoint serverAddr,
+                                            final Endpoint clientAddr, final NodeId identifier)
             throws ExecutionException, InterruptedException {
         final RapidRequest preJoinMessage = Utils.toRapidRequest(PreJoinMessage.newBuilder()
-                                                            .setSender(clientAddr.toString())
+                                                            .setSender(clientAddr)
                                                             .setNodeId(identifier).build());
         return client.sendMessage(serverAddr, preJoinMessage).get().getJoinResponse();
     }

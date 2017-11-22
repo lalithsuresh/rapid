@@ -19,7 +19,7 @@ import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import com.google.common.cache.RemovalListener;
 import com.google.common.cache.RemovalListeners;
-import com.google.common.net.HostAndPort;
+import com.vrg.rapid.pb.Endpoint;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
@@ -67,9 +67,9 @@ public class GrpcClient implements IMessagingClient {
     public static final int DEFAULT_GRPC_JOIN_TIMEOUT = DEFAULT_GRPC_TIMEOUT_MS * 5;
     public static final int DEFAULT_GRPC_PROBE_TIMEOUT = 1000;
 
-    private final HostAndPort address;
+    private final Endpoint address;
     private final List<ClientInterceptor> interceptors;
-    private final LoadingCache<HostAndPort, Channel> channelMap;
+    private final LoadingCache<Endpoint, Channel> channelMap;
     private final ExecutorService grpcExecutor;
     private final ExecutorService backgroundExecutor;
     @Nullable private final EventLoopGroup eventLoopGroup;
@@ -77,16 +77,16 @@ public class GrpcClient implements IMessagingClient {
     private final ISettings settings;
 
     @VisibleForTesting
-    public GrpcClient(final HostAndPort address) {
+    public GrpcClient(final Endpoint address) {
         this(address, Collections.emptyList(), new SharedResources(address), new Settings());
     }
 
     @VisibleForTesting
-    public GrpcClient(final HostAndPort address, final ISettings settings) {
+    public GrpcClient(final Endpoint address, final ISettings settings) {
         this(address, Collections.emptyList(), new SharedResources(address), settings);
     }
 
-    public GrpcClient(final HostAndPort address, final List<ClientInterceptor> interceptors,
+    public GrpcClient(final Endpoint address, final List<ClientInterceptor> interceptors,
                       final SharedResources sharedResources, final ISettings settings) {
         this.address = address;
         this.interceptors = interceptors;
@@ -94,15 +94,15 @@ public class GrpcClient implements IMessagingClient {
         this.grpcExecutor = sharedResources.getClientChannelExecutor();
         this.backgroundExecutor = sharedResources.getBackgroundExecutor();
         this.eventLoopGroup = settings.getUseInProcessTransport() ? null : sharedResources.getEventLoopGroup();
-        final RemovalListener<HostAndPort, Channel> removalListener =
+        final RemovalListener<Endpoint, Channel> removalListener =
                 removal -> shutdownChannel((ManagedChannelImpl) removal.getValue());
         this.channelMap = CacheBuilder.newBuilder()
                 .expireAfterAccess(30, TimeUnit.SECONDS)
                 .removalListener(RemovalListeners.asynchronous(removalListener, backgroundExecutor))
-                .build(new CacheLoader<HostAndPort, Channel>() {
+                .build(new CacheLoader<Endpoint, Channel>() {
                     @Override
-                    public Channel load(final HostAndPort hostAndPort) throws Exception {
-                        return getChannel(hostAndPort);
+                    public Channel load(final Endpoint Endpoint) throws Exception {
+                        return getChannel(Endpoint);
                     }
                 });
     }
@@ -111,7 +111,7 @@ public class GrpcClient implements IMessagingClient {
      * From IMessagingClient
      */
     @Override
-    public ListenableFuture<RapidResponse> sendMessage(final HostAndPort remote, final RapidRequest msg) {
+    public ListenableFuture<RapidResponse> sendMessage(final Endpoint remote, final RapidRequest msg) {
         Objects.requireNonNull(remote);
         Objects.requireNonNull(msg);
 
@@ -128,7 +128,7 @@ public class GrpcClient implements IMessagingClient {
      * From IMessagingClient
      */
     @Override
-    public ListenableFuture<RapidResponse> sendMessageBestEffort(final HostAndPort remote, final RapidRequest msg) {
+    public ListenableFuture<RapidResponse> sendMessageBestEffort(final Endpoint remote, final RapidRequest msg) {
         Objects.requireNonNull(msg);
         try {
             return backgroundExecutor.submit(() -> {
@@ -166,7 +166,7 @@ public class GrpcClient implements IMessagingClient {
      */
     @CanIgnoreReturnValue
     private <T> ListenableFuture<T> callWithRetries(final Supplier<ListenableFuture<T>> call,
-                                                    final HostAndPort remote,
+                                                    final Endpoint remote,
                                                     final int retries) {
         final SettableFuture<T> settable = SettableFuture.create();
         startCallWithRetry(call, remote, settable, retries);
@@ -178,7 +178,7 @@ public class GrpcClient implements IMessagingClient {
      */
     @SuppressWarnings("checkstyle:illegalcatch")
     private <T> void startCallWithRetry(final Supplier<ListenableFuture<T>> call,
-                                        final HostAndPort remote,
+                                        final Endpoint remote,
                                         final SettableFuture<T> signal,
                                         final int retries) {
         if (isShuttingDown.get() || Thread.currentThread().isInterrupted()) {
@@ -204,7 +204,7 @@ public class GrpcClient implements IMessagingClient {
      * Adapted from https://github.com/spotify/futures-extra/.../AsyncRetrier.java
      */
     private <T> void handleFailure(final Supplier<ListenableFuture<T>> code,
-                                   final HostAndPort remote,
+                                   final Endpoint remote,
                                    final SettableFuture<T> future,
                                    final int retries,
                                    final Throwable t) {
@@ -222,7 +222,7 @@ public class GrpcClient implements IMessagingClient {
         }
     }
 
-    private MembershipServiceFutureStub getFutureStub(final HostAndPort remote) {
+    private MembershipServiceFutureStub getFutureStub(final Endpoint remote) {
         if (isShuttingDown.get()) {
             throw new ShuttingDownException("GrpcClient is shutting down");
         }
@@ -234,7 +234,7 @@ public class GrpcClient implements IMessagingClient {
         channel.shutdown();
     }
 
-    private Channel getChannel(final HostAndPort remote) {
+    private Channel getChannel(final Endpoint remote) {
         // TODO: allow configuring SSL/TLS
         Channel channel;
         LOG.debug("Creating channel from {} to {}", address, remote);
@@ -249,7 +249,7 @@ public class GrpcClient implements IMessagingClient {
                     .build();
         } else {
             channel = NettyChannelBuilder
-                    .forAddress(remote.getHost(), remote.getPort())
+                    .forAddress(remote.getHostname(), remote.getPort())
                     .executor(grpcExecutor)
                     .intercept(interceptors)
                     .eventLoopGroup(eventLoopGroup)

@@ -13,8 +13,8 @@
 
 package com.vrg.rapid;
 
-import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import com.vrg.rapid.pb.Endpoint;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.util.concurrent.DefaultThreadFactory;
@@ -43,9 +43,9 @@ public class SharedResources {
     private final ExecutorService clientChannelExecutor;
     private final ExecutorService protocolExecutor;
     private final ScheduledExecutorService scheduledTasksExecutor;
-    private final HostAndPort address;
+    private final Endpoint address;
 
-    public SharedResources(final HostAndPort address) {
+    public SharedResources(final Endpoint address) {
         this.address = address;
         this.serverExecutor = newNamedThreadPool(DEFAULT_THREADS, "server-exec", address);
         this.clientChannelExecutor = newNamedThreadPool(DEFAULT_THREADS, "client-exec", address);
@@ -118,15 +118,15 @@ public class SharedResources {
      * Executors and ELGs that interact with Netty benefit from FastThreadLocalThreads, and therefore
      * use Netty's DefaultThreadFactory.
      */
-    private DefaultThreadFactory newFastLocalThreadFactory(final String poolName, final HostAndPort address) {
+    private DefaultThreadFactory newFastLocalThreadFactory(final String poolName, final Endpoint address) {
         return new DefaultThreadFactory(poolName + "-" + address, true);
     }
 
     /**
      * Standard threads with an exception handler.
      */
-    private ThreadFactory newNamedThreadFactory(final String poolName, final HostAndPort address) {
-        final String namePrefix = poolName + "-" + address;
+    private ThreadFactory newNamedThreadFactory(final String poolName, final Endpoint address) {
+        final String namePrefix = poolName + "-" + address.getHostname() + ":" + address.getPort();
         return new ThreadFactoryBuilder()
                 .setNameFormat(namePrefix + "-%d")
                 .setDaemon(true)
@@ -138,7 +138,7 @@ public class SharedResources {
     /**
      * TPE with a rejected execution handler specified.
      */
-    private ThreadPoolExecutor newNamedThreadPool(final int threads, final String poolName, final HostAndPort address) {
+    private ThreadPoolExecutor newNamedThreadPool(final int threads, final String poolName, final Endpoint address) {
         final ThreadPoolExecutor tpe = new ThreadPoolExecutor(threads, threads,
                 0L, TimeUnit.MILLISECONDS,
                 new LinkedBlockingQueue<>(),
