@@ -138,7 +138,7 @@ public class FastPaxosWithoutFallbackTests {
      * Create a membership service listening on serverAddr
      */
     private MembershipService createAndStartMembershipService(final Endpoint serverAddr, final MembershipView view)
-            throws IOException, MembershipView.NodeAlreadyInRingException {
+            throws MembershipView.NodeAlreadyInRingException {
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
         final SharedResources resources = new SharedResources(serverAddr);
         final IMessagingClient client = new GrpcClient(serverAddr);

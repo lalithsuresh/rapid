@@ -37,7 +37,7 @@ import java.util.stream.Collectors;
  *  identifier per node that initiates phase1.
  */
 @NotThreadSafe
-public class Paxos {
+class Paxos {
     private static final Logger LOG = LoggerFactory.getLogger(Paxos.class);
 
     private final IBroadcaster broadcaster;
@@ -49,8 +49,8 @@ public class Paxos {
     private Rank rnd;
     private Rank vrnd;
     private List<Endpoint> vval;
-    private List<Phase1bMessage> phase1bMessages = new ArrayList<>();
-    private List<Phase2bMessage> acceptResponses = new ArrayList<>();
+    private final List<Phase1bMessage> phase1bMessages = new ArrayList<>();
+    private final List<Phase2bMessage> acceptResponses = new ArrayList<>();
 
     private Rank crnd;
     private List<Endpoint> cval;
@@ -244,7 +244,8 @@ public class Paxos {
     @VisibleForTesting
     List<Endpoint> selectProposalUsingCoordinatorRule(final List<Phase1bMessage> phase1bMessages) {
         final Rank maxVrndSoFar = phase1bMessages.stream().map(Phase1bMessage::getVrnd)
-                                                  .max(Paxos::compareRanks).get();
+                                  .max(Paxos::compareRanks)
+                                  .orElseThrow(() -> new IllegalArgumentException("phase1bMessages was empty"));
 
         // Let k be the largest value of vr(a) for all a in Q.
         // V (collectedVvals) be the set of all vv(a) for all a in Q s.t vr(a) == k

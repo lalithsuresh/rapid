@@ -181,7 +181,7 @@ public final class MembershipService {
                 return handleConsensusMessages(msg);
             case CONTENT_NOT_SET:
             default:
-                throw new RuntimeException();
+                throw new IllegalArgumentException("Unidentified RapidRequest type " + msg.getContentCase());
         }
     }
 
@@ -335,7 +335,7 @@ public final class MembershipService {
      * XXX: Implement recovery for the extremely rare possibility of conflicting proposals.
      *
      */
-    ListenableFuture<RapidResponse> handleConsensusMessages(final RapidRequest request) {
+    private ListenableFuture<RapidResponse> handleConsensusMessages(final RapidRequest request) {
         final SettableFuture<RapidResponse> future = SettableFuture.create();
         sharedResources.getProtocolExecutor().execute(() -> future.set(fastPaxosInstance.handleMessages(request)));
         return future;

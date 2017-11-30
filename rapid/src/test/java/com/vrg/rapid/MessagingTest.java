@@ -13,7 +13,6 @@
 
 package com.vrg.rapid;
 
-import com.vrg.rapid.pb.Endpoint;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.vrg.rapid.messaging.IMessagingClient;
@@ -21,6 +20,7 @@ import com.vrg.rapid.messaging.IMessagingServer;
 import com.vrg.rapid.messaging.impl.GrpcClient;
 import com.vrg.rapid.messaging.impl.GrpcServer;
 import com.vrg.rapid.monitoring.impl.PingPongFailureDetector;
+import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.FastRoundPhase2bMessage;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
@@ -38,7 +38,6 @@ import org.junit.Test;
 import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -405,7 +404,7 @@ public class MessagingTest {
         }
         final Endpoint clientAddr = Utils.hostFromParts(LOCALHOST_IP, serverPort);
         final Settings settings = new Settings();
-        final IMessagingClient client = new GrpcClient(clientAddr, Collections.emptyList(), resources, settings);
+        final IMessagingClient client = new GrpcClient(clientAddr, resources, settings);
         final UnicastToAllBroadcaster broadcaster = new UnicastToAllBroadcaster(client);
         broadcaster.setMembership(endpointList);
         for (int i = 0; i < 10; i++) {
@@ -431,7 +430,7 @@ public class MessagingTest {
         final Endpoint dst = Utils.hostFromParts(LOCALHOST_IP, 4321);
         final Settings settings = new Settings();
         final SharedResources resources = new SharedResources(clientAddr);
-        final IMessagingClient client = new GrpcClient(clientAddr, Collections.emptyList(), resources, settings);
+        final IMessagingClient client = new GrpcClient(clientAddr, resources, settings);
         try {
             client.sendMessage(dst, Utils.toRapidRequest(ProbeMessage.getDefaultInstance())).get();
             fail("sendProbeMessage did not throw an exception");
@@ -452,7 +451,7 @@ public class MessagingTest {
         final Endpoint dst = Utils.hostFromParts(LOCALHOST_IP, 4321);
         final SharedResources resources = new SharedResources(clientAddr);
         final Settings settings = new Settings();
-        final IMessagingClient client = new GrpcClient(clientAddr, Collections.emptyList(), resources, settings);
+        final IMessagingClient client = new GrpcClient(clientAddr, resources, settings);
         client.shutdown();
         resources.shutdown();
         try {
@@ -466,7 +465,7 @@ public class MessagingTest {
     /**
      * Create a membership service listenting on serverAddr
      */
-    private IMessagingServer createAndStartMembershipService(final Endpoint serverAddr)
+    private void createAndStartMembershipService(final Endpoint serverAddr)
             throws IOException, MembershipView.NodeAlreadyInRingException {
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
         final MembershipView membershipView = new MembershipView(K);
@@ -479,13 +478,12 @@ public class MessagingTest {
         rpcServer.start();
         rpcServers.add(rpcServer);
         services.add(service);
-        return rpcServer;
     }
 
     /**
      * Create a membership service listenting on serverAddr that uses a list of server interceptors.
      */
-    private IMessagingServer createAndStartMembershipService(final Endpoint serverAddr,
+    private void createAndStartMembershipService(final Endpoint serverAddr,
                                                              final List<ServerDropInterceptors.FirstN> interceptors)
             throws IOException, MembershipView.NodeAlreadyInRingException {
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
@@ -499,13 +497,12 @@ public class MessagingTest {
         rpcServer.start();
         rpcServers.add(rpcServer);
         services.add(service);
-        return rpcServer;
     }
 
     /**
      * Create a membership service listening on serverAddr, with a supplied membershipView and server interceptors.
      */
-    private IMessagingServer createAndStartMembershipService(final Endpoint serverAddr,
+    private void createAndStartMembershipService(final Endpoint serverAddr,
                                                       final MembershipView membershipView)
             throws IOException {
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
@@ -517,7 +514,6 @@ public class MessagingTest {
         rpcServer.start();
         rpcServers.add(rpcServer);
         services.add(service);
-        return rpcServer;
     }
 
     private JoinResponse sendPreJoinMessage(final IMessagingClient client, final Endpoint serverAddr,

@@ -13,7 +13,7 @@ class StaticFailureDetector implements Runnable {
     private final Endpoint monitoree;
     private final Runnable notifier;
 
-    StaticFailureDetector(final Endpoint monitoree, final Runnable notifier,
+    private StaticFailureDetector(final Endpoint monitoree, final Runnable notifier,
                           final Set<Endpoint> blackList) {
         this.monitoree = monitoree;
         this.notifier = notifier;

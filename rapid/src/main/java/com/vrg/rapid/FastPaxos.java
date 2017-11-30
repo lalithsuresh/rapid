@@ -59,13 +59,13 @@ class FastPaxos {
         // especially for very large clusters.
         this.jitterRate = 1 / (double) membershipSize;
         this.scheduledExecutorService = scheduledExecutorService;
-        this.onDecidedWrapped = Hosts -> {
+        this.onDecidedWrapped = hosts -> {
             assert !decided.get();
             decided.set(true);
             if (scheduledClassicRoundTask != null) {
                 scheduledClassicRoundTask.cancel(true);
             }
-            onDecide.accept(Hosts);
+            onDecide.accept(hosts);
         };
         this.paxos = new Paxos(myAddr, configurationId, membershipSize, client, broadcaster, onDecidedWrapped);
     }

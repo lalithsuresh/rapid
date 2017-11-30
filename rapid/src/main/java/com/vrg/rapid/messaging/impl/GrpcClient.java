@@ -19,7 +19,6 @@ import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import com.google.common.cache.RemovalListener;
 import com.google.common.cache.RemovalListeners;
-import com.vrg.rapid.pb.Endpoint;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
@@ -28,12 +27,12 @@ import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.vrg.rapid.Settings;
 import com.vrg.rapid.SharedResources;
 import com.vrg.rapid.messaging.IMessagingClient;
+import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.MembershipServiceGrpc;
 import com.vrg.rapid.pb.MembershipServiceGrpc.MembershipServiceFutureStub;
 import com.vrg.rapid.pb.RapidRequest;
 import com.vrg.rapid.pb.RapidResponse;
 import io.grpc.Channel;
-import io.grpc.ClientInterceptor;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import io.grpc.inprocess.InProcessChannelBuilder;
@@ -45,8 +44,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
-import java.util.Collections;
-import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -68,28 +65,25 @@ public class GrpcClient implements IMessagingClient {
     public static final int DEFAULT_GRPC_PROBE_TIMEOUT = 1000;
 
     private final Endpoint address;
-    private final List<ClientInterceptor> interceptors;
     private final LoadingCache<Endpoint, Channel> channelMap;
     private final ExecutorService grpcExecutor;
     private final ExecutorService backgroundExecutor;
     @Nullable private final EventLoopGroup eventLoopGroup;
-    private AtomicBoolean isShuttingDown = new AtomicBoolean(false);
+    private final AtomicBoolean isShuttingDown = new AtomicBoolean(false);
     private final ISettings settings;
 
     @VisibleForTesting
     public GrpcClient(final Endpoint address) {
-        this(address, Collections.emptyList(), new SharedResources(address), new Settings());
+        this(address, new SharedResources(address), new Settings());
     }
 
     @VisibleForTesting
     public GrpcClient(final Endpoint address, final ISettings settings) {
-        this(address, Collections.emptyList(), new SharedResources(address), settings);
+        this(address, new SharedResources(address), settings);
     }
 
-    public GrpcClient(final Endpoint address, final List<ClientInterceptor> interceptors,
-                      final SharedResources sharedResources, final ISettings settings) {
+    public GrpcClient(final Endpoint address, final SharedResources sharedResources, final ISettings settings) {
         this.address = address;
-        this.interceptors = interceptors;
         this.settings = settings;
         this.grpcExecutor = sharedResources.getClientChannelExecutor();
         this.backgroundExecutor = sharedResources.getBackgroundExecutor();
@@ -243,7 +237,6 @@ public class GrpcClient implements IMessagingClient {
             channel = InProcessChannelBuilder
                     .forName(remote.toString())
                     .executor(grpcExecutor)
-                    .intercept(interceptors)
                     .usePlaintext(true)
                     .idleTimeout(10, TimeUnit.SECONDS)
                     .build();
@@ -251,7 +244,6 @@ public class GrpcClient implements IMessagingClient {
             channel = NettyChannelBuilder
                     .forAddress(remote.getHostname(), remote.getPort())
                     .executor(grpcExecutor)
-                    .intercept(interceptors)
                     .eventLoopGroup(eventLoopGroup)
                     .usePlaintext(true)
                     .idleTimeout(10, TimeUnit.SECONDS)

@@ -12,11 +12,11 @@ import java.util.List;
 /**
  * GrpcClient with interceptors used for testing
  */
-public class TestingGrpcClient extends GrpcClient {
-    final List<ClientInterceptors.Delayer> interceptors;
+class TestingGrpcClient extends GrpcClient {
+    private final List<ClientInterceptors.Delayer> interceptors;
 
-    public TestingGrpcClient(final Endpoint address, final ISettings settings,
-                             final List<ClientInterceptors.Delayer> interceptors) {
+    TestingGrpcClient(final Endpoint address, final ISettings settings,
+                      final List<ClientInterceptors.Delayer> interceptors) {
         super(address, settings);
         this.interceptors = interceptors;
     }

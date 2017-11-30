@@ -32,7 +32,6 @@ import com.vrg.rapid.pb.NodeId;
 import com.vrg.rapid.pb.PreJoinMessage;
 import com.vrg.rapid.pb.RapidRequest;
 import com.vrg.rapid.pb.RapidResponse;
-import io.grpc.ClientInterceptor;
 import io.grpc.ExperimentalApi;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -141,7 +140,6 @@ public final class Cluster {
         private final Endpoint listenAddress;
         @Nullable private ILinkFailureDetectorFactory linkFailureDetector = null;
         private Metadata metadata = Metadata.getDefaultInstance();
-        private List<ClientInterceptor> clientInterceptors = Collections.emptyList();
         private Settings settings = new Settings();
         private final Map<ClusterEvents, List<BiConsumer<Long, List<NodeStatusChange>>>> subscriptions =
                 new EnumMap<>(ClusterEvents.class);
@@ -238,7 +236,7 @@ public final class Cluster {
                             : new GrpcServer(listenAddress, sharedResources, settings.getUseInProcessTransport());
             messagingClient = messagingClient != null
                                 ? messagingClient
-                                : new GrpcClient(listenAddress, clientInterceptors, sharedResources, settings);
+                                : new GrpcClient(listenAddress, sharedResources, settings);
             final NodeId currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
             final MembershipView membershipView = new MembershipView(K, Collections.singletonList(currentIdentifier),
                     Collections.singletonList(listenAddress));
@@ -285,7 +283,7 @@ public final class Cluster {
                     : new GrpcServer(listenAddress, sharedResources, settings.getUseInProcessTransport());
             messagingClient = messagingClient != null
                     ? messagingClient
-                    : new GrpcClient(listenAddress, clientInterceptors, sharedResources, settings);
+                    : new GrpcClient(listenAddress, sharedResources, settings);
             messagingServer.start();
             for (int attempt = 0; attempt < RETRIES; attempt++) {
                 try {

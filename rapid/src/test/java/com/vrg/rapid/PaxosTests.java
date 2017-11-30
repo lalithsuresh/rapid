@@ -43,7 +43,7 @@ import static org.junit.Assert.assertTrue;
  */
 @RunWith(JUnitParamsRunner.class)
 public class PaxosTests {
-    private Set<RapidRequest.ContentCase> messageTypeToDrop = new HashSet<>();
+    private final Set<RapidRequest.ContentCase> messageTypeToDrop = new HashSet<>();
 
     @Before
     public void beforeTest() {
@@ -56,8 +56,7 @@ public class PaxosTests {
     @Test
     @Parameters(method = "nValues")
     @TestCaseName("{method}[N={0}]")
-    public void testRecoveryForSinglePropose(final int N) throws InterruptedException {
-        final int numNodes = N;
+    public void testRecoveryForSinglePropose(final int numNodes) throws InterruptedException {
         final ExecutorService executorService = Executors.newFixedThreadPool(numNodes);
         final LinkedBlockingDeque<List<Endpoint>> decisions = new LinkedBlockingDeque<>();
         final Consumer<List<Endpoint>> onDecide = decisions::add;
@@ -75,8 +74,7 @@ public class PaxosTests {
     @Test
     @Parameters(method = "nValues")
     @TestCaseName("{method}[N={0}]")
-    public void testRecoveryFromFastRoundWithDifferentProposals(final int N) throws InterruptedException {
-        final int numNodes = N;
+    public void testRecoveryFromFastRoundWithDifferentProposals(final int numNodes) throws InterruptedException {
         final ExecutorService executorService = Executors.newFixedThreadPool(numNodes);
         final LinkedBlockingDeque<List<Endpoint>> decisions = new LinkedBlockingDeque<>();
         final Consumer<List<Endpoint>> onDecide = decisions::add;
@@ -98,8 +96,7 @@ public class PaxosTests {
     @Test
     @Parameters(method = "nValues")
     @TestCaseName("{method}[N={0}]")
-    public void testClassicRoundAfterSuccessfulFastRound(final int N) throws InterruptedException {
-        final int numNodes = N;
+    public void testClassicRoundAfterSuccessfulFastRound(final int numNodes) throws InterruptedException {
         final ExecutorService executorService = Executors.newFixedThreadPool(numNodes);
         final LinkedBlockingDeque<List<Endpoint>> decisions = new LinkedBlockingDeque<>();
         final Consumer<List<Endpoint>> onDecide = decisions::add;
@@ -130,11 +127,10 @@ public class PaxosTests {
     @Test
     @Parameters(method = "testClassicRoundAfterSuccessfulFastRoundMixedValues")
     @TestCaseName("{method}[N={0},p1={1},p2={2},p2Votes={3},decisionChoices={4}]")
-    public void testClassicRoundAfterSuccessfulFastRoundMixedValues(final int N, final List<String> p1,
+    public void testClassicRoundAfterSuccessfulFastRoundMixedValues(final int numNodes, final List<String> p1,
                                                                     final List<String> p2, final int p2Votes,
                                                                     final List<String> decisionChoices)
             throws InterruptedException {
-        final int numNodes = N;
         final ExecutorService executorService = Executors.newFixedThreadPool(numNodes);
         final LinkedBlockingDeque<List<Endpoint>> decisions = new LinkedBlockingDeque<>();
         final Consumer<List<Endpoint>> onDecide = decisions::add;

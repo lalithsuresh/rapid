@@ -136,7 +136,7 @@ public class ClusterTest {
         verifyCluster(1);
         for (int i = 0; i < numNodes; i++) {
             extendCluster(1, seedEndpoint);
-            waitAndVerifyAgreement(i + 2, 5, 1000, seedEndpoint);
+            waitAndVerifyAgreement(i + 2, 5, 1000);
         }
     }
 
@@ -152,7 +152,7 @@ public class ClusterTest {
 
         for (int i = 0; i < numNodes; i++) {
             extendCluster(1, seedEndpoint);
-            waitAndVerifyAgreement(i + 2, 5, 1000, seedEndpoint);
+            waitAndVerifyAgreement(i + 2, 5, 1000);
         }
     }
 
@@ -182,9 +182,9 @@ public class ClusterTest {
         final int numNodesPhase2 = 50;
         final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", basePort);
         createCluster(numNodesPhase1, seedEndpoint);
-        waitAndVerifyAgreement(numNodesPhase1, 10, 100, seedEndpoint);
+        waitAndVerifyAgreement(numNodesPhase1, 10, 100);
         extendCluster(numNodesPhase2, seedEndpoint);
-        waitAndVerifyAgreement(numNodesPhase1 + numNodesPhase2, 10, 1000, seedEndpoint);
+        waitAndVerifyAgreement(numNodesPhase1 + numNodesPhase2, 10, 1000);
     }
 
     /**
@@ -200,7 +200,7 @@ public class ClusterTest {
         verifyCluster(numNodes);
         final Endpoint nodeToFail = Utils.hostFromParts("127.0.0.1", basePort + 2);
         failSomeNodes(Collections.singletonList(nodeToFail));
-        waitAndVerifyAgreement(numNodes - 1, 10, 1000, seedEndpoint);
+        waitAndVerifyAgreement(numNodes - 1, 10, 1000);
         verifyNumClusterInstances(numNodes - 1);
     }
 
@@ -220,7 +220,7 @@ public class ClusterTest {
                                .mapToObj(i -> Utils.hostFromParts("127.0.0.1", i))
                                .collect(Collectors.toList()));
         extendCluster(phaseTwojoiners, seedEndpoint);
-        waitAndVerifyAgreement(numNodes - failingNodes + phaseTwojoiners, 20, 1000, seedEndpoint);
+        waitAndVerifyAgreement(numNodes - failingNodes + phaseTwojoiners, 20, 1000);
         verifyNumClusterInstances(numNodes - failingNodes + phaseTwojoiners);
     }
 
@@ -245,7 +245,7 @@ public class ClusterTest {
         for (int i = 0; i < phaseTwojoiners; i++) {
             extendCluster(1, seedEndpoint);
         }
-        waitAndVerifyAgreement(numNodes + phaseOneJoiners + phaseTwojoiners, 20, 1000, seedEndpoint);
+        waitAndVerifyAgreement(numNodes + phaseOneJoiners + phaseTwojoiners, 20, 1000);
         verifyNumClusterInstances(numNodes + phaseOneJoiners + phaseTwojoiners);
     }
 
@@ -266,7 +266,7 @@ public class ClusterTest {
         final Set<Endpoint> failingNodes = getRandomHosts(numFailingNodes);
         staticFds.values().forEach(e -> e.addFailedNodes(failingNodes));
         failingNodes.forEach(h -> instances.remove(h).shutdown());
-        waitAndVerifyAgreement(numNodes - failingNodes.size(), 20, 1000, seedEndpoint);
+        waitAndVerifyAgreement(numNodes - failingNodes.size(), 20, 1000);
         // Nodes do not actually shutdown(), but are detected faulty. The faulty nodes have active
         // cluster instances and identify themselves as kicked out.
         verifyNumClusterInstances(numNodes - failingNodes.size());
@@ -290,7 +290,7 @@ public class ClusterTest {
         final Set<Endpoint> failingNodes = getRandomHosts(numFailingNodes);
         staticFds.values().forEach(e -> e.addFailedNodes(failingNodes));
         failingNodes.forEach(h -> instances.remove(h).shutdown());
-        waitAndVerifyAgreement(numNodes - failingNodes.size(), 20, 1000, seedEndpoint);
+        waitAndVerifyAgreement(numNodes - failingNodes.size(), 20, 1000);
         // Nodes do not actually shutdown(), but are detected faulty. The faulty nodes have active
         // cluster instances and identify themselves as kicked out.
         verifyNumClusterInstances(numNodes - failingNodes.size());
@@ -312,7 +312,7 @@ public class ClusterTest {
         // Fail the first 3 nodes.
         final Set<Endpoint> failingNodes = getRandomHosts(numFailingNodes);
         staticFds.values().forEach(e -> e.addFailedNodes(failingNodes));
-        waitAndVerifyAgreement(numNodes - failingNodes.size(), 20, 1000, seedEndpoint);
+        waitAndVerifyAgreement(numNodes - failingNodes.size(), 20, 1000);
         // Nodes do not actually shutdown(), but are detected faulty. The faulty nodes have active
         // cluster instances and identify themselves as kicked out.
         verifyNumClusterInstances(numNodes);
@@ -335,7 +335,7 @@ public class ClusterTest {
         // we may have less than numFailedNodes entries in the set
         failedNodes.forEach(host -> dropFirstNAtServer(host, 100, RapidRequest.ContentCase.PROBEMESSAGE));
         createCluster(numNodes, seedEndpoint);
-        waitAndVerifyAgreement(numNodes - failedNodes.size(), 10, 1000, seedEndpoint);
+        waitAndVerifyAgreement(numNodes - failedNodes.size(), 10, 1000);
         verifyNumClusterInstances(numNodes);
     }
 
@@ -352,7 +352,7 @@ public class ClusterTest {
                 RapidRequest.ContentCase.JOINMESSAGE);
         createCluster(1, seedEndpoint);
         extendCluster(1, seedEndpoint);
-        waitAndVerifyAgreement(2, 15, 1000, seedEndpoint);
+        waitAndVerifyAgreement(2, 15, 1000);
         verifyNumClusterInstances(2);
     }
 
@@ -369,7 +369,7 @@ public class ClusterTest {
                 RapidRequest.ContentCase.JOINMESSAGE);
         createCluster(1, seedEndpoint);
         extendCluster(1, seedEndpoint);
-        waitAndVerifyAgreement(2, 15, 1000, seedEndpoint);
+        waitAndVerifyAgreement(2, 15, 1000);
         verifyNumClusterInstances(2);
     }
 
@@ -389,7 +389,7 @@ public class ClusterTest {
         // joiner node stale
         extendCluster(1, seedEndpoint);
         latch.countDown();
-        waitAndVerifyAgreement(3, 15, 1000, seedEndpoint);
+        waitAndVerifyAgreement(3, 15, 1000);
         verifyNumClusterInstances(3);
     }
 
@@ -407,9 +407,9 @@ public class ClusterTest {
         for (int i = 0; i < 2; i++) {
             final Cluster cluster = instances.remove(leavingEndpoint);
             cluster.shutdown();
-            waitAndVerifyAgreement(9, 20, 500, seedEndpoint);
+            waitAndVerifyAgreement(9, 20, 500);
             extendCluster(leavingEndpoint, seedEndpoint);
-            waitAndVerifyAgreement(10, 20, 500, seedEndpoint);
+            waitAndVerifyAgreement(10, 20, 500);
         }
     }
 
@@ -434,9 +434,9 @@ public class ClusterTest {
                 fail();
             } catch (final Cluster.JoinException ignored) {
             }
-            waitAndVerifyAgreement(9, 10, 1000, seedEndpoint);
+            waitAndVerifyAgreement(9, 10, 1000);
             cluster = buildCluster(rejoiningEndpoint).join(seedEndpoint);
-            waitAndVerifyAgreement(10, 10, 500, seedEndpoint);
+            waitAndVerifyAgreement(10, 10, 500);
         } finally {
             if (cluster != null) {
                 cluster.shutdown();
@@ -467,9 +467,9 @@ public class ClusterTest {
                         final Cluster cluster = instances.remove(leavingEndpoint);
                         try {
                             cluster.shutdown();
-                            waitAndVerifyAgreement(numNodes - failNodes, 20, 500, seedEndpoint);
+                            waitAndVerifyAgreement(numNodes - failNodes, 20, 500);
                             extendCluster(leavingEndpoint, seedEndpoint);
-                            waitAndVerifyAgreement(numNodes, 20, 500, seedEndpoint);
+                            waitAndVerifyAgreement(numNodes, 20, 500);
                         } catch (final InterruptedException e) {
                             fail();
                         }
@@ -480,7 +480,7 @@ public class ClusterTest {
             });
         }
         latch.await();
-        waitAndVerifyAgreement(numNodes, 10, 250, seedEndpoint);
+        waitAndVerifyAgreement(numNodes, 10, 250);
         executor.shutdownNow();
     }
 
@@ -496,7 +496,7 @@ public class ClusterTest {
     private void createCluster(final int numNodes, final Endpoint seedEndpoint) throws IOException {
         final Cluster seed = buildCluster(seedEndpoint).start();
         instances.put(seedEndpoint, seed);
-        assertEquals(seed.getMemberlist().size(), 1);
+        assertEquals(1, seed.getMemberlist().size());
         if (numNodes >= 2) {
             extendCluster(numNodes - 1, seedEndpoint);
         }
@@ -670,10 +670,9 @@ public class ClusterTest {
      * @param expectedSize expected size of each cluster
      * @param maxTries number of tries to checkMonitoree if the cluster has stabilized.
      * @param intervalInMs the time duration between checks.
-     * @param seedNode the seed node to validate the cluster membership against
      */
-    private void waitAndVerifyAgreement(final int expectedSize, final int maxTries, final int intervalInMs,
-                                        final Endpoint seedNode) throws InterruptedException {
+    private void waitAndVerifyAgreement(final int expectedSize, final int maxTries, final int intervalInMs)
+            throws InterruptedException {
         int tries = maxTries;
         while (--tries > 0) {
             boolean ready = true;
