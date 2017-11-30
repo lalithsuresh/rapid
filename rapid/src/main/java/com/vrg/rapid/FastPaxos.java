@@ -60,6 +60,7 @@ class FastPaxos {
         this.jitterRate = 1 / (double) membershipSize;
         this.scheduledExecutorService = scheduledExecutorService;
         this.onDecidedWrapped = Hosts -> {
+            assert !decided.get();
             decided.set(true);
             if (scheduledClassicRoundTask != null) {
                 scheduledClassicRoundTask.cancel(true);

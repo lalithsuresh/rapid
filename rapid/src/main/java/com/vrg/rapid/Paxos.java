@@ -23,10 +23,8 @@ import javax.annotation.concurrent.NotThreadSafe;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -56,7 +54,6 @@ public class Paxos {
 
     private Rank crnd;
     private List<Endpoint> cval;
-    private Rank maxVrndSoFar = Rank.newBuilder().setRound(Integer.MIN_VALUE).setNodeIndex(Integer.MIN_VALUE).build();
 
     private final Consumer<List<Endpoint>> onDecide;
     private boolean decided = false;
@@ -88,13 +85,13 @@ public class Paxos {
             return;
         }
         crnd = crnd.toBuilder().setRound(round).setNodeIndex(myAddr.hashCode()).build();
-        LOG.trace("Prepare called for round {}", TextFormat.shortDebugString(crnd));
+        LOG.trace("Prepare called for round {}", Utils.loggable(crnd));
         final Phase1aMessage prepare = Phase1aMessage.newBuilder()
                                        .setConfigurationId(configurationId)
                                        .setSender(myAddr)
                                        .setRank(crnd).build();
         final RapidRequest request = Utils.toRapidRequest(prepare);
-        LOG.trace("Broadcasting startPhase1a message: {}", TextFormat.shortDebugString(request));
+        LOG.trace("Broadcasting startPhase1a message: {}", Utils.loggable(request));
         broadcaster.broadcast(request);
     }
 
@@ -112,8 +109,8 @@ public class Paxos {
             rnd = phase1aMessage.getRank();
         }
         else {
-            LOG.trace("Rejecting prepareMessage from lower rank: ({}) ({})", TextFormat.shortDebugString(rnd),
-                    TextFormat.shortDebugString(phase1aMessage));
+            LOG.trace("Rejecting prepareMessage from lower rank: ({}) ({})", Utils.loggable(rnd),
+                    Utils.loggable(phase1aMessage));
             return;
         }
         LOG.trace("Sending back vval:{} vrnd:{}", vval, TextFormat.shortDebugString(vrnd));
@@ -146,15 +143,16 @@ public class Paxos {
             return;
         }
 
-        LOG.trace("Handling PrepareResponse: {}", TextFormat.shortDebugString(phase1bMessage));
+        LOG.trace("Handling PrepareResponse: {}", Utils.loggable(phase1bMessage));
 
         phase1bMessages.add(phase1bMessage);
-        maxVrndSoFar = compareRanks(maxVrndSoFar, phase1bMessage.getVrnd()) >= 0 ?
-                        maxVrndSoFar : phase1bMessage.getVrnd();
+
         if (phase1bMessages.size() > (N / 2)) {
+            // selectProposalUsingCoordinator rule may execute multiple times with each additional phase1bMessage
+            // being received, but we can enter the following if statement only once when a valid cval is identified.
             final List<Endpoint> chosenProposal = selectProposalUsingCoordinatorRule(phase1bMessages);
             if (crnd.equals(phase1bMessage.getRnd()) && cval.size() == 0 && chosenProposal.size() > 0) {
-                LOG.trace("Proposing: {}", chosenProposal);
+                LOG.trace("Proposing: {}", Utils.loggable(chosenProposal));
                 cval = chosenProposal;
                 final Phase2aMessage phase2aMessage = Phase2aMessage.newBuilder()
                                                    .setSender(myAddr)
@@ -178,11 +176,11 @@ public class Paxos {
             return;
         }
 
-        LOG.trace("At acceptor received phase2aMessage: {}", TextFormat.shortDebugString(phase2aMessage));
+        LOG.trace("At acceptor received phase2aMessage: {}", Utils.loggable(phase2aMessage));
         if (compareRanks(rnd, phase2aMessage.getRnd()) <= 0 && !vrnd.equals(phase2aMessage.getRnd())) {
             vrnd = phase2aMessage.getRnd();
             vval = phase2aMessage.getVvalList();
-            LOG.trace("Accepted value in vrnd: {}, vval: {}", TextFormat.shortDebugString(vrnd), vval);
+            LOG.trace("Accepted value in vrnd: {}, vval: {}", Utils.loggable(vrnd), Utils.loggable(vval));
 
             final Phase2bMessage response = Phase2bMessage.newBuilder()
                                                           .setConfigurationId(configurationId)
@@ -203,7 +201,7 @@ public class Paxos {
         if (phase2bMessage.getConfigurationId() != configurationId) {
             return;
         }
-        LOG.trace("Received phase2bMessage: {}", TextFormat.shortDebugString(phase2bMessage));
+        LOG.trace("Received phase2bMessage: {}", Utils.loggable(phase2bMessage));
         acceptResponses.add(phase2bMessage);
         if (acceptResponses.size() > (N / 2) && !decided) {
             final List<Endpoint> decision = phase2bMessage.getEndpointsList();
@@ -232,7 +230,7 @@ public class Paxos {
         rnd = rnd.toBuilder().setRound(1).setNodeIndex(1).build();
         vrnd = rnd;
         vval = vote;
-        LOG.trace("Voted in fast round for proposal: {}", vote);
+        LOG.trace("Voted in fast round for proposal: {}", Utils.loggable(vote));
     }
 
     /**
@@ -245,6 +243,9 @@ public class Paxos {
      */
     @VisibleForTesting
     List<Endpoint> selectProposalUsingCoordinatorRule(final List<Phase1bMessage> phase1bMessages) {
+        final Rank maxVrndSoFar = phase1bMessages.stream().map(Phase1bMessage::getVrnd)
+                                                  .max(Paxos::compareRanks).get();
+
         // Let k be the largest value of vr(a) for all a in Q.
         // V (collectedVvals) be the set of all vv(a) for all a in Q s.t vr(a) == k
         final List<List<Endpoint>> collectedVvals = phase1bMessages.stream()
@@ -278,14 +279,23 @@ public class Paxos {
                 }
             }
         }
-        // At this point, no value has been selected yet and it is safe for the coordinator to propose a value of its
-        // own which is the union of all existing values.
+        // At this point, no value has been selected yet and it is safe for the coordinator to pick any proposed value.
+        // If none of the 'vvals' contain valid values (are all empty lists), then this method returns an empty
+        // list. This can happen because a quorum of acceptors that did not vote in prior rounds may have responded
+        // to the coordinator first. This is safe to do here for two reasons:
+        //      1) The coordinator will only proceed with phase 2 if it has a valid vote.
+        //      2) It is likely that the coordinator (itself being an acceptor) is the only one with a valid vval,
+        //         and has not heard a Phase1bMessage from itself yet. Once that arrives, phase1b will be triggered
+        //         again.
+        //
+        // XXX: one option is to propose a new value of our own that is the union of all proposed values so far.
         if (chosenProposal == null) {
-            final Set<Endpoint> proposal = new HashSet<>();
-            collectedVvals.forEach(proposal::addAll);
-            chosenProposal = new ArrayList<>(proposal);
-            LOG.trace("There were multiple values in round k -- chosen:{}, list:{}, vrnd:{}", chosenProposal,
-                    collectedVvals, TextFormat.shortDebugString(maxVrndSoFar));
+            chosenProposal = phase1bMessages.stream()
+                                            .filter(r -> r.getVvalCount() > 0)
+                                            .map(Phase1bMessage::getVvalList)
+                                            .findFirst().orElse(Collections.emptyList());
+            LOG.trace("Proposing new value -- chosen:{}, list:{}, vrnd:{}", Utils.loggable(chosenProposal),
+                      collectedVvals, Utils.loggable(maxVrndSoFar));
         }
         return chosenProposal;
     }
@@ -293,7 +303,7 @@ public class Paxos {
     /**
      * Primary ordering is by round number, and secondary ordering by the ID of the node that initiated the round.
      */
-    private int compareRanks(final Rank left, final Rank right) {
+    private static int compareRanks(final Rank left, final Rank right) {
         final int compRound = Integer.compare(left.getRound(), right.getRound());
         if (compRound == 0) {
             return Integer.compare(left.getNodeIndex(), right.getNodeIndex());

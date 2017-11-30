@@ -19,9 +19,13 @@ import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
 import com.vrg.rapid.pb.RapidRequest;
 import com.vrg.rapid.pb.RapidResponse;
-import com.vrg.rapid.pb.Response;
+import net.openhft.hashing.LongHashFunction;
 
+import java.io.Serializable;
 import java.util.Collection;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -109,8 +113,8 @@ final class Utils {
             final StringBuilder sb = new StringBuilder();
             sb.append("[");
             for (final GeneratedMessageV3 obj: protobufObjects) {
-                sb.append(TextFormat.shortDebugString(obj));
-                sb.append(",");
+                sb.append(loggable(obj));
+                sb.append(", ");
             }
             sb.append("]");
             return sb.toString();
@@ -120,7 +124,6 @@ final class Utils {
     /**
      * Wraps a collection of protobuf objects such that it has a logging friendly toString().
      * @param object collection of protobuf objects
-     * @param <T> Any protobuf generated type
      * @return a Loggable instance which wraps the protobuf collection.
      */
     static LoggableCollection loggable(final Collection<? extends GeneratedMessageV3> object) {
@@ -171,15 +174,36 @@ final class Utils {
         return RapidResponse.newBuilder().setJoinResponse(msg).build();
     }
 
-    static RapidResponse toRapidResponse(final Response msg) {
-        return RapidResponse.newBuilder().setResponse(msg).build();
-    }
-
     static RapidResponse toRapidResponse(final ConsensusResponse msg) {
         return RapidResponse.newBuilder().setConsensusResponse(msg).build();
     }
 
     static RapidResponse toRapidResponse(final ProbeResponse msg) {
         return RapidResponse.newBuilder().setProbeResponse(msg).build();
+    }
+
+
+    /**
+     * Used to order endpoints in the different rings.
+     */
+    static final class AddressComparator implements Comparator<Endpoint>, Serializable {
+        private static final long serialVersionUID = -4891729390L;
+        private static final Map<Integer, AddressComparator> INSTANCES = new HashMap<>();
+        private final LongHashFunction hashFunction;
+
+        AddressComparator(final int seed) {
+            this.hashFunction = LongHashFunction.xx(seed);
+        }
+
+        @Override
+        public final int compare(final Endpoint c1, final Endpoint c2) {
+            final long hash1 = hashFunction.hashChars(c1.getHostname()) * 31 + hashFunction.hashInt(c1.getPort());
+            final long hash2 = hashFunction.hashChars(c2.getHostname()) * 31 + hashFunction.hashInt(c2.getPort());
+            return Long.compare(hash1, hash2);
+        }
+
+        static synchronized AddressComparator getComparatorWithSeed(final int seed) {
+            return INSTANCES.computeIfAbsent(seed, AddressComparator::new);
+        }
     }
 }

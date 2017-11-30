@@ -57,7 +57,7 @@ final class MembershipView {
         this.K = K;
         this.rings = new HashMap<>(K);
         for (int k = 0; k < K; k++) {
-            this.rings.put(k, new TreeSet<>(AddressComparator.getComparatorWithSeed(k)));
+            this.rings.put(k, new TreeSet<>(Utils.AddressComparator.getComparatorWithSeed(k)));
         }
         this.currentConfiguration = new Configuration(identifiersSeen, rings.get(0));
     }
@@ -71,7 +71,7 @@ final class MembershipView {
         this.K = K;
         this.rings = new HashMap<>(K);
         for (int k = 0; k < K; k++) {
-            this.rings.put(k, new TreeSet<>(AddressComparator.getComparatorWithSeed(k)));
+            this.rings.put(k, new TreeSet<>(Utils.AddressComparator.getComparatorWithSeed(k)));
             this.rings.get(k).addAll(endpoints);
         }
         this.identifiersSeen.addAll(nodeIds);
@@ -397,30 +397,6 @@ final class MembershipView {
         }
         finally {
             rwLock.readLock().unlock();
-        }
-    }
-
-    /**
-     * Used to order endpoints in the different rings.
-     */
-    private static final class AddressComparator implements Comparator<Endpoint>, Serializable {
-        private static final long serialVersionUID = -4891729390L;
-        private static final Map<Integer, AddressComparator> INSTANCES = new HashMap<>();
-        private final LongHashFunction hashFunction;
-
-        AddressComparator(final int seed) {
-            this.hashFunction = LongHashFunction.xx(seed);
-        }
-
-        @Override
-        public final int compare(final Endpoint c1, final Endpoint c2) {
-            final long hash1 = hashFunction.hashChars(c1.getHostname()) * 31 + hashFunction.hashInt(c1.getPort());
-            final long hash2 = hashFunction.hashChars(c2.getHostname()) * 31 + hashFunction.hashInt(c2.getPort());
-            return Long.compare(hash1, hash2);
-        }
-
-        static synchronized AddressComparator getComparatorWithSeed(final int seed) {
-            return INSTANCES.computeIfAbsent(seed, AddressComparator::new);
         }
     }
 

@@ -319,7 +319,9 @@ public final class MembershipService {
                     subscriptions.get(ClusterEvents.VIEW_CHANGE_PROPOSAL)
                                  .forEach(cb -> cb.accept(currentConfigurationId, result));
                 }
-                fastPaxosInstance.propose(new ArrayList<>(proposal));
+                fastPaxosInstance.propose(new ArrayList<>(proposal.stream()
+                                                            .sorted(Utils.AddressComparator.getComparatorWithSeed(0))
+                                                            .collect(Collectors.toList())));
             }
             future.set(null);
         });
