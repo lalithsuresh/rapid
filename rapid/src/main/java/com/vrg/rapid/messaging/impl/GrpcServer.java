@@ -13,13 +13,13 @@
 
 package com.vrg.rapid.messaging.impl;
 
-import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.vrg.rapid.MembershipService;
 import com.vrg.rapid.SharedResources;
 import com.vrg.rapid.messaging.IMessagingServer;
+import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.MembershipServiceGrpc;
 import com.vrg.rapid.pb.NodeStatus;
 import com.vrg.rapid.pb.ProbeResponse;
@@ -49,7 +49,7 @@ public class GrpcServer extends MembershipServiceGrpc.MembershipServiceImplBase 
     private static final RapidResponse BOOTSTRAPPING_MESSAGE =
             RapidResponse.newBuilder().setProbeResponse(ProbeResponse.newBuilder()
                                                         .setStatus(NodeStatus.BOOTSTRAPPING).build()).build();
-    private final HostAndPort address;
+    private final Endpoint address;
     @Nullable
     private MembershipService membershipService;
     @Nullable private Server server;
@@ -57,7 +57,7 @@ public class GrpcServer extends MembershipServiceGrpc.MembershipServiceImplBase 
 
     // Used to queue messages in the RPC layer until we are ready with
     // a MembershipService object
-    public GrpcServer(final HostAndPort address, final SharedResources sharedResources,
+    public GrpcServer(final Endpoint address, final SharedResources sharedResources,
                       final boolean useInProcessTransport) {
         this.address = address;
         this.grpcExecutor = sharedResources.getServerExecutor();
@@ -133,7 +133,7 @@ public class GrpcServer extends MembershipServiceGrpc.MembershipServiceImplBase 
                     .build()
                     .start();
         } else {
-            server = NettyServerBuilder.forAddress(new InetSocketAddress(address.getHost(), address.getPort()))
+            server = NettyServerBuilder.forAddress(new InetSocketAddress(address.getHostname(), address.getPort()))
                     .workerEventLoopGroup(eventLoopGroup)
                     .addService(this)
                     .executor(grpcExecutor)

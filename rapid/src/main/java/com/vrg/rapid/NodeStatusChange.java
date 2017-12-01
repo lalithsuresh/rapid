@@ -13,7 +13,7 @@
 
 package com.vrg.rapid;
 
-import com.google.common.net.HostAndPort;
+import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.LinkStatus;
 import com.vrg.rapid.pb.Metadata;
 
@@ -22,20 +22,20 @@ import com.vrg.rapid.pb.Metadata;
  * cluster view change events.
  */
 public class NodeStatusChange {
-    private final HostAndPort hostAndPort;
+    private final Endpoint endpoint;
     private final LinkStatus status;
     private final Metadata metadata;
 
-    NodeStatusChange(final HostAndPort hostAndPort,
+    NodeStatusChange(final Endpoint Endpoint,
                      final LinkStatus status,
                      final Metadata metadata) {
-        this.hostAndPort = hostAndPort;
+        this.endpoint = Endpoint;
         this.status = status;
         this.metadata = metadata;
     }
 
-    public HostAndPort getHostAndPort() {
-        return hostAndPort;
+    public Endpoint getEndpoint() {
+        return endpoint;
     }
 
     public LinkStatus getStatus() {
@@ -48,6 +48,6 @@ public class NodeStatusChange {
 
     @Override
     public String toString() {
-        return String.valueOf(hostAndPort) + ":" + status + ":" + metadata;
+        return endpoint.getHostname() + ":" + endpoint.getPort() + ":" + status + ":" + metadata;
     }
 }

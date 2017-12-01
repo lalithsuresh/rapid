@@ -14,6 +14,7 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
+import com.vrg.rapid.pb.Endpoint;
 import com.google.protobuf.ByteString;
 import com.vrg.rapid.messaging.impl.GrpcClient;
 import com.vrg.rapid.pb.RapidRequest;
@@ -56,10 +57,10 @@ import static org.junit.Assert.fail;
 public class ClusterTest {
     private static final Logger GRPC_LOGGER;
     private static final Logger NETTY_LOGGER;
-    private final Map<HostAndPort, Cluster> instances = new ConcurrentHashMap<>();
-    private final Map<HostAndPort, StaticFailureDetector.Factory> staticFds = new ConcurrentHashMap<>();
-    private final Map<HostAndPort, List<ServerDropInterceptors.FirstN>> serverInterceptors = new ConcurrentHashMap<>();
-    private final Map<HostAndPort, List<ClientInterceptors.Delayer>> clientInterceptors = new ConcurrentHashMap<>();
+    private final Map<Endpoint, Cluster> instances = new ConcurrentHashMap<>();
+    private final Map<Endpoint, StaticFailureDetector.Factory> staticFds = new ConcurrentHashMap<>();
+    private final Map<Endpoint, List<ServerDropInterceptors.FirstN>> serverInterceptors = new ConcurrentHashMap<>();
+    private final Map<Endpoint, List<ClientInterceptors.Delayer>> clientInterceptors = new ConcurrentHashMap<>();
     private boolean useStaticFd = false;
     private boolean addMetadata = true;
     @Nullable private Random random = null;
@@ -113,15 +114,32 @@ public class ClusterTest {
         }
     }
 
+
+    /**
+     * Verify public API that uses HostAndPort
+     */
+    @Test(timeout = 30000)
+    public void hostAndPortBuilderTests() throws IOException, InterruptedException, ExecutionException {
+        final HostAndPort addr1 = HostAndPort.fromParts("127.0.0.1", 1255);
+        final HostAndPort addr2 = HostAndPort.fromParts("127.0.0.1", 1256);
+        final Cluster seed = new Cluster.Builder(addr1).start();
+        final Cluster joiner = new Cluster.Builder(addr2).join(addr1);
+        assertEquals(2, seed.getMembershipSize());
+        assertEquals(2, joiner.getMembershipSize());
+        joiner.shutdown();
+        seed.shutdown();
+    }
+
+
     /**
      * Test with a single node joining through a seed.
      */
     @Test(timeout = 30000)
     public void singleNodeJoinsThroughSeed() throws IOException, InterruptedException, ExecutionException {
-        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
-        createCluster(1, seedHost);
+        final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", basePort);
+        createCluster(1, seedEndpoint);
         verifyCluster(1);
-        extendCluster(1, seedHost);
+        extendCluster(1, seedEndpoint);
         verifyCluster(2);
     }
 
@@ -131,12 +149,12 @@ public class ClusterTest {
     @Test(timeout = 30000)
     public void tenNodesJoinSequentially() throws IOException, InterruptedException {
         final int numNodes = 10;
-        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
-        createCluster(1, seedHost); // Only bootstrap a seed.
+        final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", basePort);
+        createCluster(1, seedEndpoint); // Only bootstrap a seed.
         verifyCluster(1);
         for (int i = 0; i < numNodes; i++) {
-            extendCluster(1, seedHost);
-            waitAndVerifyAgreement(i + 2, 5, 1000, seedHost);
+            extendCluster(1, seedEndpoint);
+            waitAndVerifyAgreement(i + 2, 5, 1000);
         }
     }
 
@@ -146,13 +164,13 @@ public class ClusterTest {
     @Test(timeout = 30000)
     public void twentyNodesJoinSequentially() throws IOException, InterruptedException {
         final int numNodes = 20;
-        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
-        createCluster(1, seedHost); // Only bootstrap a seed.
+        final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", basePort);
+        createCluster(1, seedEndpoint); // Only bootstrap a seed.
         verifyCluster(1);
 
         for (int i = 0; i < numNodes; i++) {
-            extendCluster(1, seedHost);
-            waitAndVerifyAgreement(i + 2, 5, 1000, seedHost);
+            extendCluster(1, seedEndpoint);
+            waitAndVerifyAgreement(i + 2, 5, 1000);
         }
     }
 
@@ -166,8 +184,8 @@ public class ClusterTest {
     public void hundredNodesJoinInParallel() throws IOException, InterruptedException {
         addMetadata = false;
         final int numNodes = 100; // Includes the size of the cluster
-        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
-        createCluster(numNodes, seedHost);
+        final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", basePort);
+        createCluster(numNodes, seedEndpoint);
         verifyCluster(numNodes);
         verifyClusterMetadata(0);
     }
@@ -180,11 +198,11 @@ public class ClusterTest {
     public void fiftyNodesJoinTwentyNodeCluster() throws IOException, InterruptedException {
         final int numNodesPhase1 = 20;
         final int numNodesPhase2 = 50;
-        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
-        createCluster(numNodesPhase1, seedHost);
-        waitAndVerifyAgreement(numNodesPhase1, 10, 100, seedHost);
-        extendCluster(numNodesPhase2, seedHost);
-        waitAndVerifyAgreement(numNodesPhase1 + numNodesPhase2, 10, 1000, seedHost);
+        final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", basePort);
+        createCluster(numNodesPhase1, seedEndpoint);
+        waitAndVerifyAgreement(numNodesPhase1, 10, 100);
+        extendCluster(numNodesPhase2, seedEndpoint);
+        waitAndVerifyAgreement(numNodesPhase1 + numNodesPhase2, 10, 1000);
     }
 
     /**
@@ -195,12 +213,12 @@ public class ClusterTest {
     public void oneFailureOutOfFiveNodes() throws IOException, InterruptedException {
         useFastFailureDetectionTimeouts();
         final int numNodes = 5;
-        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
-        createCluster(numNodes, seedHost);
+        final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", basePort);
+        createCluster(numNodes, seedEndpoint);
         verifyCluster(numNodes);
-        final HostAndPort nodeToFail = HostAndPort.fromParts("127.0.0.1", basePort + 2);
+        final Endpoint nodeToFail = Utils.hostFromParts("127.0.0.1", basePort + 2);
         failSomeNodes(Collections.singletonList(nodeToFail));
-        waitAndVerifyAgreement(numNodes - 1, 10, 1000, seedHost);
+        waitAndVerifyAgreement(numNodes - 1, 10, 1000);
         verifyNumClusterInstances(numNodes - 1);
     }
 
@@ -213,14 +231,14 @@ public class ClusterTest {
         final int numNodes = 30;
         final int failingNodes = 5;
         final int phaseTwojoiners = 10;
-        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
-        createCluster(numNodes, seedHost);
+        final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", basePort);
+        createCluster(numNodes, seedEndpoint);
         verifyCluster(numNodes);
         failSomeNodes(IntStream.range(basePort + 2, basePort + 2 + failingNodes)
-                               .mapToObj(i -> HostAndPort.fromParts("127.0.0.1", i))
+                               .mapToObj(i -> Utils.hostFromParts("127.0.0.1", i))
                                .collect(Collectors.toList()));
-        extendCluster(phaseTwojoiners, seedHost);
-        waitAndVerifyAgreement(numNodes - failingNodes + phaseTwojoiners, 20, 1000, seedHost);
+        extendCluster(phaseTwojoiners, seedEndpoint);
+        waitAndVerifyAgreement(numNodes - failingNodes + phaseTwojoiners, 20, 1000);
         verifyNumClusterInstances(numNodes - failingNodes + phaseTwojoiners);
     }
 
@@ -233,19 +251,19 @@ public class ClusterTest {
         final int numNodes = 5;
         final int phaseOneJoiners = 6;
         final int phaseTwojoiners = 6;
-        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
-        createCluster(numNodes, seedHost);
+        final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", basePort);
+        createCluster(numNodes, seedEndpoint);
         verifyCluster(numNodes);
         final Random r = new Random();
 
         for (int i = 0; i < phaseOneJoiners / 2; i++) {
-            final List<HostAndPort> keysAsArray = new ArrayList<>(instances.keySet());
+            final List<Endpoint> keysAsArray = new ArrayList<>(instances.keySet());
             extendCluster(2, keysAsArray.get(r.nextInt(instances.size())));
         }
         for (int i = 0; i < phaseTwojoiners; i++) {
-            extendCluster(1, seedHost);
+            extendCluster(1, seedEndpoint);
         }
-        waitAndVerifyAgreement(numNodes + phaseOneJoiners + phaseTwojoiners, 20, 1000, seedHost);
+        waitAndVerifyAgreement(numNodes + phaseOneJoiners + phaseTwojoiners, 20, 1000);
         verifyNumClusterInstances(numNodes + phaseOneJoiners + phaseTwojoiners);
     }
 
@@ -259,14 +277,14 @@ public class ClusterTest {
         useStaticFd = true;
         final int numNodes = 50;
         final int numFailingNodes = 12;
-        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
-        createCluster(numNodes, seedHost);
+        final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", basePort);
+        createCluster(numNodes, seedEndpoint);
         verifyCluster(numNodes);
         // Fail the first 3 nodes.
-        final Set<HostAndPort> failingNodes = getRandomHosts(numFailingNodes);
+        final Set<Endpoint> failingNodes = getRandomHosts(numFailingNodes);
         staticFds.values().forEach(e -> e.addFailedNodes(failingNodes));
         failingNodes.forEach(h -> instances.remove(h).shutdown());
-        waitAndVerifyAgreement(numNodes - failingNodes.size(), 20, 1000, seedHost);
+        waitAndVerifyAgreement(numNodes - failingNodes.size(), 20, 1000);
         // Nodes do not actually shutdown(), but are detected faulty. The faulty nodes have active
         // cluster instances and identify themselves as kicked out.
         verifyNumClusterInstances(numNodes - failingNodes.size());
@@ -283,14 +301,14 @@ public class ClusterTest {
         useStaticFd = true;
         final int numNodes = 50;
         final int numFailingNodes = 16;
-        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
-        createCluster(numNodes, seedHost);
+        final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", basePort);
+        createCluster(numNodes, seedEndpoint);
         verifyCluster(numNodes);
         // Fail the first 3 nodes.
-        final Set<HostAndPort> failingNodes = getRandomHosts(numFailingNodes);
+        final Set<Endpoint> failingNodes = getRandomHosts(numFailingNodes);
         staticFds.values().forEach(e -> e.addFailedNodes(failingNodes));
         failingNodes.forEach(h -> instances.remove(h).shutdown());
-        waitAndVerifyAgreement(numNodes - failingNodes.size(), 20, 1000, seedHost);
+        waitAndVerifyAgreement(numNodes - failingNodes.size(), 20, 1000);
         // Nodes do not actually shutdown(), but are detected faulty. The faulty nodes have active
         // cluster instances and identify themselves as kicked out.
         verifyNumClusterInstances(numNodes - failingNodes.size());
@@ -306,13 +324,13 @@ public class ClusterTest {
         useStaticFd = true;
         final int numNodes = 50;
         final int numFailingNodes = 10;
-        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
-        createCluster(numNodes, seedHost);
+        final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", basePort);
+        createCluster(numNodes, seedEndpoint);
         verifyCluster(numNodes);
         // Fail the first 3 nodes.
-        final Set<HostAndPort> failingNodes = getRandomHosts(numFailingNodes);
+        final Set<Endpoint> failingNodes = getRandomHosts(numFailingNodes);
         staticFds.values().forEach(e -> e.addFailedNodes(failingNodes));
-        waitAndVerifyAgreement(numNodes - failingNodes.size(), 20, 1000, seedHost);
+        waitAndVerifyAgreement(numNodes - failingNodes.size(), 20, 1000);
         // Nodes do not actually shutdown(), but are detected faulty. The faulty nodes have active
         // cluster instances and identify themselves as kicked out.
         verifyNumClusterInstances(numNodes);
@@ -326,16 +344,16 @@ public class ClusterTest {
         useFastFailureDetectionTimeouts();
         final int numNodes = 50;
         final int numFailingNodes = 10;
-        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
+        final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", basePort);
 
         // These nodes will drop the first 100 probe requests they receive
-        final Set<HostAndPort> failedNodes =
+        final Set<Endpoint> failedNodes =
                 getRandomHosts(basePort + 1, basePort + numNodes, numFailingNodes);
         // Since the random function returns a set of failed nodes,
         // we may have less than numFailedNodes entries in the set
         failedNodes.forEach(host -> dropFirstNAtServer(host, 100, RapidRequest.ContentCase.PROBEMESSAGE));
-        createCluster(numNodes, seedHost);
-        waitAndVerifyAgreement(numNodes - failedNodes.size(), 10, 1000, seedHost);
+        createCluster(numNodes, seedEndpoint);
+        waitAndVerifyAgreement(numNodes - failedNodes.size(), 10, 1000);
         verifyNumClusterInstances(numNodes);
     }
 
@@ -346,13 +364,13 @@ public class ClusterTest {
     @Test(timeout = 30000)
     public void phase2MessageDropsRpcRetries() throws IOException, InterruptedException {
         useShortJoinTimeouts();
-        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
+        final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", basePort);
         // Drop join-phase-2 attempts by nextNode, but only enough that the RPC retries make it past
-        dropFirstNAtServer(seedHost, (settings.getGrpcDefaultRetries()) - 1,
+        dropFirstNAtServer(seedEndpoint, (settings.getGrpcDefaultRetries()) - 1,
                 RapidRequest.ContentCase.JOINMESSAGE);
-        createCluster(1, seedHost);
-        extendCluster(1, seedHost);
-        waitAndVerifyAgreement(2, 15, 1000, seedHost);
+        createCluster(1, seedEndpoint);
+        extendCluster(1, seedEndpoint);
+        waitAndVerifyAgreement(2, 15, 1000);
         verifyNumClusterInstances(2);
     }
 
@@ -363,13 +381,13 @@ public class ClusterTest {
     @Test(timeout = 30000)
     public void phase2JoinAttemptRetry() throws IOException, InterruptedException {
         useShortJoinTimeouts();
-        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
+        final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", basePort);
         // Drop join-phase-2 attempts by nextNode such that it re-attempts a join under a new settings
-        dropFirstNAtServer(seedHost, (settings.getGrpcDefaultRetries()) + 1,
+        dropFirstNAtServer(seedEndpoint, (settings.getGrpcDefaultRetries()) + 1,
                 RapidRequest.ContentCase.JOINMESSAGE);
-        createCluster(1, seedHost);
-        extendCluster(1, seedHost);
-        waitAndVerifyAgreement(2, 15, 1000, seedHost);
+        createCluster(1, seedEndpoint);
+        extendCluster(1, seedEndpoint);
+        waitAndVerifyAgreement(2, 15, 1000);
         verifyNumClusterInstances(2);
     }
 
@@ -378,18 +396,18 @@ public class ClusterTest {
      */
     @Test(timeout = 30000)
     public void phase2JoinAttemptRetryWithConfigChange() throws IOException, InterruptedException {
-        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
-        final HostAndPort joinerHost = HostAndPort.fromParts("127.0.0.1", basePort + 1);
+        final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", basePort);
+        final Endpoint joinerEndpoint = Utils.hostFromParts("127.0.0.1", basePort + 1);
         // Drop join-phase-2 attempts by nextNode such that it re-attempts a join under a new settings
-        createCluster(1, seedHost);
+        createCluster(1, seedEndpoint);
         // The next host to join will have its join-phase2-message blocked.
-        final CountDownLatch latch = blockAtClient(joinerHost, RapidRequest.ContentCase.JOINMESSAGE);
-        extendClusterNonBlocking(1, seedHost);
+        final CountDownLatch latch = blockAtClient(joinerEndpoint, RapidRequest.ContentCase.JOINMESSAGE);
+        extendClusterNonBlocking(1, seedEndpoint);
         // The following node is now free to join. This will render the settings received by the previous
         // joiner node stale
-        extendCluster(1, seedHost);
+        extendCluster(1, seedEndpoint);
         latch.countDown();
-        waitAndVerifyAgreement(3, 15, 1000, seedHost);
+        waitAndVerifyAgreement(3, 15, 1000);
         verifyNumClusterInstances(3);
     }
 
@@ -399,17 +417,17 @@ public class ClusterTest {
     @Test(timeout = 30000)
     public void testRejoinSingleNode() throws IOException, InterruptedException {
         useFastFailureDetectionTimeouts();
-        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
-        final HostAndPort leavingHost = HostAndPort.fromParts("127.0.0.1", basePort + 1);
-        createCluster(10, seedHost);
+        final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", basePort);
+        final Endpoint leavingEndpoint = Utils.hostFromParts("127.0.0.1", basePort + 1);
+        createCluster(10, seedEndpoint);
 
         // Shutdown and rejoin twice
         for (int i = 0; i < 2; i++) {
-            final Cluster cluster = instances.remove(leavingHost);
+            final Cluster cluster = instances.remove(leavingEndpoint);
             cluster.shutdown();
-            waitAndVerifyAgreement(9, 20, 500, seedHost);
-            extendCluster(leavingHost, seedHost);
-            waitAndVerifyAgreement(10, 20, 500, seedHost);
+            waitAndVerifyAgreement(9, 20, 500);
+            extendCluster(leavingEndpoint, seedEndpoint);
+            waitAndVerifyAgreement(10, 20, 500);
         }
     }
 
@@ -420,23 +438,23 @@ public class ClusterTest {
     public void testRejoinSingleNodeSameConfiguration() throws IOException, InterruptedException {
         useShortJoinTimeouts();
         useFastFailureDetectionTimeouts();
-        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
-        final HostAndPort rejoiningHost = HostAndPort.fromParts("127.0.0.1", basePort + 1);
-        createCluster(10, seedHost);
+        final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", basePort);
+        final Endpoint rejoiningEndpoint = Utils.hostFromParts("127.0.0.1", basePort + 1);
+        createCluster(10, seedEndpoint);
 
         // Shutdown and rejoin once
         Cluster cluster = null;
         try {
-            cluster = instances.remove(rejoiningHost);
+            cluster = instances.remove(rejoiningEndpoint);
             cluster.shutdown();
             try {
-                buildCluster(rejoiningHost).join(seedHost);
+                buildCluster(rejoiningEndpoint).join(seedEndpoint);
                 fail();
             } catch (final Cluster.JoinException ignored) {
             }
-            waitAndVerifyAgreement(9, 10, 1000, seedHost);
-            cluster = buildCluster(rejoiningHost).join(seedHost);
-            waitAndVerifyAgreement(10, 10, 500, seedHost);
+            waitAndVerifyAgreement(9, 10, 1000);
+            cluster = buildCluster(rejoiningEndpoint).join(seedEndpoint);
+            waitAndVerifyAgreement(10, 10, 500);
         } finally {
             if (cluster != null) {
                 cluster.shutdown();
@@ -450,10 +468,10 @@ public class ClusterTest {
     @Test(timeout = 30000)
     public void testRejoinMultipleNodes() throws IOException, InterruptedException {
         useFastFailureDetectionTimeouts();
-        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", basePort);
+        final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", basePort);
         final int numNodes = 30;
         final int failNodes = 5;
-        createCluster(numNodes, seedHost);
+        createCluster(numNodes, seedEndpoint);
 
         final ExecutorService executor = Executors.newWorkStealingPool(failNodes);
         final CountDownLatch latch = new CountDownLatch(failNodes);
@@ -463,13 +481,13 @@ public class ClusterTest {
                 // Shutdown and rejoin thrice
                 try {
                     for (int i = 0; i < 3; i++) {
-                        final HostAndPort leavingHost = HostAndPort.fromParts("127.0.0.1", basePort + 1 + inc);
-                        final Cluster cluster = instances.remove(leavingHost);
+                        final Endpoint leavingEndpoint = Utils.hostFromParts("127.0.0.1", basePort + 1 + inc);
+                        final Cluster cluster = instances.remove(leavingEndpoint);
                         try {
                             cluster.shutdown();
-                            waitAndVerifyAgreement(numNodes - failNodes, 20, 500, seedHost);
-                            extendCluster(leavingHost, seedHost);
-                            waitAndVerifyAgreement(numNodes, 20, 500, seedHost);
+                            waitAndVerifyAgreement(numNodes - failNodes, 20, 500);
+                            extendCluster(leavingEndpoint, seedEndpoint);
+                            waitAndVerifyAgreement(numNodes, 20, 500);
                         } catch (final InterruptedException e) {
                             fail();
                         }
@@ -480,25 +498,25 @@ public class ClusterTest {
             });
         }
         latch.await();
-        waitAndVerifyAgreement(numNodes, 10, 250, seedHost);
+        waitAndVerifyAgreement(numNodes, 10, 250);
         executor.shutdownNow();
     }
 
     /**
-     * Creates a cluster of size {@code numNodes} with a seed {@code seedHost}.
+     * Creates a cluster of size {@code numNodes} with a seed {@code seedEndpoint}.
      *
      * @param numNodes cluster size
-     * @param seedHost HostAndPort that represents the seed node to initialize and be used as the contact point
+     * @param seedEndpoint Endpoint that represents the seed node to initialize and be used as the contact point
      *                 for subsequent joiners.
      * @throws IOException Thrown if the Cluster.start() or join() methods throw an IOException when trying
      *                     to register an RpcServer.
      */
-    private void createCluster(final int numNodes, final HostAndPort seedHost) throws IOException {
-        final Cluster seed = buildCluster(seedHost).start();
-        instances.put(seedHost, seed);
-        assertEquals(seed.getMemberlist().size(), 1);
+    private void createCluster(final int numNodes, final Endpoint seedEndpoint) throws IOException {
+        final Cluster seed = buildCluster(seedEndpoint).start();
+        instances.put(seedEndpoint, seed);
+        assertEquals(1, seed.getMemberlist().size());
         if (numNodes >= 2) {
-            extendCluster(numNodes - 1, seedHost);
+            extendCluster(numNodes - 1, seedEndpoint);
         }
     }
 
@@ -506,20 +524,20 @@ public class ClusterTest {
      * Add {@code numNodes} instances to a cluster.
      *
      * @param numNodes cluster size
-     * @param seedHost HostAndPort that represents the seed node to initialize and be used as the contact point
+     * @param seedEndpoint Endpoint that represents the seed node to initialize and be used as the contact point
      *                 for subsequent joiners.
      */
-    private void extendCluster(final int numNodes, final HostAndPort seedHost) {
+    private void extendCluster(final int numNodes, final Endpoint seedEndpoint) {
         final ExecutorService executor = Executors.newWorkStealingPool(numNodes);
         try {
             final CountDownLatch latch = new CountDownLatch(numNodes);
             for (int i = 0; i < numNodes; i++) {
                 executor.execute(() -> {
                     try {
-                        final HostAndPort joiningHost =
-                                HostAndPort.fromParts("127.0.0.1", portCounter.incrementAndGet());
-                        final Cluster nonSeed = buildCluster(joiningHost).join(seedHost);
-                        instances.put(joiningHost, nonSeed);
+                        final Endpoint joiningEndpoint =
+                                Utils.hostFromParts("127.0.0.1", portCounter.incrementAndGet());
+                        final Cluster nonSeed = buildCluster(joiningEndpoint).join(seedEndpoint);
+                        instances.put(joiningEndpoint, nonSeed);
                     } catch (final InterruptedException | IOException e) {
                         e.printStackTrace();
                         fail();
@@ -540,17 +558,17 @@ public class ClusterTest {
     /**
      * Add {@code numNodes} instances to a cluster.
      *
-     * @param joiningNode HostAndPort that represents the node joining.
-     * @param seedHost HostAndPort that represents the seed node to initialize and be used as the contact point
+     * @param joiningNode Endpoint that represents the node joining.
+     * @param seedEndpoint Endpoint that represents the seed node to initialize and be used as the contact point
      *                 for subsequent joiners.
      */
-    private void extendCluster(final HostAndPort joiningNode, final HostAndPort seedHost) {
+    private void extendCluster(final Endpoint joiningNode, final Endpoint seedEndpoint) {
         final ExecutorService executor = Executors.newWorkStealingPool(1);
         try {
             final CountDownLatch latch = new CountDownLatch(1);
             executor.execute(() -> {
                 try {
-                    final Cluster nonSeed = buildCluster(joiningNode).join(seedHost);
+                    final Cluster nonSeed = buildCluster(joiningNode).join(seedEndpoint);
                     instances.put(joiningNode, nonSeed);
                 } catch (final InterruptedException | IOException e) {
                     fail();
@@ -572,19 +590,19 @@ public class ClusterTest {
      * Add {@code numNodes} instances to a cluster without waiting for their join methods to return
      *
      * @param numNodes cluster size
-     * @param seedHost HostAndPort that represents the seed node to initialize and be used as the contact point
+     * @param seedEndpoint Endpoint that represents the seed node to initialize and be used as the contact point
      *                 for subsequent joiners.
      */
-    private void extendClusterNonBlocking(final int numNodes, final HostAndPort seedHost) {
+    private void extendClusterNonBlocking(final int numNodes, final Endpoint seedEndpoint) {
         final ExecutorService executor = Executors.newWorkStealingPool(numNodes);
         try {
             for (int i = 0; i < numNodes; i++) {
                 executor.execute(() -> {
                     try {
-                        final HostAndPort joiningHost =
-                                HostAndPort.fromParts("127.0.0.1", portCounter.incrementAndGet());
-                        final Cluster nonSeed = buildCluster(joiningHost).join(seedHost);
-                        instances.put(joiningHost, nonSeed);
+                        final Endpoint joiningEndpoint =
+                                Utils.hostFromParts("127.0.0.1", portCounter.incrementAndGet());
+                        final Cluster nonSeed = buildCluster(joiningEndpoint).join(seedEndpoint);
+                        instances.put(joiningEndpoint, nonSeed);
                     } catch (final InterruptedException | IOException e) {
                         e.printStackTrace();
                         fail();
@@ -599,13 +617,13 @@ public class ClusterTest {
     /**
      * Fail a set of nodes in a cluster by calling shutdown().
      *
-     * @param nodesToFail list of HostAndPort objects representing the nodes to fail
+     * @param nodesToFail list of Endpoint objects representing the nodes to fail
      */
-    private void failSomeNodes(final List<HostAndPort> nodesToFail) {
+    private void failSomeNodes(final List<Endpoint> nodesToFail) {
         final ExecutorService executor = Executors.newWorkStealingPool(nodesToFail.size());
         try {
             final CountDownLatch latch = new CountDownLatch(nodesToFail.size());
-            for (final HostAndPort nodeToFail : nodesToFail) {
+            for (final Endpoint nodeToFail : nodesToFail) {
                 executor.execute(() -> {
                     try {
                         assertTrue(nodeToFail + " not in instances", instances.containsKey(nodeToFail));
@@ -632,7 +650,7 @@ public class ClusterTest {
      * @param expectedSize expected size of each cluster
      */
     private void verifyCluster(final int expectedSize) {
-        final List<HostAndPort> any = instances.entrySet().iterator().next().getValue().getMemberlist();
+        final List<Endpoint> any = instances.entrySet().iterator().next().getValue().getMemberlist();
         for (final Cluster cluster : instances.values()) {
             assertEquals(cluster.toString(), expectedSize, cluster.getMemberlist().size());
             assertEquals(cluster.getMemberlist(), any);
@@ -670,14 +688,13 @@ public class ClusterTest {
      * @param expectedSize expected size of each cluster
      * @param maxTries number of tries to checkMonitoree if the cluster has stabilized.
      * @param intervalInMs the time duration between checks.
-     * @param seedNode the seed node to validate the cluster membership against
      */
-    private void waitAndVerifyAgreement(final int expectedSize, final int maxTries, final int intervalInMs,
-                                        final HostAndPort seedNode) throws InterruptedException {
+    private void waitAndVerifyAgreement(final int expectedSize, final int maxTries, final int intervalInMs)
+            throws InterruptedException {
         int tries = maxTries;
         while (--tries > 0) {
             boolean ready = true;
-            final List<HostAndPort> any = instances.entrySet().iterator().next().getValue().getMemberlist();
+            final List<Endpoint> any = instances.entrySet().iterator().next().getValue().getMemberlist();
             for (final Cluster cluster : instances.values()) {
                 if (!(cluster.getMemberlist().size() == expectedSize
                         && cluster.getMemberlist().equals(any))) {
@@ -695,9 +712,9 @@ public class ClusterTest {
     }
 
     // Helper that provides a list of N random nodes that have already been added to the instances map
-    private Set<HostAndPort> getRandomHosts(final int N) {
+    private Set<Endpoint> getRandomHosts(final int N) {
         assert random != null;
-        final List<Map.Entry<HostAndPort, Cluster>> entries = new ArrayList<>(instances.entrySet());
+        final List<Map.Entry<Endpoint, Cluster>> entries = new ArrayList<>(instances.entrySet());
         Collections.shuffle(entries);
         return random.ints(instances.size(), 0, N)
                      .mapToObj(i -> entries.get(i).getKey())
@@ -705,36 +722,36 @@ public class ClusterTest {
     }
 
     // Helper that provides a list of N random nodes from portStart to portEnd
-    private Set<HostAndPort> getRandomHosts(final int portStart, final int portEnd, final int N) {
+    private Set<Endpoint> getRandomHosts(final int portStart, final int portEnd, final int N) {
         assert random != null;
         return random.ints(N, portStart, portEnd)
-                .mapToObj(i -> HostAndPort.fromParts("127.0.0.1", i))
+                .mapToObj(i -> Utils.hostFromParts("127.0.0.1", i))
                 .collect(Collectors.toSet());
     }
 
     // Helper to use static-failure-detectors and inject interceptors
-    private Cluster.Builder buildCluster(final HostAndPort host) {
-        Cluster.Builder builder = new Cluster.Builder(host).useSettings(settings);
+    private Cluster.Builder buildCluster(final Endpoint endpoint) {
+        Cluster.Builder builder = new Cluster.Builder(endpoint).useSettings(settings);
         if (useStaticFd) {
             final StaticFailureDetector.Factory fdFactory = new StaticFailureDetector.Factory(new HashSet<>());
             builder = builder.setLinkFailureDetectorFactory(fdFactory);
-            staticFds.put(host, fdFactory);
+            staticFds.put(endpoint, fdFactory);
         }
-        if (serverInterceptors.containsKey(host)) {
-            builder = builder.setMessagingClientAndServer(new GrpcClient(host, settings),
-                                                          new TestingGrpcServer(host,
-                                                          serverInterceptors.get(host),
+        if (serverInterceptors.containsKey(endpoint)) {
+            builder = builder.setMessagingClientAndServer(new GrpcClient(endpoint, settings),
+                                                          new TestingGrpcServer(endpoint,
+                                                          serverInterceptors.get(endpoint),
                                                                   settings.getUseInProcessTransport()));
         }
-        if (clientInterceptors.containsKey(host)) {
-            builder = builder.setMessagingClientAndServer(new TestingGrpcClient(host, settings,
-                                                                                clientInterceptors.get(host)),
-                    new TestingGrpcServer(host,
+        if (clientInterceptors.containsKey(endpoint)) {
+            builder = builder.setMessagingClientAndServer(new TestingGrpcClient(endpoint, settings,
+                                                                                clientInterceptors.get(endpoint)),
+                    new TestingGrpcServer(endpoint,
                             Collections.emptyList(),
                             settings.getUseInProcessTransport()));
         }
         if (addMetadata) {
-            final ByteString byteString = ByteString.copyFrom(host.toString(), Charset.defaultCharset());
+            final ByteString byteString = ByteString.copyFrom(endpoint.toString(), Charset.defaultCharset());
             builder = builder.setMetadata(Collections.singletonMap("Key", byteString));
         }
 
@@ -742,16 +759,16 @@ public class ClusterTest {
     }
 
     // Helper that drops the first N requests at a server of a given type
-    private <T, E> void dropFirstNAtServer(final HostAndPort host, final int N,
+    private <T, E> void dropFirstNAtServer(final Endpoint endpoint, final int N,
                                            final RapidRequest.ContentCase contentCase) {
-        serverInterceptors.computeIfAbsent(host, (k) -> new ArrayList<>(1))
+        serverInterceptors.computeIfAbsent(endpoint, (k) -> new ArrayList<>(1))
                 .add(new ServerDropInterceptors.FirstN(N, contentCase));
     }
 
     // Helper that delays requests of a given type at the client
-    private <T, E> CountDownLatch blockAtClient(final HostAndPort host, final RapidRequest.ContentCase messageType) {
+    private <T, E> CountDownLatch blockAtClient(final Endpoint endpoint, final RapidRequest.ContentCase messageType) {
         final CountDownLatch latch = new CountDownLatch(1);
-        clientInterceptors.computeIfAbsent(host, (k) -> new ArrayList<>(1))
+        clientInterceptors.computeIfAbsent(endpoint, (k) -> new ArrayList<>(1))
                 .add(new ClientInterceptors.Delayer(latch, messageType));
         return latch;
     }

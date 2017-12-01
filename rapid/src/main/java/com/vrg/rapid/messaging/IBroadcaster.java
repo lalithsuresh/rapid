@@ -13,8 +13,8 @@
 
 package com.vrg.rapid.messaging;
 
-import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.ListenableFuture;
+import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.RapidRequest;
 import com.vrg.rapid.pb.RapidResponse;
 
@@ -26,5 +26,5 @@ import java.util.List;
 public interface IBroadcaster {
     List<ListenableFuture<RapidResponse>> broadcast(RapidRequest rapidRequest);
 
-    void setMembership(List<HostAndPort> recipients);
+    void setMembership(List<Endpoint> recipients);
 }

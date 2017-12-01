@@ -74,20 +74,8 @@ public class AbstractMultiJVMTest {
     @After
     public void cleanUp() {
         // remove if kill successful
-        rapidNodeRunners.removeIf(rapidNodeRunner -> {
-            if (rapidNodeRunner.killOnExit) {
-                if (!rapidNodeRunner.isKilled) {
-                    try {
-                        return rapidNodeRunner.killNode();
-                    } catch (final IOException e) {
-                        e.printStackTrace();
-                    }
-                } else {
-                    return true;
-                }
-            }
-            return false;
-        });
+        rapidNodeRunners.removeIf(rapidNodeRunner ->
+                rapidNodeRunner.killOnExit && (rapidNodeRunner.isKilled || rapidNodeRunner.killNode()));
     }
 
     /**
@@ -97,11 +85,7 @@ public class AbstractMultiJVMTest {
     public static void cleanUpEnv() {
         rapidNodeRunners.forEach(rapidNodeRunner -> {
             if (!rapidNodeRunner.isKilled) {
-                try {
-                    rapidNodeRunner.killNode();
-                } catch (final IOException e) {
-                    e.printStackTrace();
-                }
+                rapidNodeRunner.killNode();
             }
         });
     }
@@ -216,10 +200,8 @@ public class AbstractMultiJVMTest {
          * Kills the process.
          *
          * @return true if kill successful else false.
-         * @throws IOException          if I/O error occurs.
-         * @throws InterruptedException if kill interrupted.
          */
-        boolean killNode() throws IOException {
+        boolean killNode() {
 
             Assert.assertNotNull(rapidProcess);
             long retries = SHUTDOWN_RETRIES;

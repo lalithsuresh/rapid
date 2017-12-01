@@ -1,6 +1,6 @@
 package com.vrg.rapid;
 
-import com.google.common.net.HostAndPort;
+import com.vrg.rapid.pb.Endpoint;
 import com.google.protobuf.ByteString;
 import com.vrg.rapid.pb.LinkStatus;
 import com.vrg.rapid.pb.Metadata;
@@ -30,12 +30,12 @@ public class SubscriptionsTest {
         final Settings settings = new Settings();
         settings.setUseInProcessTransport(true);
 
-        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
-        final HostAndPort joiner = HostAndPort.fromParts("127.0.0.1", 1235);
+        final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", 1234);
+        final Endpoint joiner = Utils.hostFromParts("127.0.0.1", 1235);
 
         // Initialize seed
         final TestCallback seedCb = new TestCallback();
-        final Cluster seedCluster = new Cluster.Builder(seedHost)
+        final Cluster seedCluster = new Cluster.Builder(seedEndpoint)
                                                .addSubscription(ClusterEvents.VIEW_CHANGE, seedCb)
                                                .useSettings(settings)
                                                .start();
@@ -45,7 +45,7 @@ public class SubscriptionsTest {
         final Cluster nonSeed = new Cluster.Builder(joiner)
                 .addSubscription(ClusterEvents.VIEW_CHANGE, joinCb)
                 .useSettings(settings)
-                .join(seedHost);
+                .join(seedEndpoint);
 
         assertEquals(2, seedCb.numTimesCalled());
         assertEquals(1, joinCb.numTimesCalled());
@@ -66,13 +66,13 @@ public class SubscriptionsTest {
         final Settings settings = new Settings();
         settings.setUseInProcessTransport(true);
 
-        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
-        final HostAndPort joiner = HostAndPort.fromParts("127.0.0.1", 1235);
+        final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", 1234);
+        final Endpoint joiner = Utils.hostFromParts("127.0.0.1", 1235);
 
         // Initialize seed
         final TestCallback seedCb1 = new TestCallback();
         final TestCallback seedCb2 = new TestCallback();
-        final Cluster seedCluster = new Cluster.Builder(seedHost)
+        final Cluster seedCluster = new Cluster.Builder(seedEndpoint)
                 .addSubscription(ClusterEvents.VIEW_CHANGE, seedCb1)
                 .addSubscription(ClusterEvents.VIEW_CHANGE, seedCb2)
                 .useSettings(settings)
@@ -85,7 +85,7 @@ public class SubscriptionsTest {
                 .addSubscription(ClusterEvents.VIEW_CHANGE, joinCb1)
                 .addSubscription(ClusterEvents.VIEW_CHANGE, joinCb2)
                 .useSettings(settings)
-                .join(seedHost);
+                .join(seedEndpoint);
 
         assertEquals(2, seedCb1.numTimesCalled());
         assertEquals(2, seedCb2.numTimesCalled());
@@ -108,12 +108,12 @@ public class SubscriptionsTest {
         final Settings settings = new Settings();
         settings.setUseInProcessTransport(true);
 
-        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
-        final HostAndPort joiner = HostAndPort.fromParts("127.0.0.1", 1235);
+        final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", 1234);
+        final Endpoint joiner = Utils.hostFromParts("127.0.0.1", 1235);
 
         // Initialize seed
         final TestCallback seedCb1 = new TestCallback();
-        final Cluster seedCluster = new Cluster.Builder(seedHost)
+        final Cluster seedCluster = new Cluster.Builder(seedEndpoint)
                 .addSubscription(ClusterEvents.VIEW_CHANGE, seedCb1)
                 .useSettings(settings)
                 .start();
@@ -126,7 +126,7 @@ public class SubscriptionsTest {
         final Cluster nonSeed = new Cluster.Builder(joiner)
                 .addSubscription(ClusterEvents.VIEW_CHANGE, joinCb1)
                 .useSettings(settings)
-                .join(seedHost);
+                .join(seedEndpoint);
 
         assertEquals(2, seedCb1.numTimesCalled());
         assertEquals(1, seedCb2.numTimesCalled());
@@ -149,13 +149,13 @@ public class SubscriptionsTest {
         settings.setUseInProcessTransport(true);
 
         final List<StaticFailureDetector.Factory> fds = new ArrayList<>();
-        final HostAndPort seedHost = HostAndPort.fromParts("127.0.0.1", 1234);
+        final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", 1234);
 
         // Initialize seed
         final TestCallback seedCb1 = new TestCallback();
         final StaticFailureDetector.Factory fdFactory = new StaticFailureDetector.Factory(new HashSet<>());
         final ByteString byteString = ByteString.copyFrom("seed", Charset.defaultCharset());
-        final Cluster seedCluster = new Cluster.Builder(seedHost)
+        final Cluster seedCluster = new Cluster.Builder(seedEndpoint)
                 .addSubscription(ClusterEvents.VIEW_CHANGE, seedCb1)
                 .setLinkFailureDetectorFactory(fdFactory)
                 .setMetadata(Collections.singletonMap("role", byteString))
@@ -168,14 +168,14 @@ public class SubscriptionsTest {
         final List<TestCallback> callbacks = new ArrayList<>();
         final int numNodes = 5;
         for (int i = 0; i < numNodes; i++) {
-            final HostAndPort joiner = HostAndPort.fromParts("127.0.0.1", 1235 + i);
+            final Endpoint joiner = Utils.hostFromParts("127.0.0.1", 1235 + i);
             final StaticFailureDetector.Factory fdJoiner = new StaticFailureDetector.Factory(new HashSet<>());
             final TestCallback joinerCb1 = new TestCallback();
             joiners.add(new Cluster.Builder(joiner)
                     .addSubscription(ClusterEvents.VIEW_CHANGE, joinerCb1)
                     .setLinkFailureDetectorFactory(fdJoiner)
                     .useSettings(settings)
-                    .join(seedHost));
+                    .join(seedEndpoint));
             fds.add(fdJoiner);
             callbacks.add(joinerCb1);
         }
@@ -192,8 +192,8 @@ public class SubscriptionsTest {
 
         // Fail the seed node and wait for the dissemination to kick in
         seedCluster.shutdown();
-        final Set<HostAndPort> failedNodes = new HashSet<>();
-        failedNodes.add(seedHost);
+        final Set<Endpoint> failedNodes = new HashSet<>();
+        failedNodes.add(seedEndpoint);
         fds.forEach(e -> e.addFailedNodes(failedNodes));
         Thread.sleep(2000);
 
@@ -204,7 +204,7 @@ public class SubscriptionsTest {
             final List<NodeStatusChange> lastNotification = callbacks.get(i).getNotificationLog().get(numNodes - i);
             assertEquals(1, lastNotification.size());
             assertEquals(LinkStatus.DOWN, lastNotification.get(0).getStatus());
-            assertEquals(seedHost, lastNotification.get(0).getHostAndPort());
+            assertEquals(seedEndpoint, lastNotification.get(0).getEndpoint());
 
             // Now verify metadata
             final Metadata metadata = lastNotification.get(0).getMetadata();

@@ -1,13 +1,13 @@
 package com.vrg.rapid;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.protobuf.TextFormat;
 import com.vrg.rapid.messaging.IBroadcaster;
 import com.vrg.rapid.messaging.IMessagingClient;
+import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.Phase1aMessage;
 import com.vrg.rapid.pb.Phase1bMessage;
 import com.vrg.rapid.pb.Phase2aMessage;
@@ -23,10 +23,8 @@ import javax.annotation.concurrent.NotThreadSafe;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -34,43 +32,42 @@ import java.util.stream.Collectors;
  *  Single-decree consensus. Implements classic Paxos with the modified rule for the coordinator to pick values as per
  *  the Fast Paxos paper: https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/tr-2005-112.pdf
  *
- *  The code below assumes that the first round in a consensus instance (done per configuratin change) is the
+ *  The code below assumes that the first round in a consensus instance (done per configuration change) is the
  *  only round that is a fast round. A round is identified by a tuple (rnd-number, nodeId), where nodeId is a unique
  *  identifier per node that initiates phase1.
  */
 @NotThreadSafe
-public class Paxos {
+class Paxos {
     private static final Logger LOG = LoggerFactory.getLogger(Paxos.class);
 
     private final IBroadcaster broadcaster;
     private final IMessagingClient client;
     private final long configurationId;
-    private final HostAndPort myAddr;
+    private final Endpoint myAddr;
     private final int N;
 
     private Rank rnd;
     private Rank vrnd;
-    private List<HostAndPort> vval;
-    private List<Phase1bMessage> phase1bMessages = new ArrayList<>();
-    private List<Phase2bMessage> acceptResponses = new ArrayList<>();
+    private List<Endpoint> vval;
+    private final List<Phase1bMessage> phase1bMessages = new ArrayList<>();
+    private final List<Phase2bMessage> acceptResponses = new ArrayList<>();
 
     private Rank crnd;
-    private List<HostAndPort> cval;
-    private Rank maxVrndSoFar = Rank.newBuilder().setRound(Integer.MIN_VALUE).setNodeIndex(Integer.MIN_VALUE).build();
+    private List<Endpoint> cval;
 
-    private final Consumer<List<HostAndPort>> onDecide;
+    private final Consumer<List<Endpoint>> onDecide;
     private boolean decided = false;
 
-    public Paxos(final HostAndPort myAddr, final long configurationId, final int N, final IMessagingClient client,
-                 final IBroadcaster broadcaster, final Consumer<List<HostAndPort>> onDecide) {
+    public Paxos(final Endpoint myAddr, final long configurationId, final int N, final IMessagingClient client,
+                 final IBroadcaster broadcaster, final Consumer<List<Endpoint>> onDecide) {
         this.myAddr = myAddr;
         this.configurationId = configurationId;
         this.N = N;
         this.broadcaster = broadcaster;
 
-        this.crnd = Rank.newBuilder().setRound(0).setNodeIndex(myAddr.hashCode()).build();
-        this.rnd = crnd.toBuilder().build();
-        this.vrnd = crnd.toBuilder().build();
+        this.crnd = Rank.newBuilder().setRound(0).setNodeIndex(0).build();
+        this.rnd = Rank.newBuilder().setRound(0).setNodeIndex(0).build();
+        this.vrnd = Rank.newBuilder().setRound(0).setNodeIndex(0).build();
         this.vval = Collections.emptyList();
         this.cval = Collections.emptyList();
         this.client = client;
@@ -87,14 +84,14 @@ public class Paxos {
         if (crnd.getRound() > round) {
             return;
         }
-        crnd = crnd.toBuilder().setRound(round).build();
-        LOG.trace("Prepare called for round {}", TextFormat.shortDebugString(crnd));
+        crnd = crnd.toBuilder().setRound(round).setNodeIndex(myAddr.hashCode()).build();
+        LOG.trace("Prepare called for round {}", Utils.loggable(crnd));
         final Phase1aMessage prepare = Phase1aMessage.newBuilder()
                                        .setConfigurationId(configurationId)
-                                       .setSender(myAddr.toString())
+                                       .setSender(myAddr)
                                        .setRank(crnd).build();
         final RapidRequest request = Utils.toRapidRequest(prepare);
-        LOG.trace("Broadcasting startPhase1a message: {}", TextFormat.shortDebugString(request));
+        LOG.trace("Broadcasting startPhase1a message: {}", Utils.loggable(request));
         broadcaster.broadcast(request);
     }
 
@@ -112,22 +109,21 @@ public class Paxos {
             rnd = phase1aMessage.getRank();
         }
         else {
-            LOG.trace("Rejecting prepareMessage from lower rank: ({}) ({})", TextFormat.shortDebugString(rnd),
-                    TextFormat.shortDebugString(phase1aMessage));
+            LOG.trace("Rejecting prepareMessage from lower rank: ({}) ({})", Utils.loggable(rnd),
+                    Utils.loggable(phase1aMessage));
             return;
         }
-        LOG.trace("Sending back vval {} ", vval);
+        LOG.trace("Sending back vval:{} vrnd:{}", vval, TextFormat.shortDebugString(vrnd));
         final Phase1bMessage phase1bMessage = Phase1bMessage.newBuilder()
                                       .setConfigurationId(configurationId)
                                       .setRnd(rnd)
-                                      .setSender(myAddr.toString())
+                                      .setSender(myAddr)
                                       .setVrnd(vrnd)
-                                      .addAllVval(vval.stream().map(HostAndPort::toString).sorted()
-                                                  .collect(Collectors.toList()))
+                                      .addAllVval(vval)
                                       .build();
         final RapidRequest request = Utils.toRapidRequest(phase1bMessage);
         final ListenableFuture<RapidResponse> rapidResponseListenableFuture =
-                client.sendMessage(HostAndPort.fromString(phase1aMessage.getSender()), request);
+                client.sendMessage(phase1aMessage.getSender(), request);
         Futures.addCallback(rapidResponseListenableFuture, new ResponseCallback());
     }
 
@@ -147,24 +143,22 @@ public class Paxos {
             return;
         }
 
-        LOG.trace("Handling PrepareResponse: {}", TextFormat.shortDebugString(phase1bMessage));
+        LOG.trace("Handling PrepareResponse: {}", Utils.loggable(phase1bMessage));
 
         phase1bMessages.add(phase1bMessage);
-        maxVrndSoFar = compareRanks(maxVrndSoFar, phase1bMessage.getVrnd()) >= 0 ?
-                        maxVrndSoFar : phase1bMessage.getVrnd();
+
         if (phase1bMessages.size() > (N / 2)) {
-            final List<HostAndPort> chosenProposal = selectProposalUsingCoordinatorRule(phase1bMessages);
+            // selectProposalUsingCoordinator rule may execute multiple times with each additional phase1bMessage
+            // being received, but we can enter the following if statement only once when a valid cval is identified.
+            final List<Endpoint> chosenProposal = selectProposalUsingCoordinatorRule(phase1bMessages);
             if (crnd.equals(phase1bMessage.getRnd()) && cval.size() == 0 && chosenProposal.size() > 0) {
-                LOG.trace("Proposing: {}", chosenProposal);
+                LOG.trace("Proposing: {}", Utils.loggable(chosenProposal));
                 cval = chosenProposal;
                 final Phase2aMessage phase2aMessage = Phase2aMessage.newBuilder()
-                                                   .setSender(myAddr.toString())
+                                                   .setSender(myAddr)
                                                    .setConfigurationId(configurationId)
                                                    .setRnd(crnd)
-                                                   .addAllVval(chosenProposal.stream()
-                                                         .map(HostAndPort::toString)
-                                                         .sorted()
-                                                         .collect(Collectors.toList()))
+                                                   .addAllVval(chosenProposal)
                                                    .build();
                 final RapidRequest request = Utils.toRapidRequest(phase2aMessage);
                 broadcaster.broadcast(request);
@@ -182,18 +176,16 @@ public class Paxos {
             return;
         }
 
-        LOG.trace("At acceptor received phase2aMessage: {}", TextFormat.shortDebugString(phase2aMessage));
+        LOG.trace("At acceptor received phase2aMessage: {}", Utils.loggable(phase2aMessage));
         if (compareRanks(rnd, phase2aMessage.getRnd()) <= 0 && !vrnd.equals(phase2aMessage.getRnd())) {
             vrnd = phase2aMessage.getRnd();
-            vval = phase2aMessage.getVvalList().stream().map(HostAndPort::fromString).collect(Collectors.toList());
-            LOG.trace("Accepted value in vrnd: {}, vval: {}", TextFormat.shortDebugString(vrnd), vval);
+            vval = phase2aMessage.getVvalList();
+            LOG.trace("Accepted value in vrnd: {}, vval: {}", Utils.loggable(vrnd), Utils.loggable(vval));
 
             final Phase2bMessage response = Phase2bMessage.newBuilder()
                                                           .setConfigurationId(configurationId)
                                                           .setRnd(phase2aMessage.getRnd())
-                                                          .addAllHosts(vval.stream().map(HostAndPort::toString)
-                                                                        .sorted()
-                                                                        .collect(Collectors.toList()))
+                                                          .addAllEndpoints(vval)
                                                           .build();
             final RapidRequest request = Utils.toRapidRequest(response);
             broadcaster.broadcast(request);
@@ -209,11 +201,10 @@ public class Paxos {
         if (phase2bMessage.getConfigurationId() != configurationId) {
             return;
         }
-        LOG.trace("Received phase2bMessage: {}", TextFormat.shortDebugString(phase2bMessage));
+        LOG.trace("Received phase2bMessage: {}", Utils.loggable(phase2bMessage));
         acceptResponses.add(phase2bMessage);
         if (acceptResponses.size() > (N / 2) && !decided) {
-            final List<HostAndPort> decision = phase2bMessage.getHostsList().stream().map(HostAndPort::fromString)
-                    .collect(Collectors.toList());
+            final List<Endpoint> decision = phase2bMessage.getEndpointsList();
             LOG.trace("Decided on: {}", decision);
             onDecide.accept(decision);
             decided = true;
@@ -226,20 +217,20 @@ public class Paxos {
      *
      * @param vote the vote for the fast round
      */
-    void registerFastRoundVote(final List<HostAndPort> vote) {
+    void registerFastRoundVote(final List<Endpoint> vote) {
         // Do not participate in our only fast round if we are already participating in a classic round.
-        if (rnd.getRound() > 0) {
+        if (rnd.getRound() > 1) {
             return;
         }
-        // This is the 0th round in the consensus instance, is always a fast round, and is always the *only* fast round.
-        // If this round does not succeed and we fallback to a classic round, we start with round number 1
+        // This is the 1st round in the consensus instance, is always a fast round, and is always the *only* fast round.
+        // If this round does not succeed and we fallback to a classic round, we start with round number 2
         // and each node sets its node-index as the hash of its hostname. Doing so ensures that all classic
         // rounds initiated by any host is higher than the fast round, and there is an ordering between rounds
-        // initiated by different hosts.
-        rnd = rnd.toBuilder().setRound(0).setNodeIndex(0).build();
+        // initiated by different endpoints.
+        rnd = rnd.toBuilder().setRound(1).setNodeIndex(1).build();
         vrnd = rnd;
         vval = vote;
-        LOG.trace("{} voted in fast round for proposal: {}", myAddr, vote);
+        LOG.trace("Voted in fast round for proposal: {}", Utils.loggable(vote));
     }
 
     /**
@@ -251,16 +242,20 @@ public class Paxos {
      * @return a proposal to apply
      */
     @VisibleForTesting
-    List<HostAndPort> selectProposalUsingCoordinatorRule(final List<Phase1bMessage> phase1bMessages) {
+    List<Endpoint> selectProposalUsingCoordinatorRule(final List<Phase1bMessage> phase1bMessages) {
+        final Rank maxVrndSoFar = phase1bMessages.stream().map(Phase1bMessage::getVrnd)
+                                  .max(Paxos::compareRanks)
+                                  .orElseThrow(() -> new IllegalArgumentException("phase1bMessages was empty"));
+
         // Let k be the largest value of vr(a) for all a in Q.
         // V (collectedVvals) be the set of all vv(a) for all a in Q s.t vr(a) == k
-        final List<List<HostAndPort>> collectedVvals = phase1bMessages.stream()
+        final List<List<Endpoint>> collectedVvals = phase1bMessages.stream()
                 .filter(r -> r.getVrnd().equals(maxVrndSoFar))
                 .filter(r -> r.getVvalCount() > 0)
                 .map(Phase1bMessage::getVvalList)
-                .map(v -> v.stream().map(HostAndPort::fromString).collect(Collectors.toList()))
                 .collect(Collectors.toList());
-        List<HostAndPort> chosenProposal = null;
+        List<Endpoint> chosenProposal = null;
+
         // If V has a single element, then choose v.
         if (collectedVvals.size() == 1) {
             chosenProposal = collectedVvals.iterator().next();
@@ -270,8 +265,8 @@ public class Paxos {
         // R intersection Q is N/4 -- meaning if there are more than N/4 identical votes.
         else if (collectedVvals.size() > 1) {
             // multiple values were proposed, so we need to check if there is a majority with the same value.
-            final Map<List<HostAndPort>, Integer> counters = new HashMap<>();
-            for (final List<HostAndPort> value: collectedVvals) {
+            final Map<List<Endpoint>, Integer> counters = new HashMap<>();
+            for (final List<Endpoint> value: collectedVvals) {
                 if (!counters.containsKey(value)) {
                     counters.put(value, 0);
                 }
@@ -285,14 +280,23 @@ public class Paxos {
                 }
             }
         }
-        // At this point, no value has been selected yet and it is safe for the coordinator to propose a value of its
-        // own which is the union of all existing values.
+        // At this point, no value has been selected yet and it is safe for the coordinator to pick any proposed value.
+        // If none of the 'vvals' contain valid values (are all empty lists), then this method returns an empty
+        // list. This can happen because a quorum of acceptors that did not vote in prior rounds may have responded
+        // to the coordinator first. This is safe to do here for two reasons:
+        //      1) The coordinator will only proceed with phase 2 if it has a valid vote.
+        //      2) It is likely that the coordinator (itself being an acceptor) is the only one with a valid vval,
+        //         and has not heard a Phase1bMessage from itself yet. Once that arrives, phase1b will be triggered
+        //         again.
+        //
+        // XXX: one option is to propose a new value of our own that is the union of all proposed values so far.
         if (chosenProposal == null) {
-            final Set<HostAndPort> proposal = new HashSet<>();
-            collectedVvals.forEach(proposal::addAll);
-            chosenProposal = new ArrayList<>(proposal);
-            LOG.trace("There were multiple values in round k -- chosen:{}, list:{}, vrnd:{}", chosenProposal,
-                    collectedVvals, TextFormat.shortDebugString(maxVrndSoFar));
+            chosenProposal = phase1bMessages.stream()
+                                            .filter(r -> r.getVvalCount() > 0)
+                                            .map(Phase1bMessage::getVvalList)
+                                            .findFirst().orElse(Collections.emptyList());
+            LOG.trace("Proposing new value -- chosen:{}, list:{}, vrnd:{}", Utils.loggable(chosenProposal),
+                      collectedVvals, Utils.loggable(maxVrndSoFar));
         }
         return chosenProposal;
     }
@@ -300,7 +304,7 @@ public class Paxos {
     /**
      * Primary ordering is by round number, and secondary ordering by the ID of the node that initiated the round.
      */
-    private int compareRanks(final Rank left, final Rank right) {
+    private static int compareRanks(final Rank left, final Rank right) {
         final int compRound = Integer.compare(left.getRound(), right.getRound());
         if (compRound == 0) {
             return Integer.compare(left.getNodeIndex(), right.getNodeIndex());

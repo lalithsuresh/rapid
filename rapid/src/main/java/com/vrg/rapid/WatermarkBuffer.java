@@ -14,7 +14,7 @@
 package com.vrg.rapid;
 
 import com.google.common.collect.ImmutableList;
-import com.google.common.net.HostAndPort;
+import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.LinkStatus;
 import com.vrg.rapid.pb.LinkUpdateMessage;
 
@@ -40,9 +40,9 @@ final class WatermarkBuffer {
     private final int L;
     @GuardedBy("lock") private int proposalCount = 0;
     @GuardedBy("lock") private int updatesInProgress = 0;
-    @GuardedBy("lock") private final Map<HostAndPort, Map<Integer, HostAndPort>> reportsPerHost;
-    @GuardedBy("lock") private final ArrayList<HostAndPort> proposal = new ArrayList<>();
-    @GuardedBy("lock") private final Set<HostAndPort> preProposal = new HashSet<>();
+    @GuardedBy("lock") private final Map<Endpoint, Map<Integer, Endpoint>> reportsPerHost;
+    @GuardedBy("lock") private final ArrayList<Endpoint> proposal = new ArrayList<>();
+    @GuardedBy("lock") private final Set<Endpoint> preProposal = new HashSet<>();
     @GuardedBy("lock") private boolean seenLinkDownEvents = false;
     private final Object lock = new Object();
 
@@ -69,20 +69,18 @@ final class WatermarkBuffer {
      * method returns a view change proposal.
      *
      * @param msg A LinkUpdateMessage to apply against the filter
-     * @return a list of hosts about which a view change has been recorded. Empty list if there is no proposal.
+     * @return a list of endpoints about which a view change has been recorded. Empty list if there is no proposal.
      */
-    List<HostAndPort> aggregateForProposal(final LinkUpdateMessage msg) {
+    List<Endpoint> aggregateForProposal(final LinkUpdateMessage msg) {
         Objects.requireNonNull(msg);
-        final ArrayList<HostAndPort> proposals = new ArrayList<>();
+        final ArrayList<Endpoint> proposals = new ArrayList<>();
         msg.getRingNumberList().forEach(ringNumber ->
-            proposals.addAll(aggregateForProposal(HostAndPort.fromString(msg.getLinkSrc()),
-                                                  HostAndPort.fromString(msg.getLinkDst()),
-                                                  msg.getLinkStatus(), ringNumber)));
+           proposals.addAll(aggregateForProposal(msg.getLinkSrc(), msg.getLinkDst(), msg.getLinkStatus(), ringNumber)));
         return proposals;
     }
 
-    private List<HostAndPort> aggregateForProposal(final HostAndPort linkSrc, final HostAndPort linkDst,
-                                                   final LinkStatus linkStatus, final int ringNumber) {
+    private List<Endpoint> aggregateForProposal(final Endpoint linkSrc, final Endpoint linkDst,
+                                                final LinkStatus linkStatus, final int ringNumber) {
         assert ringNumber <= K;
 
         synchronized (lock) {
@@ -90,7 +88,7 @@ final class WatermarkBuffer {
                 seenLinkDownEvents = true;
             }
 
-            final Map<Integer, HostAndPort> reportsForHost = reportsPerHost.computeIfAbsent(
+            final Map<Integer, Endpoint> reportsForHost = reportsPerHost.computeIfAbsent(
                                                                  linkDst,
                                                                  k -> new HashMap<>(K));
 
@@ -117,7 +115,7 @@ final class WatermarkBuffer {
                     // No outstanding updates, so all nodes that have crossed the H threshold of reports are
                     // now part of a single proposal.
                     proposalCount++;
-                    final List<HostAndPort> ret = ImmutableList.copyOf(proposal);
+                    final List<Endpoint> ret = ImmutableList.copyOf(proposal);
                     proposal.clear();
                     return ret;
                 }
@@ -132,24 +130,24 @@ final class WatermarkBuffer {
      * when there are no failing nodes.
      *
      * @param view MembershipView object required to find monitor-monitoree relationships between failing nodes.
-     * @return A list of hosts representing a view change proposal.
+     * @return A list of endpoints representing a view change proposal.
      */
-    List<HostAndPort> invalidateFailingLinks(final MembershipView view) {
+    List<Endpoint> invalidateFailingLinks(final MembershipView view) {
         synchronized (lock) {
             // Link invalidation is only required when we have failing nodes
             if (!seenLinkDownEvents) {
                 return Collections.emptyList();
             }
 
-            final List<HostAndPort> proposalsToReturn = new ArrayList<>();
-            final List<HostAndPort> preProposalCopy = ImmutableList.copyOf(preProposal);
-            for (final HostAndPort nodeInFlux: preProposalCopy) {
-                final List<HostAndPort> monitors = view.isHostPresent(nodeInFlux)
+            final List<Endpoint> proposalsToReturn = new ArrayList<>();
+            final List<Endpoint> preProposalCopy = ImmutableList.copyOf(preProposal);
+            for (final Endpoint nodeInFlux: preProposalCopy) {
+                final List<Endpoint> monitors = view.isHostPresent(nodeInFlux)
                                                     ? view.getMonitorsOf(nodeInFlux)          // For failing nodes
                                                     : view.getExpectedMonitorsOf(nodeInFlux); // For joining nodes
                 // Account for all links between nodes that are past the L threshold
                 int ringNumber = 0;
-                for (final HostAndPort monitor : monitors) {
+                for (final Endpoint monitor : monitors) {
                     if (proposal.contains(monitor) || preProposal.contains(monitor)) {
                         // Implicit detection of link between monitor and nodeInFlux
                         final LinkStatus linkStatus = view.isHostPresent(nodeInFlux) ? LinkStatus.DOWN : LinkStatus.UP;

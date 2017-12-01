@@ -1,6 +1,6 @@
 package com.vrg.rapid;
 
-import com.google.common.net.HostAndPort;
+import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.messaging.impl.GrpcServer;
 import com.vrg.rapid.pb.RapidRequest;
 import com.vrg.rapid.pb.RapidResponse;
@@ -14,7 +14,7 @@ import java.util.List;
 public class TestingGrpcServer extends GrpcServer {
     private final List<ServerDropInterceptors.FirstN> interceptors;
 
-    TestingGrpcServer(final HostAndPort address, final List<ServerDropInterceptors.FirstN> interceptors,
+    TestingGrpcServer(final Endpoint address, final List<ServerDropInterceptors.FirstN> interceptors,
                       final boolean useInProcessTransport) {
         super(address, new SharedResources(address), useInProcessTransport);
         this.interceptors = interceptors;

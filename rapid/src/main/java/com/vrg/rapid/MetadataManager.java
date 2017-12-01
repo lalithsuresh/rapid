@@ -15,7 +15,7 @@
 package com.vrg.rapid;
 
 import com.google.common.collect.ImmutableMap;
-import com.google.common.net.HostAndPort;
+import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.Metadata;
 import io.grpc.ExperimentalApi;
 
@@ -30,14 +30,14 @@ import java.util.concurrent.ConcurrentHashMap;
 @ExperimentalApi
 @NotThreadSafe
 final class MetadataManager {
-    private final Map<HostAndPort, Metadata> roleMap = new ConcurrentHashMap<>();
+    private final Map<Endpoint, Metadata> roleMap = new ConcurrentHashMap<>();
 
     /**
      * Get the list of roles for a node.
      *
      * @param node Node for which the roles are being set.
      */
-    Metadata get(final HostAndPort node) {
+    Metadata get(final Endpoint node) {
         Objects.requireNonNull(node);
         return roleMap.containsKey(node) ? roleMap.get(node) : Metadata.getDefaultInstance();
     }
@@ -47,9 +47,9 @@ final class MetadataManager {
      *
      * @param roles The list of roles for the node.
      */
-    void addMetadata(final Map<String, Metadata> roles) {
+    void addMetadata(final Map<Endpoint, Metadata> roles) {
         Objects.requireNonNull(roles);
-        roles.forEach((k, v) -> roleMap.putIfAbsent(HostAndPort.fromString(k), v));
+        roles.forEach(roleMap::putIfAbsent);
     }
 
     /**
@@ -57,7 +57,7 @@ final class MetadataManager {
      *
      * @param node Node for which the roles are being set.
      */
-    void removeNode(final HostAndPort node) {
+    void removeNode(final Endpoint node) {
         Objects.requireNonNull(node);
         roleMap.remove(node);
     }
@@ -67,9 +67,9 @@ final class MetadataManager {
      */
     Map<String, Metadata> getAllMetadata() {
         // XXX: Not happy with the back and forth conversion here. We should not require conversions
-        // between HostAndPort and strings when crossing over from protobufs to rapid and vice-versa.
+        // between Endpoint and strings when crossing over from protobufs to rapid and vice-versa.
         final ImmutableMap.Builder<String, Metadata> stringMap = ImmutableMap.builder();
-        roleMap.forEach((k, v) -> stringMap.put(k.toString(), v));
+        roleMap.forEach((k, v) -> stringMap.put(k.getHostname() + ":" + k.getPort(), v));
         return stringMap.build();
     }
 }

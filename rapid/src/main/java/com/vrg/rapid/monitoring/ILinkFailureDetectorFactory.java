@@ -13,7 +13,7 @@
 
 package com.vrg.rapid.monitoring;
 
-import com.google.common.net.HostAndPort;
+import com.vrg.rapid.pb.Endpoint;
 import io.grpc.ExperimentalApi;
 
 /**
@@ -22,5 +22,5 @@ import io.grpc.ExperimentalApi;
  */
 @ExperimentalApi
 public interface ILinkFailureDetectorFactory {
-    Runnable createInstance(final HostAndPort monitor, final Runnable notifier);
+    Runnable createInstance(final Endpoint monitor, final Runnable notifier);
 }

@@ -60,7 +60,7 @@ class ClientInterceptors {
             this.requestCase = requestCase;
         }
 
-        public boolean filter(final RapidRequest request) {
+        boolean filter(final RapidRequest request) {
             if (request.getContentCase().equals(requestCase)) {
                 try {
                     latch.await();

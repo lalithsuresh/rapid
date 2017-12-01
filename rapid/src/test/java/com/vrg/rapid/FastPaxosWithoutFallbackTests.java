@@ -1,9 +1,9 @@
 package com.vrg.rapid;
 
-import com.google.common.net.HostAndPort;
 import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.messaging.impl.GrpcClient;
 import com.vrg.rapid.monitoring.impl.PingPongFailureDetector;
+import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.FastRoundPhase2bMessage;
 import com.vrg.rapid.pb.RapidRequest;
 import junitparams.JUnitParamsRunner;
@@ -20,7 +20,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
-import java.util.stream.Collectors;
 
 import static org.junit.Assert.assertEquals;
 
@@ -52,8 +51,8 @@ public class FastPaxosWithoutFallbackTests {
     public void fastQuorumTestNoConflicts(final int N, final int quorum) throws InterruptedException, IOException,
                                                                                 ExecutionException {
         final int serverPort = 1234;
-        final HostAndPort node = HostAndPort.fromParts("127.0.0.1", serverPort);
-        final HostAndPort proposalNode = HostAndPort.fromParts("127.0.0.1", serverPort + 1);
+        final Endpoint node = Utils.hostFromParts("127.0.0.1", serverPort);
+        final Endpoint proposalNode = Utils.hostFromParts("127.0.0.1", serverPort + 1);
         final MembershipView view = createView(serverPort, N);
         final MembershipService service = createAndStartMembershipService(node, view);
         assertEquals(N, service.getMembershipSize());
@@ -62,10 +61,10 @@ public class FastPaxosWithoutFallbackTests {
                 getProposal(currentId, Collections.singletonList(proposalNode));
 
         for (int i = 0; i < quorum - 1; i++) {
-            service.handleMessage(asRapidMessage(proposal.setSender(addrForBase(i).toString()).build())).get();
+            service.handleMessage(asRapidMessage(proposal.setSender(addrForBase(i)).build())).get();
             assertEquals(N, service.getMembershipSize());
         }
-        service.handleMessage(asRapidMessage(proposal.setSender(addrForBase(quorum - 1).toString()).build()))
+        service.handleMessage(asRapidMessage(proposal.setSender(addrForBase(quorum - 1)).build()))
                .get();
         assertEquals(N - 1, service.getMembershipSize());
     }
@@ -89,9 +88,9 @@ public class FastPaxosWithoutFallbackTests {
                                             final boolean changeExpected)
             throws InterruptedException, IOException, ExecutionException {
         final int serverPort = 1234;
-        final HostAndPort node = HostAndPort.fromParts("127.0.0.1", serverPort);
-        final HostAndPort proposalNode = HostAndPort.fromParts("127.0.0.1", serverPort + 1);
-        final HostAndPort proposalNodeConflict = HostAndPort.fromParts("127.0.0.1", serverPort + 2);
+        final Endpoint node = Utils.hostFromParts("127.0.0.1", serverPort);
+        final Endpoint proposalNode = Utils.hostFromParts("127.0.0.1", serverPort + 1);
+        final Endpoint proposalNodeConflict = Utils.hostFromParts("127.0.0.1", serverPort + 2);
         final MembershipView view = createView(serverPort, N);
         final MembershipService service = createAndStartMembershipService(node, view);
         assertEquals(N, service.getMembershipSize());
@@ -102,16 +101,15 @@ public class FastPaxosWithoutFallbackTests {
         final FastRoundPhase2bMessage.Builder proposalConflict =
                 getProposal(currentId, Collections.singletonList(proposalNodeConflict));
         for (int i = 0; i < numConflicts; i++) {
-            service.handleMessage(asRapidMessage(proposalConflict.setSender(addrForBase(i).toString()).build())).get();
+            service.handleMessage(asRapidMessage(proposalConflict.setSender(addrForBase(i)).build())).get();
             assertEquals(N, service.getMembershipSize());
         }
         final int nonConflictCount = Math.min(numConflicts + quorum - 1, N - 1);
         for (int i = numConflicts; i < nonConflictCount; i++) {
-            service.handleMessage(asRapidMessage(proposal.setSender(addrForBase(i).toString()).build())).get();
+            service.handleMessage(asRapidMessage(proposal.setSender(addrForBase(i)).build())).get();
             assertEquals(N, service.getMembershipSize());
         }
-        service.handleMessage(asRapidMessage(proposal.setSender(addrForBase(nonConflictCount)
-                                                 .toString()).build())).get();
+        service.handleMessage(asRapidMessage(proposal.setSender(addrForBase(nonConflictCount)).build())).get();
         assertEquals(changeExpected ? N - 1 : N, service.getMembershipSize());
     }
 
@@ -139,8 +137,8 @@ public class FastPaxosWithoutFallbackTests {
     /**
      * Create a membership service listening on serverAddr
      */
-    private MembershipService createAndStartMembershipService(final HostAndPort serverAddr, final MembershipView view)
-            throws IOException, MembershipView.NodeAlreadyInRingException {
+    private MembershipService createAndStartMembershipService(final Endpoint serverAddr, final MembershipView view)
+            throws MembershipView.NodeAlreadyInRingException {
         final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
         final SharedResources resources = new SharedResources(serverAddr);
         final IMessagingClient client = new GrpcClient(serverAddr);
@@ -151,12 +149,12 @@ public class FastPaxosWithoutFallbackTests {
     }
 
     /**
-     * Populates a view with a sequence of HostAndPorts starting from basePort up to basePort + N - 1
+     * Populates a view with a sequence of Hosts starting from basePort up to basePort + N - 1
      */
     private MembershipView createView(final int basePort, final int N) {
         final MembershipView view = new MembershipView(K);
         for (int i = basePort; i < basePort + N; i++) {
-            view.ringAdd(HostAndPort.fromParts("127.0.0.1", i), Utils.nodeIdFromUUID(UUID.randomUUID()));
+            view.ringAdd(Utils.hostFromParts("127.0.0.1", i), Utils.nodeIdFromUUID(UUID.randomUUID()));
         }
         return view;
     }
@@ -165,18 +163,14 @@ public class FastPaxosWithoutFallbackTests {
      * Returns a proposal message without the sender set.
      */
     private FastRoundPhase2bMessage.Builder getProposal(final long currentConfigurationId,
-                                                        final List<HostAndPort> proposal) {
+                                                        final List<Endpoint> proposal) {
         return FastRoundPhase2bMessage.newBuilder()
                 .setConfigurationId(currentConfigurationId)
-                .addAllHosts(proposal
-                        .stream()
-                        .map(HostAndPort::toString)
-                        .sorted()
-                        .collect(Collectors.toList()));
+                .addAllEndpoints(proposal);
     }
 
-    private HostAndPort addrForBase(final int port) {
-        return HostAndPort.fromParts("127.0.0.1", port);
+    private Endpoint addrForBase(final int port) {
+        return Utils.hostFromParts("127.0.0.1", port);
     }
 
     private RapidRequest asRapidMessage(final FastRoundPhase2bMessage proposal) {
