@@ -13,6 +13,7 @@
 
 package com.vrg.rapid;
 
+import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.Endpoint;
 import com.google.protobuf.ByteString;
 import com.vrg.rapid.messaging.impl.GrpcClient;
@@ -112,6 +113,23 @@ public class ClusterTest {
             cluster.shutdown();
         }
     }
+
+
+    /**
+     * Verify public API that uses HostAndPort
+     */
+    @Test(timeout = 30000)
+    public void hostAndPortBuilderTests() throws IOException, InterruptedException, ExecutionException {
+        final HostAndPort addr1 = HostAndPort.fromParts("127.0.0.1", 1255);
+        final HostAndPort addr2 = HostAndPort.fromParts("127.0.0.1", 1256);
+        final Cluster seed = new Cluster.Builder(addr1).start();
+        final Cluster joiner = new Cluster.Builder(addr2).join(addr1);
+        assertEquals(2, seed.getMembershipSize());
+        assertEquals(2, joiner.getMembershipSize());
+        joiner.shutdown();
+        seed.shutdown();
+    }
+
 
     /**
      * Test with a single node joining through a seed.
