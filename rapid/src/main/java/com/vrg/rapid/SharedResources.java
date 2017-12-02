@@ -16,12 +16,14 @@ package com.vrg.rapid;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.vrg.rapid.pb.Endpoint;
 import io.netty.channel.EventLoopGroup;
+import io.netty.channel.ThreadPerChannelEventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.util.concurrent.DefaultThreadFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
+import java.util.Arrays;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -37,22 +39,16 @@ import java.util.concurrent.TimeUnit;
 public class SharedResources {
     private static final Logger LOG = LoggerFactory.getLogger(SharedResources.class);
     private static final int DEFAULT_THREADS = 1;
-    @Nullable private EventLoopGroup eventLoopGroup = null;
-    private final ExecutorService backgroundExecutor;
-    private final ExecutorService serverExecutor;
-    private final ExecutorService clientChannelExecutor;
-    private final ExecutorService protocolExecutor;
-    private final ScheduledExecutorService scheduledTasksExecutor;
     private final Endpoint address;
+    @Nullable private EventLoopGroup eventLoopGroup = null;
+    @Nullable private ExecutorService backgroundExecutor = null;
+    @Nullable private ExecutorService serverExecutor = null;
+    @Nullable private ExecutorService clientChannelExecutor = null;
+    @Nullable private ExecutorService protocolExecutor = null;
+    @Nullable private ScheduledExecutorService scheduledTasksExecutor = null;
 
     public SharedResources(final Endpoint address) {
         this.address = address;
-        this.serverExecutor = newNamedThreadPool(DEFAULT_THREADS, "server-exec", address);
-        this.clientChannelExecutor = newNamedThreadPool(DEFAULT_THREADS, "client-exec", address);
-        this.backgroundExecutor = newNamedThreadPool(DEFAULT_THREADS, "bg", address);
-        this.protocolExecutor = Executors.newSingleThreadExecutor(newNamedThreadFactory("protocol", address));
-        this.scheduledTasksExecutor = Executors.newSingleThreadScheduledExecutor(
-                                                    newNamedThreadFactory("msbg", address));
     }
 
     /**
@@ -69,35 +65,50 @@ public class SharedResources {
     /**
      * Used by background tasks like retries in GrpcClient
      */
-    public ExecutorService getBackgroundExecutor() {
+    public synchronized ExecutorService getBackgroundExecutor() {
+        if (backgroundExecutor == null) {
+            backgroundExecutor = newNamedThreadPool(DEFAULT_THREADS, "bg", address);
+        }
         return backgroundExecutor;
     }
 
     /**
      * The RpcServer application executor
      */
-    public ExecutorService getServerExecutor() {
+    public synchronized ExecutorService getServerExecutor() {
+        if (serverExecutor == null) {
+            serverExecutor = newNamedThreadPool(DEFAULT_THREADS, "server-exec", address);
+        }
         return serverExecutor;
     }
 
     /**
      * The GrpcClient application executor
      */
-    public ExecutorService getClientChannelExecutor() {
+    public synchronized ExecutorService getClientChannelExecutor() {
+        if (clientChannelExecutor == null) {
+            clientChannelExecutor = newNamedThreadPool(DEFAULT_THREADS, "client-exec", address);
+        }
         return clientChannelExecutor;
     }
 
     /**
      * Executes the protocol logic in MembershipService.
      */
-    public ExecutorService getProtocolExecutor() {
+    synchronized ExecutorService getProtocolExecutor() {
+        if (protocolExecutor == null) {
+            protocolExecutor = Executors.newSingleThreadExecutor(newNamedThreadFactory("protocol", address));
+        }
         return protocolExecutor;
     }
 
     /**
      * Executes periodic background tasks in MembershipService.
      */
-    public ScheduledExecutorService getScheduledTasksExecutor() {
+    synchronized ScheduledExecutorService getScheduledTasksExecutor() {
+        if (scheduledTasksExecutor == null) {
+            scheduledTasksExecutor = Executors.newSingleThreadScheduledExecutor(newNamedThreadFactory("msbg", address));
+        }
         return scheduledTasksExecutor;
     }
 
@@ -105,10 +116,12 @@ public class SharedResources {
      * Shuts down resources.
      */
     synchronized void shutdown() {
-        serverExecutor.shutdownNow();
-        protocolExecutor.shutdownNow();
-        clientChannelExecutor.shutdownNow();
-        backgroundExecutor.shutdownNow();
+        Arrays.asList(serverExecutor, protocolExecutor, clientChannelExecutor, backgroundExecutor)
+            .forEach(exec -> {
+                if (exec != null) {
+                    exec.shutdownNow();
+                }
+        });
         if (eventLoopGroup != null) {
             eventLoopGroup.shutdownGracefully().awaitUninterruptibly(0, TimeUnit.SECONDS);
         }

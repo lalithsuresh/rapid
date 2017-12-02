@@ -49,6 +49,7 @@ public class PingPongFailureDetector implements Runnable {
     private final IMessagingClient rpcClient;
     private final Runnable notifier;
     private boolean notified = false;
+    private final ProbeCallback probeCallback;
 
     // A cache for probe messages. Avoids creating an unnecessary copy of a probe message each time.
     private final RapidRequest probeMessage;
@@ -63,6 +64,7 @@ public class PingPongFailureDetector implements Runnable {
         this.bootstrapResponseCount = new AtomicInteger(0);
         this.probeMessage = RapidRequest.newBuilder().setProbeMessage(
                 ProbeMessage.newBuilder().setSender(address).build()).build();
+        this.probeCallback = new ProbeCallback(monitoree);
     }
 
     // Executed at monitor
@@ -78,8 +80,7 @@ public class PingPongFailureDetector implements Runnable {
         }
         else {
             LOG.trace("{} sending probe to {}", address, monitoree);
-            Futures.addCallback(rpcClient.sendMessageBestEffort(monitoree, probeMessage),
-                    new ProbeCallback(monitoree));
+            Futures.addCallback(rpcClient.sendMessageBestEffort(monitoree, probeMessage), probeCallback);
         }
     }
 

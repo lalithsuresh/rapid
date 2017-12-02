@@ -251,6 +251,7 @@ public class MessagingTest {
             final ListenableFuture<RapidResponse> call = joinerClient.sendMessage(entry.getKey(), msg);
             retryFutures.add(call);
         }
+
         final List<JoinResponse> retriedJoinResponses = Futures.successfulAsList(retryFutures).get()
                 .stream().map(RapidResponse::getJoinResponse).collect(Collectors.toList());
         assertEquals(ringNumbersPerMonitor.size(), retriedJoinResponses.size());

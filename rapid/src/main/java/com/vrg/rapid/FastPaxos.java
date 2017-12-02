@@ -31,6 +31,8 @@ import java.util.function.Consumer;
 class FastPaxos {
     private static final Logger LOG = LoggerFactory.getLogger(FastPaxos.class);
     private static final long BASE_DELAY = 1000;
+    private static final RapidResponse CONSENSUS_RESPONSE =
+            Utils.toRapidResponse(ConsensusResponse.getDefaultInstance());
     private final double jitterRate;
     private final Endpoint myAddr;
     private final long configurationId;
@@ -162,7 +164,7 @@ class FastPaxos {
             default:
                 throw new IllegalArgumentException("Unexpected message case: " + request.getContentCase());
         }
-        return Utils.toRapidResponse(ConsensusResponse.getDefaultInstance());
+        return CONSENSUS_RESPONSE;
     }
 
     /**

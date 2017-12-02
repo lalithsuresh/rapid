@@ -4,11 +4,15 @@ package com.vrg.rapid.integration;
  * Created by lsuresh on 12/1/17.
  */
 
+import com.google.common.io.Files;
+
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
  * RapidNodeRunner
@@ -30,6 +34,7 @@ class RapidNodeRunner {
     private final String listenAddress;
     private final String role;
     private final String clusterName;
+    private final String outputLogFilePath;
     private Process rapidProcess;
 
     RapidNodeRunner(final String seed, final String listenAddress, final String role, final String clusterName) {
@@ -37,6 +42,7 @@ class RapidNodeRunner {
         this.listenAddress = listenAddress;
         this.role = role;
         this.clusterName = clusterName;
+        this.outputLogFilePath = RAPID_TEST_FOLDER + File.separator + UUID.randomUUID().toString();
     }
 
     /**
@@ -58,7 +64,7 @@ class RapidNodeRunner {
                 " --seedAddress " + seed +
                 " --role " + role +
                 " --cluster " + clusterName;
-        final File outputLogFile = new File(RAPID_TEST_FOLDER + File.separator + UUID.randomUUID().toString());
+        final File outputLogFile = new File(outputLogFilePath);
         outputLogFile.deleteOnExit();
         System.out.println("Output for listenAddress:" +
                 listenAddress + " logged : " + outputLogFile.getAbsolutePath());
@@ -106,5 +112,16 @@ class RapidNodeRunner {
                 return true;
             }
         }
+    }
+
+    /**
+     * Check file
+     */
+    int searchFile(final String searchString) throws IOException {
+        int total = 0;
+        for (final String line: Files.readLines(new File(outputLogFilePath), UTF_8)) {
+            total += line.contains(searchString) ? 1 : 0;
+        }
+        return total;
     }
 }

@@ -25,6 +25,14 @@ import com.vrg.rapid.pb.NodeStatus;
 import com.vrg.rapid.pb.ProbeResponse;
 import com.vrg.rapid.pb.RapidRequest;
 import com.vrg.rapid.pb.RapidResponse;
+import io.grpc.CallOptions;
+import io.grpc.Channel;
+import io.grpc.ClientCall;
+import io.grpc.ClientInterceptor;
+import io.grpc.CompressorRegistry;
+import io.grpc.DecompressorRegistry;
+import io.grpc.ForwardingClientCall;
+import io.grpc.MethodDescriptor;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import io.grpc.inprocess.InProcessServerBuilder;
@@ -130,6 +138,8 @@ public class GrpcServer extends MembershipServiceGrpc.MembershipServiceImplBase 
             final ServerBuilder builder = InProcessServerBuilder.forName(address.toString());
             server = builder.addService(this)
                     .executor(grpcExecutor)
+                    .compressorRegistry(CompressorRegistry.getDefaultInstance())
+                    .decompressorRegistry(DecompressorRegistry.getDefaultInstance())
                     .build()
                     .start();
         } else {
@@ -137,6 +147,8 @@ public class GrpcServer extends MembershipServiceGrpc.MembershipServiceImplBase 
                     .workerEventLoopGroup(eventLoopGroup)
                     .addService(this)
                     .executor(grpcExecutor)
+                    .compressorRegistry(CompressorRegistry.getDefaultInstance())
+                    .decompressorRegistry(DecompressorRegistry.getDefaultInstance())
                     .build()
                     .start();
         }

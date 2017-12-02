@@ -33,11 +33,14 @@ import com.vrg.rapid.pb.MembershipServiceGrpc.MembershipServiceFutureStub;
 import com.vrg.rapid.pb.RapidRequest;
 import com.vrg.rapid.pb.RapidResponse;
 import io.grpc.Channel;
+import io.grpc.CompressorRegistry;
+import io.grpc.DecompressorRegistry;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import io.grpc.inprocess.InProcessChannelBuilder;
 import io.grpc.internal.ManagedChannelImpl;
 import io.grpc.netty.NettyChannelBuilder;
+import io.grpc.stub.ClientCalls;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoopGroup;
 import org.slf4j.Logger;
@@ -65,7 +68,7 @@ public class GrpcClient implements IMessagingClient {
     public static final int DEFAULT_GRPC_PROBE_TIMEOUT = 1000;
 
     private final Endpoint address;
-    private final LoadingCache<Endpoint, Channel> channelMap;
+    private final LoadingCache<Endpoint, MembershipServiceFutureStub> channelMap;
     private final ExecutorService grpcExecutor;
     private final ExecutorService backgroundExecutor;
     @Nullable private final EventLoopGroup eventLoopGroup;
@@ -88,14 +91,15 @@ public class GrpcClient implements IMessagingClient {
         this.grpcExecutor = sharedResources.getClientChannelExecutor();
         this.backgroundExecutor = sharedResources.getBackgroundExecutor();
         this.eventLoopGroup = settings.getUseInProcessTransport() ? null : sharedResources.getEventLoopGroup();
-        final RemovalListener<Endpoint, Channel> removalListener =
-                removal -> shutdownChannel((ManagedChannelImpl) removal.getValue());
+        final RemovalListener<Endpoint, MembershipServiceFutureStub> removalListener =
+                removal -> shutdownChannel(removal.getValue());
         this.channelMap = CacheBuilder.newBuilder()
-                .expireAfterAccess(30, TimeUnit.SECONDS)
+                .expireAfterAccess(settings.getGrpcJoinTimeoutMs() * settings.getGrpcDefaultRetries(),
+                                   TimeUnit.MILLISECONDS)
                 .removalListener(RemovalListeners.asynchronous(removalListener, backgroundExecutor))
-                .build(new CacheLoader<Endpoint, Channel>() {
+                .build(new CacheLoader<Endpoint, MembershipServiceFutureStub>() {
                     @Override
-                    public Channel load(final Endpoint Endpoint) throws Exception {
+                    public MembershipServiceFutureStub load(final Endpoint Endpoint) throws Exception {
                         return getChannel(Endpoint);
                     }
                 });
@@ -127,8 +131,8 @@ public class GrpcClient implements IMessagingClient {
         try {
             return backgroundExecutor.submit(() -> {
                 final Supplier<ListenableFuture<RapidResponse>> call = () -> {
-                    final MembershipServiceFutureStub stub;
-                    stub = getFutureStub(remote).withDeadlineAfter(getTimeoutForMessageMs(msg), TimeUnit.MILLISECONDS);
+                    final MembershipServiceFutureStub stub = getFutureStub(remote)
+                            .withDeadlineAfter(getTimeoutForMessageMs(msg), TimeUnit.MILLISECONDS);
                     return stub.sendRequest(msg);
                 };
                 return callWithRetries(call, remote, 0);
@@ -220,15 +224,14 @@ public class GrpcClient implements IMessagingClient {
         if (isShuttingDown.get()) {
             throw new ShuttingDownException("GrpcClient is shutting down");
         }
-        final Channel channel = channelMap.getUnchecked(remote);
-        return MembershipServiceGrpc.newFutureStub(channel);
+        return channelMap.getUnchecked(remote);
     }
 
-    private void shutdownChannel(final ManagedChannelImpl channel) {
-        channel.shutdown();
+    private void shutdownChannel(final MembershipServiceFutureStub futureStub) {
+        ((ManagedChannelImpl) futureStub.getChannel()).shutdown();
     }
 
-    private Channel getChannel(final Endpoint remote) {
+    private MembershipServiceFutureStub getChannel(final Endpoint remote) {
         // TODO: allow configuring SSL/TLS
         Channel channel;
         LOG.debug("Creating channel from {} to {}", address, remote);
@@ -239,6 +242,8 @@ public class GrpcClient implements IMessagingClient {
                     .executor(grpcExecutor)
                     .usePlaintext(true)
                     .idleTimeout(10, TimeUnit.SECONDS)
+                    .compressorRegistry(CompressorRegistry.getDefaultInstance())
+                    .decompressorRegistry(DecompressorRegistry.getDefaultInstance())
                     .build();
         } else {
             channel = NettyChannelBuilder
@@ -250,10 +255,12 @@ public class GrpcClient implements IMessagingClient {
                     .withOption(ChannelOption.SO_REUSEADDR, true)
                     .withOption(ChannelOption.SO_SNDBUF, DEFAULT_BUF_SIZE)
                     .withOption(ChannelOption.SO_RCVBUF, DEFAULT_BUF_SIZE)
+                    .compressorRegistry(CompressorRegistry.getDefaultInstance())
+                    .decompressorRegistry(DecompressorRegistry.getDefaultInstance())
                     .build();
         }
 
-        return channel;
+        return MembershipServiceGrpc.newFutureStub(channel).withCompression("gzip");
     }
 
     /**

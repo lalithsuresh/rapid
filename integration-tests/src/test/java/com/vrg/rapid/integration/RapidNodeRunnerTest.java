@@ -13,13 +13,15 @@
 
 package com.vrg.rapid.integration;
 
-import org.junit.Assert;
 import org.junit.Test;
 
 import java.io.IOException;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 /**
  * Example Tests for integration tests.
@@ -30,9 +32,9 @@ public class RapidNodeRunnerTest extends AbstractMultiJVMTest {
         final RapidNodeRunner rapidNodeRunner =
                 createRapidInstance("127.0.0.1:1234", "127.0.0.1:1234", "testRole", "Rapid")
                         .runNode();
-        Assert.assertTrue(rapidNodeRunner.getRapidProcess().isAlive());
+        assertTrue(rapidNodeRunner.getRapidProcess().isAlive());
         rapidNodeRunner.killNode();
-        Assert.assertFalse(rapidNodeRunner.getRapidProcess().isAlive());
+        assertFalse(rapidNodeRunner.getRapidProcess().isAlive());
     }
 
     @Test
@@ -54,5 +56,16 @@ public class RapidNodeRunnerTest extends AbstractMultiJVMTest {
             }
         });
         nodes.add(seed);
+        Thread.sleep(20000);
+        for (final RapidNodeRunner runner: nodes) {
+            assertTrue(runner.searchFile("Cluster size " + numNodes) > 0);
+        }
+        nodes.remove(5).killNode();
+        Thread.sleep(50000);
+        for (final RapidNodeRunner runner: nodes) {
+            assertTrue(runner.searchFile("Cluster size " + (numNodes - 1)) > 0);
+        }
+        Thread.sleep(10000000);
     }
+
 }

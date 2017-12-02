@@ -71,6 +71,7 @@ public final class MembershipService {
     private static final Logger LOG = LoggerFactory.getLogger(MembershipService.class);
     private static final int BATCHING_WINDOW_IN_MS = 100;
     private static final int DEFAULT_FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 0;
+    private static final RapidResponse PROBE_RESPONSE = Utils.toRapidResponse(ProbeResponse.getDefaultInstance());
     static final int DEFAULT_FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
     private final MembershipView membershipView;
     private final WatermarkBuffer watermarkBuffer;
@@ -409,7 +410,7 @@ public final class MembershipService {
      */
     private ListenableFuture<RapidResponse> handleMessage(final ProbeMessage probeMessage) {
         LOG.trace("handleProbeMessage from {}", Utils.loggable(probeMessage.getSender()));
-        return Futures.immediateFuture(Utils.toRapidResponse(ProbeResponse.getDefaultInstance()));
+        return Futures.immediateFuture(PROBE_RESPONSE);
     }
 
 
