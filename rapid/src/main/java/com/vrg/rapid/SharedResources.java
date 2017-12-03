@@ -16,7 +16,6 @@ package com.vrg.rapid;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.vrg.rapid.pb.Endpoint;
 import io.netty.channel.EventLoopGroup;
-import io.netty.channel.ThreadPerChannelEventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.util.concurrent.DefaultThreadFactory;
 import org.slf4j.Logger;
@@ -41,7 +40,7 @@ public class SharedResources {
     private static final int DEFAULT_THREADS = 1;
     private final Endpoint address;
     @Nullable private EventLoopGroup eventLoopGroup = null;
-    @Nullable private ExecutorService backgroundExecutor = null;
+    @Nullable private ScheduledExecutorService backgroundExecutor = null;
     @Nullable private ExecutorService serverExecutor = null;
     @Nullable private ExecutorService clientChannelExecutor = null;
     @Nullable private ExecutorService protocolExecutor = null;
@@ -65,9 +64,9 @@ public class SharedResources {
     /**
      * Used by background tasks like retries in GrpcClient
      */
-    public synchronized ExecutorService getBackgroundExecutor() {
+    public synchronized ScheduledExecutorService getBackgroundExecutor() {
         if (backgroundExecutor == null) {
-            backgroundExecutor = newNamedThreadPool(DEFAULT_THREADS, "bg", address);
+            backgroundExecutor = Executors.newSingleThreadScheduledExecutor(newNamedThreadFactory("bg", address));
         }
         return backgroundExecutor;
     }
@@ -123,7 +122,8 @@ public class SharedResources {
                 }
         });
         if (eventLoopGroup != null) {
-            eventLoopGroup.shutdownGracefully().awaitUninterruptibly(0, TimeUnit.SECONDS);
+            eventLoopGroup.shutdownGracefully(0, 0, TimeUnit.MILLISECONDS)
+                          .awaitUninterruptibly(0, TimeUnit.SECONDS);
         }
     }
 

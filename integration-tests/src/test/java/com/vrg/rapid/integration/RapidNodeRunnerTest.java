@@ -39,7 +39,7 @@ public class RapidNodeRunnerTest extends AbstractMultiJVMTest {
 
     @Test
     public void runAndAssertMultipleNodes() throws Exception {
-        final int numNodes = 10;
+        final int numNodes = 100;
         final RapidNodeRunner seed =
                 createRapidInstance("127.0.0.1:1234", "127.0.0.1:1234",
                                     "testRole", "Rapid")
@@ -56,16 +56,11 @@ public class RapidNodeRunnerTest extends AbstractMultiJVMTest {
             }
         });
         nodes.add(seed);
-        Thread.sleep(20000);
-        for (final RapidNodeRunner runner: nodes) {
-            assertTrue(runner.searchFile("Cluster size " + numNodes) > 0);
-        }
-        nodes.remove(5).killNode();
         Thread.sleep(50000);
         for (final RapidNodeRunner runner: nodes) {
-            assertTrue(runner.searchFile("Cluster size " + (numNodes - 1)) > 0);
+            final int search = runner.searchFile("Cluster size " + numNodes);
+            assertTrue("Instances: " + search + " " + runner,search > 0);
         }
-        Thread.sleep(10000000);
+        Thread.sleep(1000000);
     }
-
 }

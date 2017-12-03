@@ -6,4 +6,12 @@
         <Class name="com.vrg.rapid.SubscriptionsTest" />
         <Bug pattern="UC_USELESS_OBJECT" />
     </Match>
+    <Match>
+        <Class name="com.vrg.rapid.messaging.impl.NettyDirectTcpClient" />
+        <Bug pattern="DLS_DEAD_LOCAL_STORE" />
+    </Match>
+    <Match>
+        <Class name="com.vrg.rapid.messaging.impl.NettyDirectTcpServer$RapidRequestHandler$1" />
+        <Bug pattern="DLS_DEAD_LOCAL_STORE" />
+    </Match>
 </FindBugsFilter>

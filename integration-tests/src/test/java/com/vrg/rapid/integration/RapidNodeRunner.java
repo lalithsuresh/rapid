@@ -59,6 +59,7 @@ class RapidNodeRunner {
         }
         final String command = "java" +
                 " -server" +
+                " -Xmx20m" +
                 " -jar " + RAPID_RUNNER_JAR +
                 " --listenAddress " + listenAddress +
                 " --seedAddress " + seed +

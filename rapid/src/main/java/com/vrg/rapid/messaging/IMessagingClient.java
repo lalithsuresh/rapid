@@ -6,6 +6,9 @@ import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.RapidRequest;
 import com.vrg.rapid.pb.RapidResponse;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Represents the sending part of the messaging API
  */

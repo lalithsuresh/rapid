@@ -40,7 +40,6 @@ import io.grpc.StatusRuntimeException;
 import io.grpc.inprocess.InProcessChannelBuilder;
 import io.grpc.internal.ManagedChannelImpl;
 import io.grpc.netty.NettyChannelBuilder;
-import io.grpc.stub.ClientCalls;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoopGroup;
 import org.slf4j.Logger;

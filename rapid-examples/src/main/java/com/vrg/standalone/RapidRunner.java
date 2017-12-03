@@ -4,6 +4,10 @@ import com.google.common.net.HostAndPort;
 import com.vrg.rapid.Cluster;
 import com.vrg.rapid.NodeStatusChange;
 import com.vrg.rapid.Settings;
+import com.vrg.rapid.SharedResources;
+import com.vrg.rapid.messaging.impl.NettyDirectTcpClient;
+import com.vrg.rapid.messaging.impl.NettyDirectTcpServer;
+import com.vrg.rapid.pb.Endpoint;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -33,15 +37,22 @@ class RapidRunner {
         this.listenAddress = listenAddress;
         final Settings settings = new Settings();
         settings.setGrpcJoinTimeoutMs(20000);
+        final Endpoint endpoint = Endpoint.newBuilder().setHostname(listenAddress.getHost())
+                                                       .setPort(listenAddress.getPort()).build();
+        final SharedResources resources = new SharedResources(endpoint);
+        final NettyDirectTcpClient tcpClient = new NettyDirectTcpClient(resources);
+        final NettyDirectTcpServer tcpServer = new NettyDirectTcpServer(endpoint, resources);
         if (listenAddress.equals(seedAddress)) {
             cluster = new Cluster.Builder(listenAddress)
                                  .useSettings(settings)
+                                 .setMessagingClientAndServer(tcpClient, tcpServer)
                                  .start();
 
         } else {
             Thread.sleep(sleepDelayMsForNonSeed);
             cluster = new Cluster.Builder(listenAddress)
                                  .useSettings(settings)
+                                 .setMessagingClientAndServer(tcpClient, tcpServer)
                                  .join(seedAddress);
         }
         cluster.registerSubscription(com.vrg.rapid.ClusterEvents.VIEW_CHANGE_PROPOSAL,

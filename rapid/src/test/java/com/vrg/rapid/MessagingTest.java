@@ -19,6 +19,8 @@ import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.messaging.IMessagingServer;
 import com.vrg.rapid.messaging.impl.GrpcClient;
 import com.vrg.rapid.messaging.impl.GrpcServer;
+import com.vrg.rapid.messaging.impl.NettyDirectTcpClient;
+import com.vrg.rapid.messaging.impl.NettyDirectTcpServer;
 import com.vrg.rapid.monitoring.impl.PingPongFailureDetector;
 import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.FastRoundPhase2bMessage;
@@ -460,6 +462,30 @@ public class MessagingTest {
             fail("sendProbeMessage did not throw an exception");
         } catch (final ExecutionException | GrpcClient.ShuttingDownException ignored) {
         }
+    }
+
+
+    /**
+     * Tests our broadcaster to make sure it receives responses from all nodes it sends messages to.
+     */
+    @Test
+    public void nettyDirectTests() throws IOException, ExecutionException, InterruptedException {
+        final Endpoint serverAddr = Endpoint.newBuilder().setHostname("127.0.0.1").setPort(1234).build();
+        final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
+        final MembershipView membershipView = new MembershipView(K);
+        membershipView.ringAdd(serverAddr, Utils.nodeIdFromUUID(UUID.randomUUID()));
+        final IMessagingClient client = new GrpcClient(serverAddr);
+        final MembershipService service = new MembershipService(serverAddr, watermarkBuffer, membershipView, resources,
+                new Settings(), client, new PingPongFailureDetector.Factory(serverAddr, client));
+        final NettyDirectTcpClient tcpClient = new NettyDirectTcpClient(resources);
+        final NettyDirectTcpServer tcpServer = new NettyDirectTcpServer("127.0.0.1", 1234, resources);
+        tcpServer.start();
+        tcpServer.setMembershipService(service);
+        final RapidRequest request = Utils.toRapidRequest(ProbeMessage.getDefaultInstance());
+        final RapidResponse response = tcpClient.sendMessage(serverAddr, request).get();
+        assertNotNull(response);
+        tcpClient.shutdown();
+        tcpServer.shutdown();
     }
 
 
