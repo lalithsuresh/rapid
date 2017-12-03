@@ -5,7 +5,6 @@ import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.protobuf.TextFormat;
-import com.vrg.rapid.messaging.IBroadcaster;
 import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.Phase1aMessage;
@@ -40,11 +39,11 @@ import java.util.stream.Collectors;
 class Paxos {
     private static final Logger LOG = LoggerFactory.getLogger(Paxos.class);
 
-    private final IBroadcaster broadcaster;
     private final IMessagingClient client;
     private final long configurationId;
     private final Endpoint myAddr;
     private final int N;
+    private final List<Endpoint> membership;
 
     private Rank rnd;
     private Rank vrnd;
@@ -58,12 +57,12 @@ class Paxos {
     private final Consumer<List<Endpoint>> onDecide;
     private boolean decided = false;
 
-    public Paxos(final Endpoint myAddr, final long configurationId, final int N, final IMessagingClient client,
-                 final IBroadcaster broadcaster, final Consumer<List<Endpoint>> onDecide) {
+    public Paxos(final Endpoint myAddr, final long configurationId, final List<Endpoint> membership,
+                 final IMessagingClient client, final Consumer<List<Endpoint>> onDecide) {
         this.myAddr = myAddr;
         this.configurationId = configurationId;
-        this.N = N;
-        this.broadcaster = broadcaster;
+        this.N = membership.size();
+        this.membership = membership;
 
         this.crnd = Rank.newBuilder().setRound(0).setNodeIndex(0).build();
         this.rnd = Rank.newBuilder().setRound(0).setNodeIndex(0).build();
@@ -92,7 +91,7 @@ class Paxos {
                                        .setRank(crnd).build();
         final RapidRequest request = Utils.toRapidRequest(prepare);
         LOG.trace("Broadcasting startPhase1a message: {}", Utils.loggable(request));
-        broadcaster.broadcast(request);
+        client.bestEffortBroadcast(membership, request);
     }
 
     /**
@@ -161,7 +160,7 @@ class Paxos {
                                                    .addAllVval(chosenProposal)
                                                    .build();
                 final RapidRequest request = Utils.toRapidRequest(phase2aMessage);
-                broadcaster.broadcast(request);
+                client.bestEffortBroadcast(membership, request);
             }
         }
     }
@@ -188,7 +187,7 @@ class Paxos {
                                                           .addAllEndpoints(vval)
                                                           .build();
             final RapidRequest request = Utils.toRapidRequest(response);
-            broadcaster.broadcast(request);
+            client.bestEffortBroadcast(membership, request);
         }
     }
 

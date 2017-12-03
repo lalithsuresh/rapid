@@ -1,7 +1,6 @@
 package com.vrg.rapid;
 
 import com.google.protobuf.TextFormat;
-import com.vrg.rapid.messaging.IBroadcaster;
 import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.pb.ConsensusResponse;
 import com.vrg.rapid.pb.Endpoint;
@@ -36,30 +35,30 @@ class FastPaxos {
     private final double jitterRate;
     private final Endpoint myAddr;
     private final long configurationId;
-    private final long membershipSize;
+    private final List<Endpoint> membership;
     private final Consumer<List<Endpoint>> onDecidedWrapped;
-    private final IBroadcaster broadcaster;
     private final Map<List<Endpoint>, AtomicInteger> votesPerProposal = new HashMap<>();
     private final Set<Endpoint> votesReceived = new HashSet<>(); // Should be a bitset
+    private final IMessagingClient messagingClient;
     private final Paxos paxos;
     private final ScheduledExecutorService scheduledExecutorService;
     private final Object paxosLock = new Object();
     private final AtomicBoolean decided = new AtomicBoolean(false);
     @Nullable private ScheduledFuture<?> scheduledClassicRoundTask = null;
 
-    FastPaxos(final Endpoint myAddr, final long configurationId, final int membershipSize,
-              final IMessagingClient client, final IBroadcaster broadcaster,
-              final ScheduledExecutorService scheduledExecutorService, final Consumer<List<Endpoint>> onDecide) {
+    FastPaxos(final Endpoint myAddr, final long configurationId, final List<Endpoint> membership,
+              final IMessagingClient client, final ScheduledExecutorService scheduledExecutorService,
+              final Consumer<List<Endpoint>> onDecide) {
         this.myAddr = myAddr;
         this.configurationId = configurationId;
-        this.membershipSize = membershipSize;
-        this.broadcaster = broadcaster;
+        this.membership = membership;
+        this.messagingClient = client;
 
         // The rate of a random expovariate variable, used to determine a jitter over a base delay to start classic
         // rounds. This determines how many classic rounds we want to start per second on average. Does not
         // affect correctness of the protocol, but having too many nodes starting rounds will increase messaging load,
         // especially for very large clusters.
-        this.jitterRate = 1 / (double) membershipSize;
+        this.jitterRate = 1 / (double) membership.size();
         this.scheduledExecutorService = scheduledExecutorService;
         this.onDecidedWrapped = hosts -> {
             assert !decided.get();
@@ -69,7 +68,7 @@ class FastPaxos {
             }
             onDecide.accept(hosts);
         };
-        this.paxos = new Paxos(myAddr, configurationId, membershipSize, client, broadcaster, onDecidedWrapped);
+        this.paxos = new Paxos(myAddr, configurationId, membership, client, onDecidedWrapped);
     }
 
     /**
@@ -87,7 +86,7 @@ class FastPaxos {
                 .setSender(myAddr)
                 .build();
         final RapidRequest proposalMessage = Utils.toRapidRequest(consensusMessage);
-        broadcaster.broadcast(proposalMessage);
+        messagingClient.bestEffortBroadcast(membership, proposalMessage);
         LOG.trace("Scheduling classic round with delay: {}", recoveryDelayInMs);
         scheduledClassicRoundTask = scheduledExecutorService.schedule(this::startClassicPaxosRound, recoveryDelayInMs,
                 TimeUnit.MILLISECONDS);
@@ -126,6 +125,7 @@ class FastPaxos {
         final AtomicInteger proposalsReceived = votesPerProposal.computeIfAbsent(proposalMessage.getEndpointsList(),
                 k -> new AtomicInteger(0));
         final int count = proposalsReceived.incrementAndGet();
+        final int membershipSize = membership.size();
         final int F = (int) Math.floor((membershipSize - 1) / 4.0); // Fast Paxos resiliency.
         if (votesReceived.size() >= membershipSize - F) {
             if (count >= membershipSize - F) {

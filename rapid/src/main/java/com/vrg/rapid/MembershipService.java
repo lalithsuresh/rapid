@@ -16,7 +16,6 @@ package com.vrg.rapid;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
-import com.vrg.rapid.messaging.IBroadcaster;
 import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.monitoring.ILinkFailureDetectorFactory;
 import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
@@ -76,7 +75,6 @@ public final class MembershipService {
     private final MembershipView membershipView;
     private final WatermarkBuffer watermarkBuffer;
     private final Endpoint myAddr;
-    private final IBroadcaster broadcaster;
     private final Map<Endpoint, LinkedBlockingDeque<SettableFuture<RapidResponse>>> joinersToRespondTo =
             new HashMap<>();
     private final Map<Endpoint, NodeId> joinerUuid = new HashMap<>();
@@ -131,7 +129,6 @@ public final class MembershipService {
         this.metadataManager = new MetadataManager();
         this.metadataManager.addMetadata(metadataMap);
         this.messagingClient = messagingClient;
-        this.broadcaster = new UnicastToAllBroadcaster(messagingClient);
         this.subscriptions = subscriptions;
         this.fdFactory = linkFailureDetector;
 
@@ -144,15 +141,14 @@ public final class MembershipService {
         linkUpdateBatcherJob = this.backgroundTasksExecutor.scheduleAtFixedRate(new LinkUpdateBatcher(),
                 0, BATCHING_WINDOW_IN_MS, TimeUnit.MILLISECONDS);
 
-        this.broadcaster.setMembership(membershipView.getRing(0));
         // this::linkFailureNotification is invoked by the failure detector whenever an edge
         // to a monitor is marked faulty.
         this.failureDetectorJobs = new ArrayList<>();
 
         // Prepare consensus instance
         this.fastPaxosInstance = new FastPaxos(myAddr, membershipView.getCurrentConfigurationId(),
-                                               membershipView.getMembershipSize(), this.messagingClient,
-                                               this.broadcaster, this.backgroundTasksExecutor, this::decideViewChange);
+                                               membershipView.getRing(0), this.messagingClient,
+                                               this.backgroundTasksExecutor, this::decideViewChange);
         createFailureDetectorsForCurrentConfiguration();
 
         // Execute all VIEW_CHANGE callbacks. This informs applications that a start/join has successfully completed.
@@ -385,10 +381,9 @@ public final class MembershipService {
         // Clear data structures for the next round.
         watermarkBuffer.clear();
         announcedProposal = false;
-        fastPaxosInstance = new FastPaxos(myAddr, currentConfigurationId, membershipView.getMembershipSize(),
-                                          messagingClient, broadcaster, backgroundTasksExecutor,
+        fastPaxosInstance = new FastPaxos(myAddr, currentConfigurationId, membershipView.getRing(0),
+                                          messagingClient, backgroundTasksExecutor,
                                           this::decideViewChange);
-        broadcaster.setMembership(membershipView.getRing(0));
 
         // Inform LinkFailureDetector about membership change
         if (membershipView.isHostPresent(myAddr)) {
@@ -564,7 +559,7 @@ public final class MembershipService {
                             .setSender(myAddr)
                             .addAllMessages(messages)
                             .build();
-                    broadcaster.broadcast(Utils.toRapidRequest(batched));
+                    messagingClient.bestEffortBroadcast(membershipView.getRing(0), Utils.toRapidRequest(batched));
                 }
             }
             finally {

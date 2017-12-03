@@ -4,7 +4,6 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
-import com.vrg.rapid.messaging.IBroadcaster;
 import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.pb.ConsensusResponse;
 import com.vrg.rapid.pb.Endpoint;
@@ -34,6 +33,7 @@ import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -192,8 +192,10 @@ public class PaxosTests {
 
             final Consumer<List<Endpoint>> onDecide = (k) -> { };
             final Endpoint addr = Utils.hostFromParts("127.0.0.1", 1234);
-
-            final Paxos paxos = new Paxos(addr, 1, N, new NoOpClient(), new NoOpBroadcaster(), onDecide);
+            final List<Endpoint> endpoints =
+                    IntStream.range(0, N).mapToObj(i -> Utils.hostFromParts("127.0.0.1", 1235 + i))
+                            .collect(Collectors.toList());
+            final Paxos paxos = new Paxos(addr, 1, endpoints, new NoOpClient(), onDecide);
             final List<Phase1bMessage> messages = new ArrayList<>();
 
             // Highest ranked proposal, proposals[0]
@@ -299,8 +301,10 @@ public class PaxosTests {
 
             final Consumer<List<Endpoint>> onDecide = (k) -> { };
             final Endpoint addr = Utils.hostFromParts("127.0.0.1", 1234);
-
-            final Paxos paxos = new Paxos(addr, 1, N, new NoOpClient(), new NoOpBroadcaster(), onDecide);
+            final List<Endpoint> endpoints =
+                    IntStream.range(0, N).mapToObj(i -> Utils.hostFromParts("127.0.0.1", 1235 + i))
+                    .collect(Collectors.toList());
+            final Paxos paxos = new Paxos(addr, 1, endpoints, new NoOpClient(), onDecide);
             final List<Phase1bMessage> messages = new ArrayList<>();
 
             final Rank rank1 = Rank.newBuilder().setNodeIndex(1).setRound(1).build();
@@ -392,12 +396,15 @@ public class PaxosTests {
         final Map<Endpoint, FastPaxos> instances = new ConcurrentHashMap<>();
         final Map<Endpoint, ExecutorService> executorServiceMap = new ConcurrentHashMap<>();
         final DirectMessagingClient messagingClient = new DirectMessagingClient(instances, executorServiceMap);
-        final DirectBroadcaster directBroadcaster = new DirectBroadcaster(instances, messagingClient);
         final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(numNodes);
+        final List<Endpoint> endpoints = new ArrayList<>(numNodes);
         for (int i = 0; i < numNodes; i++) {
             final Endpoint addr = Utils.hostFromParts("127.0.0.1", 1234 + i);
             executorServiceMap.put(addr, Executors.newSingleThreadExecutor());
-            final FastPaxos paxos = new FastPaxos(addr, 1, numNodes, messagingClient, directBroadcaster,
+            endpoints.add(addr);
+        }
+        for (final Endpoint addr: endpoints) {
+            final FastPaxos paxos = new FastPaxos(addr, 1, endpoints, messagingClient,
                                                   scheduler, onDecide);
             instances.put(addr, paxos);
         }
@@ -407,34 +414,7 @@ public class PaxosTests {
     /**
      * Directly wires Paxos messages to the instances.
      */
-    private class DirectBroadcaster implements IBroadcaster {
-        private final Map<Endpoint, FastPaxos> paxosInstances;
-        private final IMessagingClient messagingClient;
-
-        DirectBroadcaster(final Map<Endpoint, FastPaxos> paxosInstances,
-                          final IMessagingClient messagingClient) {
-            this.paxosInstances = paxosInstances;
-            this.messagingClient = messagingClient;
-        }
-
-        @Override
-        public List<ListenableFuture<RapidResponse>> broadcast(final RapidRequest rapidRequest) {
-            if (!messageTypeToDrop.contains(rapidRequest.getContentCase())) {
-                paxosInstances.forEach((k, v) -> messagingClient.sendMessage(k, rapidRequest));
-            }
-            return Collections.emptyList();
-        }
-
-        @Override
-        public void setMembership(final List<Endpoint> recipients) {
-            throw new UnsupportedOperationException();
-        }
-    }
-
-    /**
-     * Directly wires Paxos messages to the instances.
-     */
-    private static class DirectMessagingClient implements IMessagingClient {
+    private class DirectMessagingClient implements IMessagingClient {
         private final Map<Endpoint, FastPaxos> paxosInstances;
         private final Map<Endpoint, ExecutorService> executors;
 
@@ -452,7 +432,16 @@ public class PaxosTests {
 
         @Override
         public ListenableFuture<RapidResponse> sendMessageBestEffort(final Endpoint remote, final RapidRequest msg) {
-            throw new UnsupportedOperationException();
+            return sendMessage(remote, msg);
+        }
+
+        @Override
+        public List<ListenableFuture<RapidResponse>> bestEffortBroadcast(final List<Endpoint> endpoints,
+                                                                         final RapidRequest msg) {
+            if (!messageTypeToDrop.contains(msg.getContentCase())) {
+                paxosInstances.forEach((k, v) -> sendMessage(k, msg));
+            }
+            return Collections.emptyList();
         }
 
         @Override
@@ -474,17 +463,6 @@ public class PaxosTests {
 
         @Override
         public void shutdown() {
-        }
-    }
-
-    private static class NoOpBroadcaster implements IBroadcaster {
-        @Override
-        public List<ListenableFuture<RapidResponse>> broadcast(final RapidRequest rapidRequest) {
-            return Collections.singletonList(Futures.immediateFuture(null));
-        }
-
-        @Override
-        public void setMembership(final List<Endpoint> recipients) {
         }
     }
 
