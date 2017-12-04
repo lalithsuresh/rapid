@@ -15,6 +15,7 @@ package com.vrg.rapid.monitoring.impl;
 
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
+import com.vrg.rapid.Utils;
 import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.monitoring.ILinkFailureDetectorFactory;
 import com.vrg.rapid.pb.Endpoint;
@@ -79,7 +80,9 @@ public class PingPongFailureDetector implements Runnable {
             notifier.run();
         }
         else {
-            LOG.trace("{} sending probe to {}", address, monitoree);
+            if (LOG.isTraceEnabled()) {
+                LOG.trace("{} sending probe to {}", Utils.loggable(address), Utils.loggable(monitoree));
+            }
             Futures.addCallback(rpcClient.sendMessageBestEffort(monitoree, probeMessage), probeCallback);
         }
     }
@@ -115,13 +118,18 @@ public class PingPongFailureDetector implements Runnable {
 
         // Executed at monitor
         private void handleProbeOnSuccess() {
-            LOG.trace("handleProbeOnSuccess at {} from {}", address, monitoree);
+            if (LOG.isTraceEnabled()) {
+                LOG.trace("handleProbeOnSuccess at {} from {}", Utils.loggable(address), Utils.loggable(monitoree));
+            }
         }
 
         // Executed at monitor
         private void handleProbeOnFailure(final Throwable throwable) {
             failureCount.incrementAndGet();
-            LOG.trace("handleProbeOnFailure at {} from {}: {}", address, monitoree, throwable.getLocalizedMessage());
+            if (LOG.isTraceEnabled()) {
+                LOG.trace("handleProbeOnFailure at {} from {}: {}", Utils.loggable(address), Utils.loggable(monitoree),
+                        throwable.getLocalizedMessage());
+            }
         }
     }
 

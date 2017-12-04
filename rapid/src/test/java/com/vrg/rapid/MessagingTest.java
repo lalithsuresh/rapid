@@ -481,8 +481,11 @@ public class MessagingTest {
         tcpServer.start();
         tcpServer.setMembershipService(service);
         final RapidRequest request = Utils.toRapidRequest(ProbeMessage.getDefaultInstance());
-        final RapidResponse response = tcpClient.sendMessage(serverAddr, request).get();
-        assertNotNull(response);
+        try {
+            final RapidResponse response = tcpClient.sendMessageBestEffort(serverAddr, request).get();
+            assertNotNull(response);
+        } catch (final ExecutionException ignored) {
+        }
         tcpClient.shutdown();
         tcpServer.shutdown();
     }

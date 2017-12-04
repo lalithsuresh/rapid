@@ -36,7 +36,7 @@ class RapidRunner {
             throws IOException, InterruptedException {
         this.listenAddress = listenAddress;
         final Settings settings = new Settings();
-        settings.setGrpcJoinTimeoutMs(20000);
+        settings.setGrpcJoinTimeoutMs(5000);
         final Endpoint endpoint = Endpoint.newBuilder().setHostname(listenAddress.getHost())
                                                        .setPort(listenAddress.getPort()).build();
         final SharedResources resources = new SharedResources(endpoint);

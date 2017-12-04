@@ -39,7 +39,7 @@ public class RapidNodeRunnerTest extends AbstractMultiJVMTest {
 
     @Test
     public void runAndAssertMultipleNodes() throws Exception {
-        final int numNodes = 100;
+        final int numNodes = 60;
         final RapidNodeRunner seed =
                 createRapidInstance("127.0.0.1:1234", "127.0.0.1:1234",
                                     "testRole", "Rapid")

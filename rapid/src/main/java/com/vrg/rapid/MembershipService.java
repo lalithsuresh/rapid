@@ -348,6 +348,7 @@ public final class MembershipService {
     private void decideViewChange(final List<Endpoint> proposal) {
         // The first step is to disable our failure detectors in anticipation of new ones to be created.
         cancelFailureDetectorJobs();
+        System.out.println(Thread.currentThread());
 
         final List<NodeStatusChange> statusChanges = new ArrayList<>(proposal.size());
         synchronized (membershipUpdateLock) {

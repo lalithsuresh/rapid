@@ -40,7 +40,7 @@ public interface IMessagingClient {
      *
      * @param endpoints Remote hosts to send the message to
      * @param msg       Message to send
-     * @return A future that returns a RapidResponse if the call was successful.
+     * @return A list of futures that returns a RapidResponse each.
      */
     @CanIgnoreReturnValue
     default List<ListenableFuture<RapidResponse>> bestEffortBroadcast(final List<Endpoint> endpoints,

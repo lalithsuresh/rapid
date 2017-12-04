@@ -31,7 +31,7 @@ import java.util.UUID;
 /**
  * Utility methods to convert protobuf types
  */
-final class Utils {
+public final class Utils {
 
     private Utils() {
     }
@@ -92,7 +92,7 @@ final class Utils {
      * @param <T> Any protobuf generated type
      * @return a Loggable instance which wraps the protobuf object.
      */
-    static <T extends GeneratedMessageV3> Loggable loggable(final T object) {
+    public static <T extends GeneratedMessageV3> Loggable loggable(final T object) {
         return new Loggable<>(object);
     }
 
@@ -126,7 +126,7 @@ final class Utils {
      * @param object collection of protobuf objects
      * @return a Loggable instance which wraps the protobuf collection.
      */
-    static LoggableCollection loggable(final Collection<? extends GeneratedMessageV3> object) {
+    public static LoggableCollection loggable(final Collection<? extends GeneratedMessageV3> object) {
         return new LoggableCollection(object);
     }
 
