@@ -15,7 +15,8 @@ class StaticFailureDetector implements Runnable {
 
     private StaticFailureDetector(final Endpoint monitoree, final Runnable notifier,
                           final Set<Endpoint> blackList) {
-        this.monitoree = monitoree;
+        this.monitoree = monitoree.newBuilderForType().setHostname(monitoree.getHostname())
+                                                      .setPort(monitoree.getPort()).build();
         this.notifier = notifier;
         this.failedNodes = blackList;
     }

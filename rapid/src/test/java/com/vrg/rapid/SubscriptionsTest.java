@@ -204,7 +204,8 @@ public class SubscriptionsTest {
             final List<NodeStatusChange> lastNotification = callbacks.get(i).getNotificationLog().get(numNodes - i);
             assertEquals(1, lastNotification.size());
             assertEquals(LinkStatus.DOWN, lastNotification.get(0).getStatus());
-            assertEquals(seedEndpoint, lastNotification.get(0).getEndpoint());
+            assertEquals(seedEndpoint.getHostname(), lastNotification.get(0).getEndpoint().getHostname());
+            assertEquals(seedEndpoint.getPort(), lastNotification.get(0).getEndpoint().getPort());
 
             // Now verify metadata
             final Metadata metadata = lastNotification.get(0).getMetadata();

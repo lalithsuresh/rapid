@@ -40,7 +40,6 @@ import javax.annotation.concurrent.NotThreadSafe;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
@@ -78,9 +77,7 @@ public final class MembershipService {
     private final Map<Endpoint, LinkedBlockingDeque<SettableFuture<RapidResponse>>> joinersToRespondTo =
             new HashMap<>();
     private final Map<Endpoint, NodeId> joinerUuid = new HashMap<>();
-    private final Map<Endpoint, Metadata> joinerMetadata = new HashMap<>();
     private final IMessagingClient messagingClient;
-    private final MetadataManager metadataManager;
 
     // Event subscriptions
     private final Map<ClusterEvents, List<BiConsumer<Long, List<NodeStatusChange>>>> subscriptions;
@@ -113,21 +110,19 @@ public final class MembershipService {
                       final ISettings settings, final IMessagingClient messagingClient,
                       final ILinkFailureDetectorFactory linkFailureDetector) {
         this(myAddr, watermarkBuffer, membershipView, sharedResources, settings, messagingClient, linkFailureDetector,
-             Collections.emptyMap(), new EnumMap<>(ClusterEvents.class));
+             new EnumMap<>(ClusterEvents.class));
     }
 
     MembershipService(final Endpoint myAddr, final WatermarkBuffer watermarkBuffer,
                       final MembershipView membershipView, final SharedResources sharedResources,
                       final ISettings settings, final IMessagingClient messagingClient,
-                      final ILinkFailureDetectorFactory linkFailureDetector, final Map<Endpoint, Metadata> metadataMap,
+                      final ILinkFailureDetectorFactory linkFailureDetector,
                       final Map<ClusterEvents, List<BiConsumer<Long, List<NodeStatusChange>>>> subscriptions) {
         this.myAddr = myAddr;
         this.settings = settings;
         this.membershipView = membershipView;
         this.watermarkBuffer = watermarkBuffer;
         this.sharedResources = sharedResources;
-        this.metadataManager = new MetadataManager();
-        this.metadataManager.addMetadata(metadataMap);
         this.messagingClient = messagingClient;
         this.subscriptions = subscriptions;
         this.fdFactory = linkFailureDetector;
@@ -236,7 +231,6 @@ public final class MembershipService {
                         .setConfigurationId(currentConfiguration)
                         .setNodeId(joinMessage.getNodeId())
                         .addAllRingNumber(joinMessage.getRingNumberList())
-                        .setMetadata(joinMessage.getMetadata())
                         .build();
                 enqueueLinkUpdateMessage(msg);
             } else {
@@ -358,18 +352,13 @@ public final class MembershipService {
                 // this ties us to just two states a node can be in.
                 if (isPresent) {
                     membershipView.ringDelete(node);
-                    statusChanges.add(new NodeStatusChange(node, LinkStatus.DOWN, metadataManager.get(node)));
-                    metadataManager.removeNode(node);
+                    statusChanges.add(new NodeStatusChange(node, LinkStatus.DOWN, node.getTags()));
                 }
                 else {
                     assert joinerUuid.containsKey(node);
                     final NodeId nodeId = joinerUuid.remove(node);
                     membershipView.ringAdd(node, nodeId);
-                    final Metadata metadata = joinerMetadata.remove(node);
-                    if (metadata.getMetadataCount() > 0) {
-                        metadataManager.addMetadata(Collections.singletonMap(node, metadata));
-                    }
-                    statusChanges.add(new NodeStatusChange(node, LinkStatus.UP, metadata));
+                    statusChanges.add(new NodeStatusChange(node, LinkStatus.UP, node.getTags()));
                 }
             }
         }
@@ -478,17 +467,6 @@ public final class MembershipService {
 
 
     /**
-     * Gets the list of endpoints currently in the membership view.
-     *
-     * @return list of endpoints in the membership view
-     */
-    Map<String, Metadata> getMetadata() {
-        synchronized (membershipUpdateLock) {
-            return metadataManager.getAllMetadata();
-        }
-    }
-
-    /**
      * Shuts down all the executors.
      */
     void shutdown() {
@@ -520,7 +498,7 @@ public final class MembershipService {
         final List<NodeStatusChange> list = new ArrayList<>(proposal.size());
         for (final Endpoint node: proposal) {
             final LinkStatus status = membershipView.isHostPresent(node) ? LinkStatus.DOWN : LinkStatus.UP;
-            list.add(new NodeStatusChange(node, status, metadataManager.get(node)));
+            list.add(new NodeStatusChange(node, status, node.getTags()));
         }
         return list;
     }
@@ -534,7 +512,7 @@ public final class MembershipService {
         final List<NodeStatusChange> list = new ArrayList<>(membershipView.getMembershipSize());
         for (final Endpoint node: membershipView.getRing(0)) {
             final LinkStatus status = LinkStatus.UP;
-            list.add(new NodeStatusChange(node, status, metadataManager.get(node)));
+            list.add(new NodeStatusChange(node, status, node.getTags()));
         }
         return list;
     }
@@ -608,7 +586,6 @@ public final class MembershipService {
         if (linkUpdateMessage.getLinkStatus() == LinkStatus.UP) {
             // Both the UUID and Metadata are saved only after the node is done being added.
             joinerUuid.put(destination, linkUpdateMessage.getNodeId());
-            joinerMetadata.put(destination, linkUpdateMessage.getMetadata());
         }
         return true;
     }
@@ -657,7 +634,6 @@ public final class MembershipService {
                 .setConfigurationId(configuration.getConfigurationId())
                 .addAllEndpoints(configuration.endpoints)
                 .addAllIdentifiers(configuration.nodeIds)
-                .putAllClusterMetadata(metadataManager.getAllMetadata())
                 .build();
 
         // Send out responses to all the nodes waiting to join.

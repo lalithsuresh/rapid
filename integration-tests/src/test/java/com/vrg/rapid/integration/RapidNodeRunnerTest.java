@@ -56,11 +56,10 @@ public class RapidNodeRunnerTest extends AbstractMultiJVMTest {
             }
         });
         nodes.add(seed);
-        Thread.sleep(50000);
+        Thread.sleep(10000);
         for (final RapidNodeRunner runner: nodes) {
             final int search = runner.searchFile("Cluster size " + numNodes);
             assertTrue("Instances: " + search + " " + runner,search > 0);
         }
-        Thread.sleep(1000000);
     }
 }

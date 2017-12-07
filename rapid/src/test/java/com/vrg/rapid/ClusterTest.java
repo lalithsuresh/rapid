@@ -17,6 +17,7 @@ import com.google.common.net.HostAndPort;
 import com.vrg.rapid.pb.Endpoint;
 import com.google.protobuf.ByteString;
 import com.vrg.rapid.messaging.impl.GrpcClient;
+import com.vrg.rapid.pb.Metadata;
 import com.vrg.rapid.pb.RapidRequest;
 import org.junit.After;
 import org.junit.Before;
@@ -29,12 +30,14 @@ import javax.annotation.Nullable;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -42,6 +45,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -655,7 +659,11 @@ public class ClusterTest {
             assertEquals(cluster.toString(), expectedSize, cluster.getMemberlist().size());
             assertEquals(cluster.getMemberlist(), any);
             if (addMetadata) {
-                assertEquals(cluster.toString(), expectedSize, cluster.getClusterMetadata().size());
+                final List<Metadata> metadata = cluster.getMemberlist().stream()
+                                                       .map(Endpoint::getTags)
+                                                       .filter(m -> m.getMetadataCount() > 0)
+                                                       .collect(Collectors.toList());
+                assertEquals(cluster.toString(), expectedSize, metadata.size());
             }
         }
     }
@@ -668,7 +676,11 @@ public class ClusterTest {
      */
     private void verifyClusterMetadata(final int expectedSize) {
         for (final Cluster cluster : instances.values()) {
-            assertEquals(cluster.getClusterMetadata().size(), expectedSize);
+            final List<Metadata> metadata = cluster.getMemberlist().stream()
+                    .map(Endpoint::getTags)
+                    .filter(m -> m.getMetadataCount() > 0)
+                    .collect(Collectors.toList());
+            assertEquals(metadata.size(), expectedSize);
         }
     }
 

@@ -231,7 +231,7 @@ public class GrpcClient implements IMessagingClient {
 
         if (settings.getUseInProcessTransport()) {
             channel = InProcessChannelBuilder
-                    .forName(remote.toString())
+                    .forName(remote.getHostname() + ":" + remote.getPort())
                     .executor(grpcExecutor)
                     .usePlaintext(true)
                     .idleTimeout(10, TimeUnit.SECONDS)

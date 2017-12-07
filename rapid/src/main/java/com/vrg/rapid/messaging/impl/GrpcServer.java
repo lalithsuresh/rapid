@@ -129,7 +129,8 @@ public class GrpcServer extends MembershipServiceGrpc.MembershipServiceImplBase 
     @Override
     public void start() throws IOException {
         if (useInProcessServer) {
-            final ServerBuilder builder = InProcessServerBuilder.forName(address.toString());
+            final String serverName = address.getHostname() + ":" + address.getPort();
+            final ServerBuilder builder = InProcessServerBuilder.forName(serverName);
             server = builder.addService(this)
                     .executor(grpcExecutor)
                     .compressorRegistry(CompressorRegistry.getDefaultInstance())

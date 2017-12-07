@@ -14,6 +14,7 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
+import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.protobuf.ByteString;
@@ -106,14 +107,6 @@ public final class Cluster {
         return membershipService.getMembershipSize();
     }
 
-    /**
-     * Returns the list of endpoints currently in the membership set.
-     *
-     * @return list of endpoints in the membership set
-     */
-    public Map<String, Metadata> getClusterMetadata() {
-        return membershipService.getMetadata();
-    }
 
     /**
      * Register callbacks for cluster events.
@@ -137,9 +130,8 @@ public final class Cluster {
     }
 
     public static class Builder {
-        private final Endpoint listenAddress;
+        private Endpoint listenAddress;
         @Nullable private ILinkFailureDetectorFactory linkFailureDetector = null;
-        private Metadata metadata = Metadata.getDefaultInstance();
         private Settings settings = new Settings();
         private final Map<ClusterEvents, List<BiConsumer<Long, List<NodeStatusChange>>>> subscriptions =
                 new EnumMap<>(ClusterEvents.class);
@@ -178,7 +170,8 @@ public final class Cluster {
         @ExperimentalApi
         public Builder setMetadata(final Map<String, ByteString> metadata) {
             Objects.requireNonNull(metadata);
-            this.metadata = Metadata.newBuilder().putAllMetadata(metadata).build();
+            final Metadata tags = Metadata.newBuilder().putAllMetadata(metadata).build();
+            this.listenAddress = this.listenAddress.toBuilder().setTags(tags).build();
             return this;
         }
 
@@ -244,12 +237,9 @@ public final class Cluster {
             linkFailureDetector = linkFailureDetector != null ? linkFailureDetector
                     : new PingPongFailureDetector.Factory(listenAddress, messagingClient);
 
-            final Map<Endpoint, Metadata> metadataMap = metadata.getMetadataCount() > 0
-                                                    ? Collections.singletonMap(listenAddress, metadata)
-                                                    : Collections.emptyMap();
             final MembershipService membershipService = new MembershipService(listenAddress, watermarkBuffer,
                                                             membershipView, sharedResources, settings, messagingClient,
-                                                            linkFailureDetector, metadataMap, subscriptions);
+                                                            linkFailureDetector, subscriptions);
             messagingServer.setMembershipService(membershipService);
             messagingServer.start();
             return new Cluster(messagingServer, membershipService, sharedResources, listenAddress);
@@ -399,7 +389,6 @@ public final class Cluster {
                 final JoinMessage msg = JoinMessage.newBuilder()
                         .setSender(listenAddress)
                         .setNodeId(currentIdentifier)
-                        .setMetadata(metadata)
                         .setConfigurationId(configurationToJoin)
                         .addAllRingNumber(entry.getValue()).build();
                 final RapidRequest request = Utils.toRapidRequest(msg);
@@ -420,10 +409,6 @@ public final class Cluster {
             // assemble a MembershipService object and start an RpcServer.
             final List<Endpoint> allEndpoints = response.getEndpointsList();
             final List<NodeId> identifiersSeen = response.getIdentifiersList();
-            final Map<Endpoint, Metadata> allMetadata = new HashMap<>();
-            for (final Map.Entry<String, Metadata> entry: response.getClusterMetadataMap().entrySet()) {
-                allMetadata.put(Utils.hostFromString(entry.getKey()), entry.getValue());
-            }
 
             assert !identifiersSeen.isEmpty();
             assert !allEndpoints.isEmpty();
@@ -435,7 +420,7 @@ public final class Cluster {
                                                   : new PingPongFailureDetector.Factory(listenAddress, messagingClient);
             final MembershipService membershipService =
                     new MembershipService(listenAddress, watermarkBuffer, membershipViewFinal, sharedResources,
-                                          settings, messagingClient, linkFailureDetector, allMetadata, subscriptions);
+                                          settings, messagingClient, linkFailureDetector, subscriptions);
             messagingServer.setMembershipService(membershipService);
             if (LOG.isTraceEnabled()) {
                 LOG.trace("{} has monitors {}", listenAddress,
