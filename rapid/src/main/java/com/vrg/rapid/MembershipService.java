@@ -348,7 +348,6 @@ public final class MembershipService {
     private void decideViewChange(final List<Endpoint> proposal) {
         // The first step is to disable our failure detectors in anticipation of new ones to be created.
         cancelFailureDetectorJobs();
-        System.out.println(Thread.currentThread());
 
         final List<NodeStatusChange> statusChanges = new ArrayList<>(proposal.size());
         synchronized (membershipUpdateLock) {
@@ -405,7 +404,9 @@ public final class MembershipService {
      * Invoked by monitors of a node for failure detection.
      */
     private ListenableFuture<RapidResponse> handleMessage(final ProbeMessage probeMessage) {
-        LOG.trace("handleProbeMessage from {}", Utils.loggable(probeMessage.getSender()));
+        if (LOG.isTraceEnabled()) {
+            LOG.trace("handleProbeMessage from {}", Utils.loggable(probeMessage.getSender()));
+        }
         return Futures.immediateFuture(PROBE_RESPONSE);
     }
 

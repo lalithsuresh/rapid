@@ -35,8 +35,6 @@ import com.vrg.rapid.pb.RapidResponse;
 import io.grpc.Channel;
 import io.grpc.CompressorRegistry;
 import io.grpc.DecompressorRegistry;
-import io.grpc.Status;
-import io.grpc.StatusRuntimeException;
 import io.grpc.inprocess.InProcessChannelBuilder;
 import io.grpc.internal.ManagedChannelImpl;
 import io.grpc.netty.NettyChannelBuilder;
@@ -178,10 +176,6 @@ public class GrpcClient implements IMessagingClient {
                                         final Endpoint remote,
                                         final SettableFuture<T> signal,
                                         final int retries) {
-        if (isShuttingDown.get() || Thread.currentThread().isInterrupted()) {
-            signal.setException(new ShuttingDownException("GrpcClient is shutting down or has been interrupted"));
-            return;
-        }
         final ListenableFuture<T> callFuture = call.get();
         Futures.addCallback(callFuture, new FutureCallback<T>() {
             @Override
@@ -207,10 +201,10 @@ public class GrpcClient implements IMessagingClient {
                                    final Throwable t) {
         // GRPC returns an UNAVAILABLE error when the TCP connection breaks and there is no way to recover
         // from it . We therefore shutdown the channel, and subsequent calls will try to re-establish it.
-        if (t instanceof StatusRuntimeException
-            && ((StatusRuntimeException) t).getStatus().getCode().equals(Status.Code.UNAVAILABLE)) {
-            channelMap.invalidate(remote);
-        }
+//        if (t instanceof StatusRuntimeException
+//            && ((StatusRuntimeException) t).getStatus().getCode().equals(Status.Code.UNAVAILABLE)) {
+//            channelMap.invalidate(remote);
+//        }
 
         if (retries > 0) {
             startCallWithRetry(code, remote, future, retries - 1);

@@ -28,6 +28,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -66,7 +67,7 @@ public class SharedResources {
      */
     public synchronized ScheduledExecutorService getBackgroundExecutor() {
         if (backgroundExecutor == null) {
-            backgroundExecutor = Executors.newSingleThreadScheduledExecutor(newNamedThreadFactory("bg", address));
+            backgroundExecutor = newScheduledNamedThreadPool(DEFAULT_THREADS, "bg", address);
         }
         return backgroundExecutor;
     }
@@ -106,7 +107,7 @@ public class SharedResources {
      */
     synchronized ScheduledExecutorService getScheduledTasksExecutor() {
         if (scheduledTasksExecutor == null) {
-            scheduledTasksExecutor = Executors.newSingleThreadScheduledExecutor(newNamedThreadFactory("msbg", address));
+            scheduledTasksExecutor = newScheduledNamedThreadPool(DEFAULT_THREADS, "msbg", address);
         }
         return scheduledTasksExecutor;
     }
@@ -160,6 +161,18 @@ public class SharedResources {
         tpe.setRejectedExecutionHandler(new BackgroundExecutorRejectionHandler());
         return tpe;
     }
+
+    /**
+     * STPE with a rejected execution handler specified.
+     */
+    private ScheduledThreadPoolExecutor newScheduledNamedThreadPool(final int threads, final String poolName,
+                                                           final Endpoint address) {
+        final ScheduledThreadPoolExecutor tpe = new ScheduledThreadPoolExecutor(threads,
+                newNamedThreadFactory(poolName, address));
+        tpe.setRejectedExecutionHandler(new BackgroundExecutorRejectionHandler());
+        return tpe;
+    }
+
 
     static class BackgroundExecutorRejectionHandler implements RejectedExecutionHandler {
         @Override
