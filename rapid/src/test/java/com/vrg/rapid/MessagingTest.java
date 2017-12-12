@@ -13,6 +13,7 @@
 
 package com.vrg.rapid;
 
+import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.vrg.rapid.messaging.IMessagingClient;
@@ -233,6 +234,7 @@ public class MessagingTest {
                     .addAllRingNumber(entry.getValue()).build());
             final ListenableFuture<RapidResponse> call = joinerClient.sendMessage(entry.getKey(), msg);
             responseFutures.add(call);
+            Futures.addCallback(call, new ResponseCallback());
         }
         final List<JoinResponse> joinResponses = Futures.successfulAsList(responseFutures).get()
                 .stream().filter(Objects::nonNull).map(RapidResponse::getJoinResponse).collect(Collectors.toList());
@@ -552,5 +554,17 @@ public class MessagingTest {
                                                             .setSender(clientAddr)
                                                             .setNodeId(identifier).build());
         return client.sendMessage(serverAddr, preJoinMessage).get().getJoinResponse();
+    }
+
+    private static class ResponseCallback implements FutureCallback<RapidResponse> {
+
+        @Override
+        public void onSuccess(@Nullable final RapidResponse o) {
+        }
+
+        @Override
+        public void onFailure(final Throwable throwable) {
+            throwable.printStackTrace();
+        }
     }
 }

@@ -14,7 +14,6 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
-import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.protobuf.ByteString;
@@ -393,7 +392,7 @@ public final class Cluster {
                         .addAllRingNumber(entry.getValue()).build();
                 final RapidRequest request = Utils.toRapidRequest(msg);
                 LOG.info("{} is sending a join-p2 to {} for config {}",
-                        listenAddress, entry.getKey(), configurationToJoin);
+                        Utils.loggable(listenAddress), Utils.loggable(entry.getKey()), configurationToJoin);
                 final ListenableFuture<RapidResponse> call = messagingClient.sendMessage(entry.getKey(), request);
                 responseFutures.add(call);
             }

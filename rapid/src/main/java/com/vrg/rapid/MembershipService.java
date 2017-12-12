@@ -25,7 +25,6 @@ import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
 import com.vrg.rapid.pb.LinkStatus;
 import com.vrg.rapid.pb.LinkUpdateMessage;
-import com.vrg.rapid.pb.Metadata;
 import com.vrg.rapid.pb.NodeId;
 import com.vrg.rapid.pb.PreJoinMessage;
 import com.vrg.rapid.pb.ProbeMessage;
