@@ -3,4 +3,10 @@
 Rapid is a distributed membership service. It allows distributed processes to easily form clusters 
 and notifies processes when the membership changes.
 
+To build Rapid, enter the following command in the top-level directory:
+
+```
+$: mvn package
+```
+
 API usage examples are in rapid-examples/.
