@@ -108,8 +108,10 @@ class FastPaxos {
      */
     private void handleFastRoundProposal(final FastRoundPhase2bMessage proposalMessage) {
         if (proposalMessage.getConfigurationId() != configurationId) {
-            LOG.trace("Settings ID mismatch for proposal: current_config:{} proposal:{}", configurationId,
-                      TextFormat.shortDebugString(proposalMessage));
+            if (LOG.isTraceEnabled()) {
+                LOG.trace("Settings ID mismatch for proposal: current_config:{} proposal:{}", configurationId,
+                        TextFormat.shortDebugString(proposalMessage));
+            }
             return;
         }
 

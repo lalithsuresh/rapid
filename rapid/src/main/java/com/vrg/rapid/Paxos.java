@@ -109,11 +109,15 @@ class Paxos {
             rnd = phase1aMessage.getRank();
         }
         else {
-            LOG.trace("Rejecting prepareMessage from lower rank: ({}) ({})", Utils.loggable(rnd),
-                    Utils.loggable(phase1aMessage));
+            if (LOG.isTraceEnabled()) {
+                LOG.trace("Rejecting prepareMessage from lower rank: ({}) ({})", Utils.loggable(rnd),
+                        Utils.loggable(phase1aMessage));
+            }
             return;
         }
-        LOG.trace("Sending back vval:{} vrnd:{}", vval, TextFormat.shortDebugString(vrnd));
+        if (LOG.isTraceEnabled()) {
+            LOG.trace("Sending back vval:{} vrnd:{}", vval, TextFormat.shortDebugString(vrnd));
+        }
         final Phase1bMessage phase1bMessage = Phase1bMessage.newBuilder()
                                       .setConfigurationId(configurationId)
                                       .setRnd(rnd)
@@ -151,7 +155,7 @@ class Paxos {
             // selectProposalUsingCoordinator rule may execute multiple times with each additional phase1bMessage
             // being received, but we can enter the following if statement only once when a valid cval is identified.
             final List<Endpoint> chosenProposal = selectProposalUsingCoordinatorRule(phase1bMessages);
-            if (crnd.equals(phase1bMessage.getRnd()) && cval.size() == 0 && chosenProposal.size() > 0) {
+            if (crnd.equals(phase1bMessage.getRnd()) && cval.isEmpty() && !chosenProposal.isEmpty()) {
                 LOG.trace("Proposing: {}", Utils.loggable(chosenProposal));
                 cval = chosenProposal;
                 final Phase2aMessage phase2aMessage = Phase2aMessage.newBuilder()
@@ -320,7 +324,7 @@ class Paxos {
 
         @Override
         public void onFailure(final Throwable throwable) {
-            LOG.error("Received exception: " + throwable);
+            LOG.error("Received exception: {}", throwable);
         }
     }
 }

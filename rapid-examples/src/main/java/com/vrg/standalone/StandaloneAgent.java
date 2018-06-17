@@ -72,6 +72,7 @@ public class StandaloneAgent {
                     runners.add(runner);
                 } catch (final IOException | InterruptedException e) {
                     e.printStackTrace();
+                    Thread.currentThread().interrupt();
                 } finally {
                     latch.countDown();
                 }

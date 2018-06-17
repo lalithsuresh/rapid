@@ -441,7 +441,7 @@ public final class MembershipService {
             if (LOG.isDebugEnabled()) {
                 final int size = membershipView.getMembershipSize();
                 LOG.debug("Announcing EdgeFail event {subject:{}, observer:{}, config:{}, size:{}}",
-                        Utils.loggable(subject), configurationId, size);
+                        Utils.loggable(subject), Utils.loggable(myAddr), configurationId, size);
             }
             // Note: setUuid is deliberately missing here because it does not affect leaves.
             final AlertMessage msg = AlertMessage.newBuilder()

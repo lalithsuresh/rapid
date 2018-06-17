@@ -95,8 +95,8 @@ public class GrpcClient implements IMessagingClient {
                 .removalListener(RemovalListeners.asynchronous(removalListener, backgroundExecutor))
                 .build(new CacheLoader<Endpoint, Channel>() {
                     @Override
-                    public Channel load(final Endpoint Endpoint) throws Exception {
-                        return getChannel(Endpoint);
+                    public Channel load(final Endpoint endpoint) throws Exception {
+                        return getChannel(endpoint);
                     }
                 });
     }
@@ -134,6 +134,7 @@ public class GrpcClient implements IMessagingClient {
                 return callWithRetries(call, remote, 0);
             }).get();
         } catch (final InterruptedException | ExecutionException e) {
+            Thread.currentThread().interrupt();
             return Futures.immediateFailedFuture(e);
         }
     }
@@ -188,7 +189,7 @@ public class GrpcClient implements IMessagingClient {
 
             @Override
             public void onFailure(final Throwable throwable) {
-                LOG.trace("Retrying call {}");
+                LOG.trace("Retrying call to {} because of exception {}", remote, throwable);
                 handleFailure(call, remote, signal, retries, throwable);
             }
         }, backgroundExecutor);

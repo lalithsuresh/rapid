@@ -13,9 +13,6 @@ public final class Settings implements GrpcClient.ISettings, MembershipService.I
     private int grpcProbeTimeoutMs = GrpcClient.DEFAULT_GRPC_PROBE_TIMEOUT;
     private int failureDetectorIntervalInMs = MembershipService.DEFAULT_FAILURE_DETECTOR_INTERVAL_IN_MS;
 
-    public Settings() {
-    }
-
     /*
      * Settings from GrpcClient.ISettings
      */
