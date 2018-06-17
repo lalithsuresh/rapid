@@ -16,7 +16,7 @@ package com.vrg.rapid.monitoring.impl;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.vrg.rapid.messaging.IMessagingClient;
-import com.vrg.rapid.monitoring.ILinkFailureDetectorFactory;
+import com.vrg.rapid.monitoring.IEdgeFailureDetectorFactory;
 import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.NodeStatus;
 import com.vrg.rapid.pb.ProbeMessage;
@@ -124,7 +124,7 @@ public class PingPongFailureDetector implements Runnable {
         }
     }
 
-    public static class Factory implements ILinkFailureDetectorFactory {
+    public static class Factory implements IEdgeFailureDetectorFactory {
         private final Endpoint address;
         private final IMessagingClient messagingClient;
 

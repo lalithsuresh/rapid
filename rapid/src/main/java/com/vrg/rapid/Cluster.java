@@ -21,7 +21,7 @@ import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.messaging.IMessagingServer;
 import com.vrg.rapid.messaging.impl.GrpcClient;
 import com.vrg.rapid.messaging.impl.GrpcServer;
-import com.vrg.rapid.monitoring.ILinkFailureDetectorFactory;
+import com.vrg.rapid.monitoring.IEdgeFailureDetectorFactory;
 import com.vrg.rapid.monitoring.impl.PingPongFailureDetector;
 import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.JoinMessage;
@@ -138,7 +138,7 @@ public final class Cluster {
 
     public static class Builder {
         private final Endpoint listenAddress;
-        @Nullable private ILinkFailureDetectorFactory linkFailureDetector = null;
+        @Nullable private IEdgeFailureDetectorFactory edgeFailureDetector = null;
         private Metadata metadata = Metadata.getDefaultInstance();
         private Settings settings = new Settings();
         private final Map<ClusterEvents, List<BiConsumer<Long, List<NodeStatusChange>>>> subscriptions =
@@ -185,12 +185,12 @@ public final class Cluster {
         /**
          * Set a link failure detector to use for observers to watch their subjects.
          *
-         * @param linkFailureDetector A link failure detector used as input for Rapid's failure detection.
+         * @param edgeFailureDetector A link failure detector used as input for Rapid's failure detection.
          */
         @ExperimentalApi
-        public Builder setLinkFailureDetectorFactory(final ILinkFailureDetectorFactory linkFailureDetector) {
-            Objects.requireNonNull(linkFailureDetector);
-            this.linkFailureDetector = linkFailureDetector;
+        public Builder setEdgeFailureDetectorFactory(final IEdgeFailureDetectorFactory edgeFailureDetector) {
+            Objects.requireNonNull(edgeFailureDetector);
+            this.edgeFailureDetector = edgeFailureDetector;
             return this;
         }
 
@@ -242,7 +242,7 @@ public final class Cluster {
                     Collections.singletonList(listenAddress));
             final AlmostEverywhereAgreementFilter almostEverywhereAgreementFilter =
                     new AlmostEverywhereAgreementFilter(K, H, L);
-            linkFailureDetector = linkFailureDetector != null ? linkFailureDetector
+            edgeFailureDetector = edgeFailureDetector != null ? edgeFailureDetector
                     : new PingPongFailureDetector.Factory(listenAddress, messagingClient);
 
             final Map<Endpoint, Metadata> metadataMap = metadata.getMetadataCount() > 0
@@ -250,7 +250,7 @@ public final class Cluster {
                                                     : Collections.emptyMap();
             final MembershipService membershipService = new MembershipService(listenAddress,
                                             almostEverywhereAgreementFilter, membershipView, sharedResources, settings,
-                                            messagingClient, linkFailureDetector, metadataMap, subscriptions);
+                                            messagingClient, edgeFailureDetector, metadataMap, subscriptions);
             messagingServer.setMembershipService(membershipService);
             messagingServer.start();
             return new Cluster(messagingServer, membershipService, sharedResources, listenAddress);
@@ -433,11 +433,11 @@ public final class Cluster {
                     new MembershipView(K, identifiersSeen, allEndpoints);
             final AlmostEverywhereAgreementFilter almostEverywhereAgreementFilter =
                     new AlmostEverywhereAgreementFilter(K, H, L);
-            linkFailureDetector = linkFailureDetector != null ? linkFailureDetector
+            edgeFailureDetector = edgeFailureDetector != null ? edgeFailureDetector
                                                   : new PingPongFailureDetector.Factory(listenAddress, messagingClient);
             final MembershipService membershipService =
                     new MembershipService(listenAddress, almostEverywhereAgreementFilter, membershipViewFinal,
-                           sharedResources, settings, messagingClient, linkFailureDetector, allMetadata, subscriptions);
+                           sharedResources, settings, messagingClient, edgeFailureDetector, allMetadata, subscriptions);
             messagingServer.setMembershipService(membershipService);
             if (LOG.isTraceEnabled()) {
                 LOG.trace("{} has observers {}", listenAddress,

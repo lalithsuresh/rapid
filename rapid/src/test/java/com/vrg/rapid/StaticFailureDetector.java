@@ -1,7 +1,7 @@
 package com.vrg.rapid;
 
 import com.vrg.rapid.pb.Endpoint;
-import com.vrg.rapid.monitoring.ILinkFailureDetectorFactory;
+import com.vrg.rapid.monitoring.IEdgeFailureDetectorFactory;
 
 import java.util.Set;
 
@@ -31,7 +31,7 @@ class StaticFailureDetector implements Runnable {
         }
     }
 
-    static class Factory implements ILinkFailureDetectorFactory {
+    static class Factory implements IEdgeFailureDetectorFactory {
         private final Set<Endpoint> blackList;
 
         Factory(final Set<Endpoint> blackList) {

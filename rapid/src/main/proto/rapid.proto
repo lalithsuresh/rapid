@@ -23,7 +23,7 @@ message RapidRequest
    oneof content {
         PreJoinMessage preJoinMessage = 1;
         JoinMessage joinMessage = 2;
-        BatchedLinkUpdateMessage batchedLinkUpdateMessage = 3;
+        BatchedAlertMessage batchedAlertMessage = 3;
         ProbeMessage probeMessage = 4;
         FastRoundPhase2bMessage fastRoundPhase2bMessage = 5;
         Phase1aMessage phase1aMessage = 6;
@@ -88,26 +88,26 @@ enum JoinStatusCode {
     MEMBERSHIP_REJECTED = 4;
 };
 
-// ******* LinkUpdate messages *******
+// ******* Alert messages *******
 
-message BatchedLinkUpdateMessage
+message BatchedAlertMessage
 {
     Endpoint sender = 1;
-    repeated LinkUpdateMessage messages = 3;
+    repeated AlertMessage messages = 3;
 }
 
-message LinkUpdateMessage
+message AlertMessage
 {
-    Endpoint linkSrc = 1;
-    Endpoint linkDst = 2;
-    LinkStatus linkStatus = 3;
+    Endpoint edgeSrc = 1;
+    Endpoint edgeDst = 2;
+    EdgeStatus edgeStatus = 3;
     int64 configurationId = 4;
     repeated int32 ringNumber = 5;
     NodeId nodeId = 6;                      // Required only for join protocol
     Metadata metadata = 7;                // Required only for join protocol
 }
 
-enum LinkStatus {
+enum EdgeStatus {
     UP = 0;
     DOWN = 1;
 };

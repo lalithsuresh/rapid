@@ -32,7 +32,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
- * Tests for a standalone MembershipView object (no watermark buffer).
+ * Tests for a standalone MembershipView object.
  */
 public class MembershipViewTest {
     private static final int K = 10;

@@ -734,7 +734,7 @@ public class ClusterTest {
         Cluster.Builder builder = new Cluster.Builder(endpoint).useSettings(settings);
         if (useStaticFd) {
             final StaticFailureDetector.Factory fdFactory = new StaticFailureDetector.Factory(new HashSet<>());
-            builder = builder.setLinkFailureDetectorFactory(fdFactory);
+            builder = builder.setEdgeFailureDetectorFactory(fdFactory);
             staticFds.put(endpoint, fdFactory);
         }
         if (serverInterceptors.containsKey(endpoint)) {

@@ -3,7 +3,7 @@ package com.vrg.rapid;
 import com.google.common.net.HostAndPort;
 import com.google.protobuf.GeneratedMessageV3;
 import com.google.protobuf.TextFormat;
-import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
+import com.vrg.rapid.pb.BatchedAlertMessage;
 import com.vrg.rapid.pb.ConsensusResponse;
 import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.FastRoundPhase2bMessage;
@@ -142,8 +142,8 @@ final class Utils {
         return RapidRequest.newBuilder().setJoinMessage(msg).build();
     }
 
-    static RapidRequest toRapidRequest(final BatchedLinkUpdateMessage msg) {
-        return RapidRequest.newBuilder().setBatchedLinkUpdateMessage(msg).build();
+    static RapidRequest toRapidRequest(final BatchedAlertMessage msg) {
+        return RapidRequest.newBuilder().setBatchedAlertMessage(msg).build();
     }
 
     static RapidRequest toRapidRequest(final ProbeMessage msg) {

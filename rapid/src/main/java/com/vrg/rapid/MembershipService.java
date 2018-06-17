@@ -18,14 +18,14 @@ import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
 import com.vrg.rapid.messaging.IBroadcaster;
 import com.vrg.rapid.messaging.IMessagingClient;
-import com.vrg.rapid.monitoring.ILinkFailureDetectorFactory;
-import com.vrg.rapid.pb.BatchedLinkUpdateMessage;
+import com.vrg.rapid.monitoring.IEdgeFailureDetectorFactory;
+import com.vrg.rapid.pb.BatchedAlertMessage;
 import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
-import com.vrg.rapid.pb.LinkStatus;
-import com.vrg.rapid.pb.LinkUpdateMessage;
+import com.vrg.rapid.pb.EdgeStatus;
+import com.vrg.rapid.pb.AlertMessage;
 import com.vrg.rapid.pb.Metadata;
 import com.vrg.rapid.pb.NodeId;
 import com.vrg.rapid.pb.PreJoinMessage;
@@ -93,15 +93,15 @@ public final class MembershipService {
     @GuardedBy("batchSchedulerLock")
     private long lastEnqueueTimestamp = -1;    // Timestamp
     @GuardedBy("batchSchedulerLock")
-    private final LinkedBlockingQueue<LinkUpdateMessage> sendQueue = new LinkedBlockingQueue<>();
+    private final LinkedBlockingQueue<AlertMessage> sendQueue = new LinkedBlockingQueue<>();
     private final Lock batchSchedulerLock = new ReentrantLock();
     private final ScheduledExecutorService backgroundTasksExecutor;
-    private final ScheduledFuture<?> linkUpdateBatcherJob;
+    private final ScheduledFuture<?> alertBatcherJob;
     private final List<ScheduledFuture<?>> failureDetectorJobs;
     private final SharedResources sharedResources;
 
     // Failure detector
-    private final ILinkFailureDetectorFactory fdFactory;
+    private final IEdgeFailureDetectorFactory fdFactory;
 
     // Fields used by consensus protocol
     private boolean announcedProposal = false;
@@ -112,15 +112,15 @@ public final class MembershipService {
     MembershipService(final Endpoint myAddr, final AlmostEverywhereAgreementFilter almostEverywhereAgreementFilter,
                       final MembershipView membershipView, final SharedResources sharedResources,
                       final ISettings settings, final IMessagingClient messagingClient,
-                      final ILinkFailureDetectorFactory linkFailureDetector) {
+                      final IEdgeFailureDetectorFactory edgeFailureDetector) {
         this(myAddr, almostEverywhereAgreementFilter, membershipView, sharedResources, settings, messagingClient,
-             linkFailureDetector, Collections.emptyMap(), new EnumMap<>(ClusterEvents.class));
+             edgeFailureDetector, Collections.emptyMap(), new EnumMap<>(ClusterEvents.class));
     }
 
     MembershipService(final Endpoint myAddr, final AlmostEverywhereAgreementFilter almostEverywhereAgreementFilter,
                       final MembershipView membershipView, final SharedResources sharedResources,
                       final ISettings settings, final IMessagingClient messagingClient,
-                      final ILinkFailureDetectorFactory linkFailureDetector, final Map<Endpoint, Metadata> metadataMap,
+                      final IEdgeFailureDetectorFactory edgeFailureDetector, final Map<Endpoint, Metadata> metadataMap,
                       final Map<ClusterEvents, List<BiConsumer<Long, List<NodeStatusChange>>>> subscriptions) {
         this.myAddr = myAddr;
         this.settings = settings;
@@ -132,7 +132,7 @@ public final class MembershipService {
         this.messagingClient = messagingClient;
         this.broadcaster = new UnicastToAllBroadcaster(messagingClient);
         this.subscriptions = subscriptions;
-        this.fdFactory = linkFailureDetector;
+        this.fdFactory = edgeFailureDetector;
 
         // Make sure there is an empty list for every enum type
         Arrays.stream(ClusterEvents.values()).forEach(event ->
@@ -140,11 +140,11 @@ public final class MembershipService {
 
         // Schedule background jobs
         this.backgroundTasksExecutor = sharedResources.getScheduledTasksExecutor();
-        linkUpdateBatcherJob = this.backgroundTasksExecutor.scheduleAtFixedRate(new LinkUpdateBatcher(),
+        alertBatcherJob = this.backgroundTasksExecutor.scheduleAtFixedRate(new AlertBatcher(),
                 0, BATCHING_WINDOW_IN_MS, TimeUnit.MILLISECONDS);
 
         this.broadcaster.setMembership(membershipView.getRing(0));
-        // this::linkFailureNotification is invoked by the failure detector whenever an edge
+        // this::edgeFailureNotification is invoked by the failure detector whenever an edge
         // to an observer is marked faulty.
         this.failureDetectorJobs = new ArrayList<>();
 
@@ -169,8 +169,8 @@ public final class MembershipService {
                 return handleMessage(msg.getPreJoinMessage());
             case JOINMESSAGE:
                 return handleMessage(msg.getJoinMessage());
-            case BATCHEDLINKUPDATEMESSAGE:
-                return handleMessage(msg.getBatchedLinkUpdateMessage());
+            case BATCHEDALERTMESSAGE:
+                return handleMessage(msg.getBatchedAlertMessage());
             case PROBEMESSAGE:
                 return handleMessage(msg.getProbeMessage());
             case FASTROUNDPHASE2BMESSAGE:
@@ -215,8 +215,8 @@ public final class MembershipService {
 
     /**
      * Invoked by gatekeepers of a joining node. They perform any failure checking
-     * required before propagating a LinkUpdateMessage with the status UP. After the watermarking
-     * and consensus succeeds, the observer informs the joiner about the new configuration it
+     * required before propagating a AlertMessage with the status UP. After the almost-everywhere agreement
+     * and full agreement succeeds, the observer informs the joiner about the new configuration it
      * is now a part of.
      */
     private ListenableFuture<RapidResponse> handleMessage(final JoinMessage joinMessage) {
@@ -232,16 +232,16 @@ public final class MembershipService {
                 joinersToRespondTo.computeIfAbsent(joinMessage.getSender(),
                         k -> new LinkedBlockingDeque<>()).add(future);
 
-                final LinkUpdateMessage msg = LinkUpdateMessage.newBuilder()
-                        .setLinkSrc(myAddr)
-                        .setLinkDst(joinMessage.getSender())
-                        .setLinkStatus(LinkStatus.UP)
+                final AlertMessage msg = AlertMessage.newBuilder()
+                        .setEdgeSrc(myAddr)
+                        .setEdgeDst(joinMessage.getSender())
+                        .setEdgeStatus(EdgeStatus.UP)
                         .setConfigurationId(currentConfiguration)
                         .setNodeId(joinMessage.getNodeId())
                         .addAllRingNumber(joinMessage.getRingNumberList())
                         .setMetadata(joinMessage.getMetadata())
                         .build();
-                enqueueLinkUpdateMessage(msg);
+                enqueueAlertMessage(msg);
             } else {
                 // This handles the corner case where the configuration changed between phase 1 and phase 2
                 // of the joining node's bootstrap. It should attempt to rejoin the network.
@@ -278,14 +278,14 @@ public final class MembershipService {
 
 
     /**
-     * This method receives link update events and delivers them to
-     * the watermark buffer to check if it will return a valid
+     * This method receives edge update events and delivers them to
+     * the almost-everywhere agreement filter to check if it will return a valid
      * proposal.
      *
-     * Link update messages that do not affect an ongoing proposal
+     * Edge update messages that do not affect an ongoing proposal
      * needs to be dropped.
      */
-    private ListenableFuture<RapidResponse> handleMessage(final BatchedLinkUpdateMessage messageBatch) {
+    private ListenableFuture<RapidResponse> handleMessage(final BatchedAlertMessage messageBatch) {
         Objects.requireNonNull(messageBatch);
         final SettableFuture<RapidResponse> future = SettableFuture.create();
 
@@ -299,14 +299,14 @@ public final class MembershipService {
             final int membershipSize = membershipView.getMembershipSize();
             final Set<Endpoint> proposal = messageBatch.getMessagesList().stream()
                     // First, we filter out invalid messages that violate membership invariants.
-                    .filter(msg -> filterLinkUpdateMessages(messageBatch, msg, membershipSize, currentConfigurationId))
+                    .filter(msg -> filterAlertMessages(messageBatch, msg, membershipSize, currentConfigurationId))
                     // We then apply all the valid messages into our condition detector to obtain a view change proposal
                     .map(almostEverywhereAgreementFilter::aggregateForProposal)
                     .flatMap(List::stream)
                     .collect(Collectors.toSet());
 
             // Lastly, we apply implicit detections
-            proposal.addAll(almostEverywhereAgreementFilter.invalidateFailingLinks(membershipView));
+            proposal.addAll(almostEverywhereAgreementFilter.invalidateFailingEdges(membershipView));
 
             // If we have a proposal for this stage, start an instance of consensus on it.
             if (!proposal.isEmpty()) {
@@ -361,7 +361,7 @@ public final class MembershipService {
                 // this ties us to just two states a node can be in.
                 if (isPresent) {
                     membershipView.ringDelete(node);
-                    statusChanges.add(new NodeStatusChange(node, LinkStatus.DOWN, metadataManager.get(node)));
+                    statusChanges.add(new NodeStatusChange(node, EdgeStatus.DOWN, metadataManager.get(node)));
                     metadataManager.removeNode(node);
                 }
                 else {
@@ -372,7 +372,7 @@ public final class MembershipService {
                     if (metadata.getMetadataCount() > 0) {
                         metadataManager.addMetadata(Collections.singletonMap(node, metadata));
                     }
-                    statusChanges.add(new NodeStatusChange(node, LinkStatus.UP, metadata));
+                    statusChanges.add(new NodeStatusChange(node, EdgeStatus.UP, metadata));
                 }
             }
         }
@@ -389,7 +389,7 @@ public final class MembershipService {
                                           this::decideViewChange);
         broadcaster.setMembership(membershipView.getRing(0));
 
-        // Inform LinkFailureDetector about membership change
+        // Inform EdgeFailureDetector about membership change
         if (membershipView.isHostPresent(myAddr)) {
             createFailureDetectorsForCurrentConfiguration();
         }
@@ -425,12 +425,12 @@ public final class MembershipService {
 
 
     /**
-     * This is a notification from a local link failure detector at an observer. This changes
+     * This is a notification from a local edge failure detector at an observer. This changes
      * the status of the edge between the observer and the subject to DOWN.
      *
      * @param subject The subject that has failed.
      */
-    private void linkFailureNotification(final Endpoint subject, final long configurationId) {
+    private void edgeFailureNotification(final Endpoint subject, final long configurationId) {
         sharedResources.getProtocolExecutor().execute(() -> {
             if (configurationId != membershipView.getCurrentConfigurationId()) {
                 LOG.info("Ignoring failure notification from old configuration" +
@@ -440,18 +440,18 @@ public final class MembershipService {
             }
             if (LOG.isDebugEnabled()) {
                 final int size = membershipView.getMembershipSize();
-                LOG.debug("Announcing LinkFail event {subject:{}, observer:{}, config:{}, size:{}}",
+                LOG.debug("Announcing EdgeFail event {subject:{}, observer:{}, config:{}, size:{}}",
                         Utils.loggable(subject), configurationId, size);
             }
             // Note: setUuid is deliberately missing here because it does not affect leaves.
-            final LinkUpdateMessage msg = LinkUpdateMessage.newBuilder()
-                    .setLinkSrc(myAddr)
-                    .setLinkDst(subject)
-                    .setLinkStatus(LinkStatus.DOWN)
+            final AlertMessage msg = AlertMessage.newBuilder()
+                    .setEdgeSrc(myAddr)
+                    .setEdgeDst(subject)
+                    .setEdgeStatus(EdgeStatus.DOWN)
                     .addAllRingNumber(membershipView.getRingNumbers(myAddr, subject))
                     .setConfigurationId(configurationId)
                     .build();
-            enqueueLinkUpdateMessage(msg);
+            enqueueAlertMessage(msg);
         });
     }
 
@@ -494,17 +494,17 @@ public final class MembershipService {
      * Shuts down all the executors.
      */
     void shutdown() {
-        linkUpdateBatcherJob.cancel(true);
+        alertBatcherJob.cancel(true);
         failureDetectorJobs.forEach(k -> k.cancel(true));
         messagingClient.shutdown();
     }
 
     /**
-     * Queues a LinkUpdateMessage to be broadcasted after potentially being batched.
+     * Queues a AlertMessage to be broadcasted after potentially being batched.
      *
-     * @param msg the LinkUpdateMessage to be broadcasted
+     * @param msg the AlertMessage to be broadcasted
      */
-    private void enqueueLinkUpdateMessage(final LinkUpdateMessage msg) {
+    private void enqueueAlertMessage(final AlertMessage msg) {
         batchSchedulerLock.lock();
         try {
             lastEnqueueTimestamp = System.currentTimeMillis();
@@ -521,7 +521,7 @@ public final class MembershipService {
     private List<NodeStatusChange> createNodeStatusChangeList(final Collection<Endpoint> proposal) {
         final List<NodeStatusChange> list = new ArrayList<>(proposal.size());
         for (final Endpoint node: proposal) {
-            final LinkStatus status = membershipView.isHostPresent(node) ? LinkStatus.DOWN : LinkStatus.UP;
+            final EdgeStatus status = membershipView.isHostPresent(node) ? EdgeStatus.DOWN : EdgeStatus.UP;
             list.add(new NodeStatusChange(node, status, metadataManager.get(node)));
         }
         return list;
@@ -530,12 +530,12 @@ public final class MembershipService {
     /**
      * Prepares a view change notification for a node that has just become part of a cluster. This is invoked when the
      * membership service is first initialized by a new node, which only happens on a Cluster.join() or Cluster.start().
-     * Therefore, all LinkStatus values will be UP.
+     * Therefore, all EdgeStatus values will be UP.
      */
     private List<NodeStatusChange> getInitialViewChange() {
         final List<NodeStatusChange> list = new ArrayList<>(membershipView.getMembershipSize());
         for (final Endpoint node: membershipView.getRing(0)) {
-            final LinkStatus status = LinkStatus.UP;
+            final EdgeStatus status = EdgeStatus.UP;
             list.add(new NodeStatusChange(node, status, metadataManager.get(node)));
         }
         return list;
@@ -543,9 +543,9 @@ public final class MembershipService {
 
 
     /**
-     * Batches outgoing LinkUpdateMessages into a single BatchLinkUpdateMessage.
+     * Batches outgoing AlertMessages into a single BatchAlertMessage.
      */
-    private class LinkUpdateBatcher implements Runnable {
+    private class AlertBatcher implements Runnable {
         private static final int BATCH_WINDOW_IN_MS = 100;
 
         @Override
@@ -556,10 +556,10 @@ public final class MembershipService {
                 if (!sendQueue.isEmpty() && lastEnqueueTimestamp > 0
                         && (System.currentTimeMillis() - lastEnqueueTimestamp) > BATCH_WINDOW_IN_MS) {
                     LOG.trace("Scheduler is sending out {} messages", sendQueue.size());
-                    final ArrayList<LinkUpdateMessage> messages = new ArrayList<>(sendQueue.size());
+                    final ArrayList<AlertMessage> messages = new ArrayList<>(sendQueue.size());
                     final int numDrained = sendQueue.drainTo(messages);
                     assert numDrained > 0;
-                    final BatchedLinkUpdateMessage batched = BatchedLinkUpdateMessage.newBuilder()
+                    final BatchedAlertMessage batched = BatchedAlertMessage.newBuilder()
                             .setSender(myAddr)
                             .addAllMessages(messages)
                             .build();
@@ -573,53 +573,53 @@ public final class MembershipService {
     }
 
     /**
-     * A filter for removing invalid link update messages. These include messages that were for a
+     * A filter for removing invalid edge update messages. These include messages that were for a
      * configuration that the current node is not a part of, and messages that violate the semantics
      * of a node being a part of a configuration.
      */
-    private boolean filterLinkUpdateMessages(final BatchedLinkUpdateMessage batchedLinkUpdateMessage,
-                                             final LinkUpdateMessage linkUpdateMessage,
+    private boolean filterAlertMessages(final BatchedAlertMessage batchedAlertMessage,
+                                             final AlertMessage alertMessage,
                                              final int membershipSize,
                                              final long currentConfigurationId) {
-        final Endpoint destination = linkUpdateMessage.getLinkDst();
-        LOG.trace("LinkUpdateMessage received {sender:{}, config:{}, size:{}, status:{}}",
-                Utils.loggable(batchedLinkUpdateMessage.getSender()), linkUpdateMessage.getConfigurationId(),
-                membershipSize, linkUpdateMessage.getLinkStatus());
+        final Endpoint destination = alertMessage.getEdgeDst();
+        LOG.trace("AlertMessage received {sender:{}, config:{}, size:{}, status:{}}",
+                Utils.loggable(batchedAlertMessage.getSender()), alertMessage.getConfigurationId(),
+                membershipSize, alertMessage.getEdgeStatus());
 
-        if (currentConfigurationId != linkUpdateMessage.getConfigurationId()) {
-            LOG.trace("LinkUpdateMessage for configuration {} received during configuration {}",
-                    linkUpdateMessage.getConfigurationId(), currentConfigurationId);
+        if (currentConfigurationId != alertMessage.getConfigurationId()) {
+            LOG.trace("AlertMessage for configuration {} received during configuration {}",
+                    alertMessage.getConfigurationId(), currentConfigurationId);
             return false;
         }
 
         // The invariant we want to maintain is that a node can only go into the
         // membership set once and leave it once.
-        if (linkUpdateMessage.getLinkStatus().equals(LinkStatus.UP)
+        if (alertMessage.getEdgeStatus().equals(EdgeStatus.UP)
                 && membershipView.isHostPresent(destination)) {
-            LOG.trace("LinkUpdateMessage with status UP received for node {} already in configuration {} ",
-                    Utils.loggable(linkUpdateMessage.getLinkDst()), currentConfigurationId);
+            LOG.trace("AlertMessage with status UP received for node {} already in configuration {} ",
+                    Utils.loggable(alertMessage.getEdgeDst()), currentConfigurationId);
             return false;
         }
-        if (linkUpdateMessage.getLinkStatus().equals(LinkStatus.DOWN)
+        if (alertMessage.getEdgeStatus().equals(EdgeStatus.DOWN)
                 && !membershipView.isHostPresent(destination)) {
-            LOG.trace("LinkUpdateMessage with status DOWN received for node {} already in configuration {} ",
-                    Utils.loggable(linkUpdateMessage.getLinkDst()), currentConfigurationId);
+            LOG.trace("AlertMessage with status DOWN received for node {} already in configuration {} ",
+                    Utils.loggable(alertMessage.getEdgeDst()), currentConfigurationId);
             return false;
         }
 
-        if (linkUpdateMessage.getLinkStatus() == LinkStatus.UP) {
+        if (alertMessage.getEdgeStatus() == EdgeStatus.UP) {
             // Both the UUID and Metadata are saved only after the node is done being added.
-            joinerUuid.put(destination, linkUpdateMessage.getNodeId());
-            joinerMetadata.put(destination, linkUpdateMessage.getMetadata());
+            joinerUuid.put(destination, alertMessage.getNodeId());
+            joinerMetadata.put(destination, alertMessage.getMetadata());
         }
         return true;
     }
 
     /**
-     * Invoked eventually by link failure detectors to notify MembershipService of failed nodes
+     * Invoked eventually by edge failure detectors to notify MembershipService of failed nodes
      */
     private Runnable createNotifierForSubject(final Endpoint subject) {
-        return () -> linkFailureNotification(subject, membershipView.getCurrentConfigurationId());
+        return () -> edgeFailureNotification(subject, membershipView.getCurrentConfigurationId());
     }
 
     /**
