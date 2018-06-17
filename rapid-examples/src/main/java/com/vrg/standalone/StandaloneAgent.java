@@ -18,7 +18,7 @@ import java.util.List;
  * Rapid Cluster example.
  */
 public class StandaloneAgent {
-    private static final Logger LOG = LoggerFactory.getLogger(Cluster.class);
+    private static final Logger LOG = LoggerFactory.getLogger(StandaloneAgent.class);
     private static final int SLEEP_INTERVAL_MS = 1000;
     private static final int MAX_TRIES = 400;
     private final HostAndPort listenAddress;
@@ -49,28 +49,28 @@ public class StandaloneAgent {
      * Executed whenever a Cluster VIEW_CHANGE_PROPOSAL event occurs.
      */
     private void onViewChangeProposal(final Long configurationId, final List<NodeStatusChange> viewChange) {
-        System.out.println("The condition detector has outputted a proposal: " + viewChange + " " + configurationId);
+        LOG.info("The condition detector has outputted a proposal: {} {}", viewChange, configurationId);
     }
 
     /**
      * Executed whenever a Cluster KICKED event occurs.
      */
     private void onKicked(final Long configurationId, final List<NodeStatusChange> viewChange) {
-        System.out.println("We got kicked from the network: " + viewChange + " " + configurationId);
+        LOG.info("We got kicked from the network: {} {}", viewChange, configurationId);
     }
 
     /**
      * Executed whenever a Cluster VIEW_CHANGE event occurs.
      */
     private void onViewChange(final Long configurationId, final List<NodeStatusChange> viewChange) {
-        System.out.println("View change detected: " + viewChange + " " + configurationId);
+        LOG.info("View change detected: {} {}", viewChange, configurationId);
     }
 
     /**
      * Prints the current membership
      */
-    private String getClusterMembership() {
-        return System.currentTimeMillis() + " " + listenAddress + " Cluster size " + cluster.getMembershipSize();
+    private void printClusterMembership() {
+        LOG.info("Node {} -- cluster size {}", listenAddress, cluster.getMembershipSize());
     }
 
     public static void main(final String[] args) throws ParseException {
@@ -88,11 +88,11 @@ public class StandaloneAgent {
         try {
             final StandaloneAgent agent = new StandaloneAgent(listenAddress, seedAddress);
             for (int i = 0; i < MAX_TRIES; i++) {
-                System.out.println(agent.getClusterMembership());
+                agent.printClusterMembership();
                 Thread.sleep(SLEEP_INTERVAL_MS);
             }
         } catch (final IOException | InterruptedException e) {
-            e.printStackTrace();
+            LOG.error("Exception thrown by StandaloneAgent {}", e);
             Thread.currentThread().interrupt();
         }
     }

@@ -26,10 +26,10 @@ public class NodeStatusChange {
     private final EdgeStatus status;
     private final Metadata metadata;
 
-    NodeStatusChange(final Endpoint Endpoint,
+    NodeStatusChange(final Endpoint endpoint,
                      final EdgeStatus status,
                      final Metadata metadata) {
-        this.endpoint = Endpoint;
+        this.endpoint = endpoint;
         this.status = status;
         this.metadata = metadata;
     }

@@ -31,6 +31,8 @@ import io.grpc.inprocess.InProcessServerBuilder;
 import io.grpc.netty.NettyServerBuilder;
 import io.grpc.stub.StreamObserver;
 import io.netty.channel.EventLoopGroup;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -44,6 +46,8 @@ import java.util.concurrent.TimeUnit;
  * host a MembershipService object.
  */
 public class GrpcServer extends MembershipServiceGrpc.MembershipServiceImplBase implements IMessagingServer {
+    private static final Logger LOG = LoggerFactory.getLogger(GrpcServer.class);
+
     private final ExecutorService grpcExecutor;
     @Nullable private final EventLoopGroup eventLoopGroup;
     private static final RapidResponse BOOTSTRAPPING_MESSAGE =
@@ -161,7 +165,7 @@ public class GrpcServer extends MembershipServiceGrpc.MembershipServiceImplBase 
 
         @Override
         public void onFailure(final Throwable throwable) {
-            throwable.printStackTrace();
+            LOG.error("RPC failed {}", throwable);
         }
     }
 }
