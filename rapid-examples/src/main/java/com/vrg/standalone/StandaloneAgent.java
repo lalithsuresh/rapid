@@ -1,93 +1,99 @@
 package com.vrg.standalone;
 
 import com.google.common.net.HostAndPort;
-import com.sun.management.UnixOperatingSystemMXBean;
+import com.vrg.rapid.Cluster;
+import com.vrg.rapid.NodeStatusChange;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.DefaultParser;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.lang.management.ManagementFactory;
-import java.lang.management.OperatingSystemMXBean;
-import java.util.Arrays;
 import java.util.List;
-import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.stream.Collectors;
 
 /**
  * Rapid Cluster example.
  */
 public class StandaloneAgent {
-    private static final int WAIT_DELAY_NON_SEED_MS = 10000;
+    private static final Logger LOG = LoggerFactory.getLogger(Cluster.class);
     private static final int SLEEP_INTERVAL_MS = 1000;
     private static final int MAX_TRIES = 400;
+    private final HostAndPort listenAddress;
+    private final Cluster cluster;
 
-    public static void main(final String[] args) throws ParseException, InterruptedException {
-        final OperatingSystemMXBean os = ManagementFactory.getOperatingSystemMXBean();
-        if (os instanceof UnixOperatingSystemMXBean) {
-            final UnixOperatingSystemMXBean bean = (UnixOperatingSystemMXBean) os;
-            System.out.println("File descriptor limit: " + bean.getMaxFileDescriptorCount());
+    StandaloneAgent(final HostAndPort listenAddress, final HostAndPort seedAddress)
+            throws IOException, InterruptedException {
+        this.listenAddress = listenAddress;
+
+        // The first node X of the cluster calls .start(), the rest call .join(X)
+        if (listenAddress.equals(seedAddress)) {
+            cluster = new Cluster.Builder(listenAddress)
+                    .start();
+
+        } else {
+            cluster = new Cluster.Builder(listenAddress)
+                    .join(seedAddress);
         }
+        cluster.registerSubscription(com.vrg.rapid.ClusterEvents.VIEW_CHANGE_PROPOSAL,
+                this::onViewChangeProposal);
+        cluster.registerSubscription(com.vrg.rapid.ClusterEvents.VIEW_CHANGE,
+                this::onViewChange);
+        cluster.registerSubscription(com.vrg.rapid.ClusterEvents.KICKED,
+                this::onKicked);
+    }
+
+    /**
+     * Executed whenever a Cluster VIEW_CHANGE_PROPOSAL event occurs.
+     */
+    private void onViewChangeProposal(final Long configurationId, final List<NodeStatusChange> viewChange) {
+        System.out.println("The condition detector has outputted a proposal: " + viewChange + " " + configurationId);
+    }
+
+    /**
+     * Executed whenever a Cluster KICKED event occurs.
+     */
+    private void onKicked(final Long configurationId, final List<NodeStatusChange> viewChange) {
+        System.out.println("We got kicked from the network: " + viewChange + " " + configurationId);
+    }
+
+    /**
+     * Executed whenever a Cluster VIEW_CHANGE event occurs.
+     */
+    private void onViewChange(final Long configurationId, final List<NodeStatusChange> viewChange) {
+        System.out.println("View change detected: " + viewChange + " " + configurationId);
+    }
+
+    /**
+     * Prints the current membership
+     */
+    private String getClusterMembership() {
+        return System.currentTimeMillis() + " " + listenAddress + " Cluster size " + cluster.getMembershipSize();
+    }
+
+    public static void main(final String[] args) throws ParseException {
         final Options options = new Options();
-        options.addRequiredOption("cluster", "cluster", true, "Cluster tool to use");
-        options.addRequiredOption("l", "listenAddresses", true, "The listening addresses Rapid Cluster instances");
+        options.addRequiredOption("l", "listenAddress", true, "The listening addresses Rapid Cluster instances");
         options.addRequiredOption("s", "seedAddress", true, "The seed node's address for the bootstrap protocol");
-        options.addRequiredOption("r", "role", true, "The node's role for the cluster");
         final CommandLineParser parser = new DefaultParser();
         final CommandLine cmd = parser.parse(options, args);
 
         // Get CLI options
-        final String clusterTool = cmd.getOptionValue("cluster");
-        String addresses = cmd.getOptionValue("listenAddresses");
-        addresses = addresses.replaceAll("\\s","");
-        final List<HostAndPort> listenAddresses = Arrays.stream(addresses.split(",")).map(HostAndPort::fromString)
-                                                      .collect(Collectors.toList());
+        final HostAndPort listenAddress = HostAndPort.fromString(cmd.getOptionValue("listenAddress"));
         final HostAndPort seedAddress = HostAndPort.fromString(cmd.getOptionValue("seedAddress"));
-        final String role = cmd.getOptionValue("role");
-        final ExecutorService executor = Executors.newWorkStealingPool(listenAddresses.size());
 
-        if (clusterTool.equals("AkkaCluster")) {
-            listenAddresses.forEach(listenAddress -> {
-                final AkkaRunner runner = new AkkaRunner(listenAddress, seedAddress, WAIT_DELAY_NON_SEED_MS);
-                executor.execute(() -> {
-                    runner.run(MAX_TRIES, SLEEP_INTERVAL_MS);
-                    System.exit(0);
-                });
-            });
-        }
-        else if (clusterTool.equals("Rapid")) {
-            final Queue<RapidRunner> runners = new ConcurrentLinkedQueue<>();
-            final CountDownLatch latch = new CountDownLatch(listenAddresses.size());
-            listenAddresses.forEach(listenAddress -> executor.execute(() -> {
-                // Setup Rapid cluster and wait until completion
-                try {
-                    final RapidRunner runner = new RapidRunner(listenAddress, seedAddress, role,
-                                                               WAIT_DELAY_NON_SEED_MS);
-                    runners.add(runner);
-                } catch (final IOException | InterruptedException e) {
-                    e.printStackTrace();
-                    Thread.currentThread().interrupt();
-                } finally {
-                    latch.countDown();
-                }
-            }));
-            latch.await();
-            executor.shutdownNow();
-            int tries = MAX_TRIES;
-            while (tries-- > 0) {
-                for (final RapidRunner runner: runners) {
-                    System.out.println(runner.getClusterStatus() + " " + tries);
-                }
+        // Bring up Rapid node
+        try {
+            final StandaloneAgent agent = new StandaloneAgent(listenAddress, seedAddress);
+            for (int i = 0; i < MAX_TRIES; i++) {
+                System.out.println(agent.getClusterMembership());
                 Thread.sleep(SLEEP_INTERVAL_MS);
             }
-            System.exit(0);
+        } catch (final IOException | InterruptedException e) {
+            e.printStackTrace();
+            Thread.currentThread().interrupt();
         }
-        Thread.currentThread().join();
     }
 }

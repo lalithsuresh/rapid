@@ -39,7 +39,7 @@
         <version>2.20.1</version>
         <configuration>
           <systemPropertyVariables>
-            <rapidExamplesAllInOneJar>${project.build.directory}/../../rapid-examples/target/rapid-examples-1.0-SNAPSHOT-allinone.jar</rapidExamplesAllInOneJar>
+            <rapidExamplesAllInOneJar>${project.build.directory}/../../rapid-examples/target/standalone-agent.jar</rapidExamplesAllInOneJar>
             <testLogFolder>${project.build.directory}/../logs/</testLogFolder>
           </systemPropertyVariables>
         </configuration>
