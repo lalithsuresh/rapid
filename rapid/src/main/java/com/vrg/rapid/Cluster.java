@@ -240,8 +240,7 @@ public final class Cluster {
             final NodeId currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
             final MembershipView membershipView = new MembershipView(K, Collections.singletonList(currentIdentifier),
                     Collections.singletonList(listenAddress));
-            final AlmostEverywhereAgreementFilter almostEverywhereAgreementFilter =
-                    new AlmostEverywhereAgreementFilter(K, H, L);
+            final MultiNodeCutDetector cutDetector = new MultiNodeCutDetector(K, H, L);
             edgeFailureDetector = edgeFailureDetector != null ? edgeFailureDetector
                     : new PingPongFailureDetector.Factory(listenAddress, messagingClient);
 
@@ -249,7 +248,7 @@ public final class Cluster {
                                                     ? Collections.singletonMap(listenAddress, metadata)
                                                     : Collections.emptyMap();
             final MembershipService membershipService = new MembershipService(listenAddress,
-                                            almostEverywhereAgreementFilter, membershipView, sharedResources, settings,
+                    cutDetector, membershipView, sharedResources, settings,
                                             messagingClient, edgeFailureDetector, metadataMap, subscriptions);
             messagingServer.setMembershipService(membershipService);
             messagingServer.start();
@@ -431,12 +430,11 @@ public final class Cluster {
 
             final MembershipView membershipViewFinal =
                     new MembershipView(K, identifiersSeen, allEndpoints);
-            final AlmostEverywhereAgreementFilter almostEverywhereAgreementFilter =
-                    new AlmostEverywhereAgreementFilter(K, H, L);
+            final MultiNodeCutDetector cutDetector = new MultiNodeCutDetector(K, H, L);
             edgeFailureDetector = edgeFailureDetector != null ? edgeFailureDetector
                                                   : new PingPongFailureDetector.Factory(listenAddress, messagingClient);
             final MembershipService membershipService =
-                    new MembershipService(listenAddress, almostEverywhereAgreementFilter, membershipViewFinal,
+                    new MembershipService(listenAddress, cutDetector, membershipViewFinal,
                            sharedResources, settings, messagingClient, edgeFailureDetector, allMetadata, subscriptions);
             messagingServer.setMembershipService(membershipService);
             if (LOG.isTraceEnabled()) {

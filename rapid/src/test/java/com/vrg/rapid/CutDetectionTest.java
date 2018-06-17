@@ -28,9 +28,9 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Tests for almost-everywhere agreement
+ * Tests for multi node cut detection
  */
-public class AlmostEverywhereAgreementFilterTest {
+public class CutDetectionTest {
     private static final int K = 10;
     private static final int H = 8;
     private static final int L = 2;
@@ -40,8 +40,8 @@ public class AlmostEverywhereAgreementFilterTest {
      * A series of updates with the right ring indexes
      */
     @Test
-    public void aeaFilterTest() {
-        final AlmostEverywhereAgreementFilter wb = new AlmostEverywhereAgreementFilter(K, H, L);
+    public void cutDetectionTest() {
+        final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L);
         final Endpoint dst = Utils.hostFromParts("127.0.0.2", 2);
         List<Endpoint> ret;
 
@@ -59,8 +59,8 @@ public class AlmostEverywhereAgreementFilterTest {
     }
 
     @Test
-    public void aeaFilterTestBlockingOneBlocker() {
-        final AlmostEverywhereAgreementFilter wb = new AlmostEverywhereAgreementFilter(K, H, L);
+    public void cutDetectionTestBlockingOneBlocker() {
+        final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L);
         final Endpoint dst1 = Utils.hostFromParts("127.0.0.2", 2);
         final Endpoint dst2 = Utils.hostFromParts("127.0.0.3", 2);
         List<Endpoint> ret;
@@ -92,8 +92,8 @@ public class AlmostEverywhereAgreementFilterTest {
 
 
     @Test
-    public void aeaFilterTestBlockingThreeBlockers() {
-        final AlmostEverywhereAgreementFilter wb = new AlmostEverywhereAgreementFilter(K, H, L);
+    public void cutDetectionTestBlockingThreeBlockers() {
+        final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L);
         final Endpoint dst1 = Utils.hostFromParts("127.0.0.2", 2);
         final Endpoint dst2 = Utils.hostFromParts("127.0.0.3", 2);
         final Endpoint dst3 = Utils.hostFromParts("127.0.0.4", 2);
@@ -137,8 +137,8 @@ public class AlmostEverywhereAgreementFilterTest {
     }
 
     @Test
-    public void aeaFilterTestBlockingMultipleBlockersPastH() {
-        final AlmostEverywhereAgreementFilter wb = new AlmostEverywhereAgreementFilter(K, H, L);
+    public void cutDetectionTestBlockingMultipleBlockersPastH() {
+        final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L);
         final Endpoint dst1 = Utils.hostFromParts("127.0.0.2", 2);
         final Endpoint dst2 = Utils.hostFromParts("127.0.0.3", 2);
         final Endpoint dst3 = Utils.hostFromParts("127.0.0.4", 2);
@@ -189,8 +189,8 @@ public class AlmostEverywhereAgreementFilterTest {
     }
 
     @Test
-    public void aeaFilterTestBelowL() {
-        final AlmostEverywhereAgreementFilter wb = new AlmostEverywhereAgreementFilter(K, H, L);
+    public void cutDetectionTestBelowL() {
+        final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L);
         final Endpoint dst1 = Utils.hostFromParts("127.0.0.2", 2);
         final Endpoint dst2 = Utils.hostFromParts("127.0.0.3", 2);
         final Endpoint dst3 = Utils.hostFromParts("127.0.0.4", 2);
@@ -231,8 +231,8 @@ public class AlmostEverywhereAgreementFilterTest {
 
 
     @Test
-    public void aeaFilterTestBatch() {
-        final AlmostEverywhereAgreementFilter wb = new AlmostEverywhereAgreementFilter(K, H, L);
+    public void cutDetectionTestBatch() {
+        final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L);
         final int numNodes = 3;
         final List<Endpoint> endpoints = new ArrayList<>();
         for (int i = 0; i < numNodes; i++) {
@@ -252,9 +252,9 @@ public class AlmostEverywhereAgreementFilterTest {
     }
 
     @Test
-    public void aeaFilterTestLinkInvalidation() {
+    public void cutDetectionTestLinkInvalidation() {
         final MembershipView mView = new MembershipView(K);
-        final AlmostEverywhereAgreementFilter wb = new AlmostEverywhereAgreementFilter(K, H, L);
+        final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L);
         final int numNodes = 30;
         final List<Endpoint> endpoints = new ArrayList<>();
         for (int i = 0; i < numNodes; i++) {

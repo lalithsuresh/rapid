@@ -73,7 +73,7 @@ public final class MembershipService {
     private static final int DEFAULT_FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 0;
     static final int DEFAULT_FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
     private final MembershipView membershipView;
-    private final AlmostEverywhereAgreementFilter almostEverywhereAgreementFilter;
+    private final MultiNodeCutDetector cutDetection;
     private final Endpoint myAddr;
     private final IBroadcaster broadcaster;
     private final Map<Endpoint, LinkedBlockingDeque<SettableFuture<RapidResponse>>> joinersToRespondTo =
@@ -109,15 +109,15 @@ public final class MembershipService {
     private final ISettings settings;
 
 
-    MembershipService(final Endpoint myAddr, final AlmostEverywhereAgreementFilter almostEverywhereAgreementFilter,
+    MembershipService(final Endpoint myAddr, final MultiNodeCutDetector cutDetection,
                       final MembershipView membershipView, final SharedResources sharedResources,
                       final ISettings settings, final IMessagingClient messagingClient,
                       final IEdgeFailureDetectorFactory edgeFailureDetector) {
-        this(myAddr, almostEverywhereAgreementFilter, membershipView, sharedResources, settings, messagingClient,
+        this(myAddr, cutDetection, membershipView, sharedResources, settings, messagingClient,
              edgeFailureDetector, Collections.emptyMap(), new EnumMap<>(ClusterEvents.class));
     }
 
-    MembershipService(final Endpoint myAddr, final AlmostEverywhereAgreementFilter almostEverywhereAgreementFilter,
+    MembershipService(final Endpoint myAddr, final MultiNodeCutDetector cutDetection,
                       final MembershipView membershipView, final SharedResources sharedResources,
                       final ISettings settings, final IMessagingClient messagingClient,
                       final IEdgeFailureDetectorFactory edgeFailureDetector, final Map<Endpoint, Metadata> metadataMap,
@@ -125,7 +125,7 @@ public final class MembershipService {
         this.myAddr = myAddr;
         this.settings = settings;
         this.membershipView = membershipView;
-        this.almostEverywhereAgreementFilter = almostEverywhereAgreementFilter;
+        this.cutDetection = cutDetection;
         this.sharedResources = sharedResources;
         this.metadataManager = new MetadataManager();
         this.metadataManager.addMetadata(metadataMap);
@@ -215,7 +215,7 @@ public final class MembershipService {
 
     /**
      * Invoked by gatekeepers of a joining node. They perform any failure checking
-     * required before propagating a AlertMessage with the status UP. After the almost-everywhere agreement
+     * required before propagating a AlertMessage with the status UP. After the cut detection
      * and full agreement succeeds, the observer informs the joiner about the new configuration it
      * is now a part of.
      */
@@ -279,7 +279,7 @@ public final class MembershipService {
 
     /**
      * This method receives edge update events and delivers them to
-     * the almost-everywhere agreement filter to check if it will return a valid
+     * the cut detector to check if it will return a valid
      * proposal.
      *
      * Edge update messages that do not affect an ongoing proposal
@@ -301,12 +301,12 @@ public final class MembershipService {
                     // First, we filter out invalid messages that violate membership invariants.
                     .filter(msg -> filterAlertMessages(messageBatch, msg, membershipSize, currentConfigurationId))
                     // We then apply all the valid messages into our condition detector to obtain a view change proposal
-                    .map(almostEverywhereAgreementFilter::aggregateForProposal)
+                    .map(cutDetection::aggregateForProposal)
                     .flatMap(List::stream)
                     .collect(Collectors.toSet());
 
             // Lastly, we apply implicit detections
-            proposal.addAll(almostEverywhereAgreementFilter.invalidateFailingEdges(membershipView));
+            proposal.addAll(cutDetection.invalidateFailingEdges(membershipView));
 
             // If we have a proposal for this stage, start an instance of consensus on it.
             if (!proposal.isEmpty()) {
@@ -382,7 +382,7 @@ public final class MembershipService {
         subscriptions.get(ClusterEvents.VIEW_CHANGE).forEach(cb -> cb.accept(currentConfigurationId, statusChanges));
 
         // Clear data structures for the next round.
-        almostEverywhereAgreementFilter.clear();
+        cutDetection.clear();
         announcedProposal = false;
         fastPaxosInstance = new FastPaxos(myAddr, currentConfigurationId, membershipView.getMembershipSize(),
                                           messagingClient, broadcaster, backgroundTasksExecutor,

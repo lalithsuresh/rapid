@@ -139,11 +139,11 @@ public class FastPaxosWithoutFallbackTests {
      */
     private MembershipService createAndStartMembershipService(final Endpoint serverAddr, final MembershipView view)
             throws MembershipView.NodeAlreadyInRingException {
-        final AlmostEverywhereAgreementFilter almostEverywhereAgreementFilter =
-                new AlmostEverywhereAgreementFilter(K, H, L);
+        final MultiNodeCutDetector cutDetector =
+                new MultiNodeCutDetector(K, H, L);
         final SharedResources resources = new SharedResources(serverAddr);
         final IMessagingClient client = new GrpcClient(serverAddr);
-        final MembershipService service = new MembershipService(serverAddr, almostEverywhereAgreementFilter, view,
+        final MembershipService service = new MembershipService(serverAddr, cutDetector, view,
                 resources, new Settings(), client, new PingPongFailureDetector.Factory(serverAddr, client));
         services.add(service);
         return service;

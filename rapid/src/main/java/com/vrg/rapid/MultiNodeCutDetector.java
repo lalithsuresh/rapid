@@ -35,7 +35,7 @@ import java.util.Set;
  *
  * The output of this filter gives us almost-everywhere agreement
  */
-final class AlmostEverywhereAgreementFilter {
+final class MultiNodeCutDetector {
     private static final int K_MIN = 3;
     private final int K; // Number of observers per subject and vice versa
     private final int H; // High watermark
@@ -48,7 +48,7 @@ final class AlmostEverywhereAgreementFilter {
     @GuardedBy("lock") private boolean seenLinkDownEvents = false;
     private final Object lock = new Object();
 
-    AlmostEverywhereAgreementFilter(final int K, final int H, final int L) {
+    MultiNodeCutDetector(final int K, final int H, final int L) {
         if (H > K || L > H || K < K_MIN || L <= 0 || H <= 0) {
             throw new IllegalArgumentException("Arguments do not satisfy K > H >= L >= 0:" +
                                                " (K: " + K + ", H: " + H + ", L: " + L);
@@ -66,7 +66,7 @@ final class AlmostEverywhereAgreementFilter {
     }
 
     /**
-     * Apply a AlertMessage against the almost-everywhere agreement filter. When an update moves a host
+     * Apply a AlertMessage against the cut detector. When an update moves a host
      * past the H threshold of reports, and no other host has between H and L reports, the
      * method returns a view change proposal.
      *
