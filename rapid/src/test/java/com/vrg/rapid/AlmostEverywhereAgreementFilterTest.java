@@ -30,7 +30,7 @@ import static org.junit.Assert.assertTrue;
 /**
  * Tests for a watermark-buffer
  */
-public class WatermarkBufferTest {
+public class AlmostEverywhereAgreementFilterTest {
     private static final int K = 10;
     private static final int H = 8;
     private static final int L = 2;
@@ -41,7 +41,7 @@ public class WatermarkBufferTest {
      */
     @Test
     public void waterMarkTest() {
-        final WatermarkBuffer wb = new WatermarkBuffer(K, H, L);
+        final AlmostEverywhereAgreementFilter wb = new AlmostEverywhereAgreementFilter(K, H, L);
         final Endpoint dst = Utils.hostFromParts("127.0.0.2", 2);
         List<Endpoint> ret;
 
@@ -60,7 +60,7 @@ public class WatermarkBufferTest {
 
     @Test
     public void waterMarkTestBlockingOneBlocker() {
-        final WatermarkBuffer wb = new WatermarkBuffer(K, H, L);
+        final AlmostEverywhereAgreementFilter wb = new AlmostEverywhereAgreementFilter(K, H, L);
         final Endpoint dst1 = Utils.hostFromParts("127.0.0.2", 2);
         final Endpoint dst2 = Utils.hostFromParts("127.0.0.3", 2);
         List<Endpoint> ret;
@@ -93,7 +93,7 @@ public class WatermarkBufferTest {
 
     @Test
     public void waterMarkTestBlockingThreeBlockers() {
-        final WatermarkBuffer wb = new WatermarkBuffer(K, H, L);
+        final AlmostEverywhereAgreementFilter wb = new AlmostEverywhereAgreementFilter(K, H, L);
         final Endpoint dst1 = Utils.hostFromParts("127.0.0.2", 2);
         final Endpoint dst2 = Utils.hostFromParts("127.0.0.3", 2);
         final Endpoint dst3 = Utils.hostFromParts("127.0.0.4", 2);
@@ -138,7 +138,7 @@ public class WatermarkBufferTest {
 
     @Test
     public void waterMarkTestBlockingMultipleBlockersPastH() {
-        final WatermarkBuffer wb = new WatermarkBuffer(K, H, L);
+        final AlmostEverywhereAgreementFilter wb = new AlmostEverywhereAgreementFilter(K, H, L);
         final Endpoint dst1 = Utils.hostFromParts("127.0.0.2", 2);
         final Endpoint dst2 = Utils.hostFromParts("127.0.0.3", 2);
         final Endpoint dst3 = Utils.hostFromParts("127.0.0.4", 2);
@@ -190,7 +190,7 @@ public class WatermarkBufferTest {
 
     @Test
     public void waterMarkTestBelowL() {
-        final WatermarkBuffer wb = new WatermarkBuffer(K, H, L);
+        final AlmostEverywhereAgreementFilter wb = new AlmostEverywhereAgreementFilter(K, H, L);
         final Endpoint dst1 = Utils.hostFromParts("127.0.0.2", 2);
         final Endpoint dst2 = Utils.hostFromParts("127.0.0.3", 2);
         final Endpoint dst3 = Utils.hostFromParts("127.0.0.4", 2);
@@ -232,7 +232,7 @@ public class WatermarkBufferTest {
 
     @Test
     public void waterMarkTestBatch() {
-        final WatermarkBuffer wb = new WatermarkBuffer(K, H, L);
+        final AlmostEverywhereAgreementFilter wb = new AlmostEverywhereAgreementFilter(K, H, L);
         final int numNodes = 3;
         final List<Endpoint> endpoints = new ArrayList<>();
         for (int i = 0; i < numNodes; i++) {
@@ -254,7 +254,7 @@ public class WatermarkBufferTest {
     @Test
     public void waterMarkTestLinkInvalidation() {
         final MembershipView mView = new MembershipView(K);
-        final WatermarkBuffer wb = new WatermarkBuffer(K, H, L);
+        final AlmostEverywhereAgreementFilter wb = new AlmostEverywhereAgreementFilter(K, H, L);
         final int numNodes = 30;
         final List<Endpoint> endpoints = new ArrayList<>();
         for (int i = 0; i < numNodes; i++) {

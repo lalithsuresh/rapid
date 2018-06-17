@@ -34,7 +34,7 @@ public class FastPaxosWithoutFallbackTests {
     private final List<MembershipService> services = new ArrayList<>();
 
     @After
-    public void cleanup() throws InterruptedException {
+    public void cleanup() {
         for (final MembershipService service: services) {
             service.shutdown();
         }
@@ -48,8 +48,8 @@ public class FastPaxosWithoutFallbackTests {
     @Test
     @Parameters(method = "fastQuorumTestNoConflictsData")
     @TestCaseName("{method}[N={0},Q={1}]")
-    public void fastQuorumTestNoConflicts(final int N, final int quorum) throws InterruptedException, IOException,
-                                                                                ExecutionException {
+    public void fastQuorumTestNoConflicts(final int N, final int quorum) throws InterruptedException,
+            ExecutionException {
         final int serverPort = 1234;
         final Endpoint node = Utils.hostFromParts("127.0.0.1", serverPort);
         final Endpoint proposalNode = Utils.hostFromParts("127.0.0.1", serverPort + 1);
@@ -139,11 +139,12 @@ public class FastPaxosWithoutFallbackTests {
      */
     private MembershipService createAndStartMembershipService(final Endpoint serverAddr, final MembershipView view)
             throws MembershipView.NodeAlreadyInRingException {
-        final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
+        final AlmostEverywhereAgreementFilter almostEverywhereAgreementFilter =
+                new AlmostEverywhereAgreementFilter(K, H, L);
         final SharedResources resources = new SharedResources(serverAddr);
         final IMessagingClient client = new GrpcClient(serverAddr);
-        final MembershipService service = new MembershipService(serverAddr, watermarkBuffer, view, resources,
-                new Settings(), client, new PingPongFailureDetector.Factory(serverAddr, client));
+        final MembershipService service = new MembershipService(serverAddr, almostEverywhereAgreementFilter, view,
+                resources, new Settings(), client, new PingPongFailureDetector.Factory(serverAddr, client));
         services.add(service);
         return service;
     }

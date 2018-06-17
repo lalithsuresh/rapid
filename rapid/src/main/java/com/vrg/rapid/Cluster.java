@@ -240,16 +240,17 @@ public final class Cluster {
             final NodeId currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
             final MembershipView membershipView = new MembershipView(K, Collections.singletonList(currentIdentifier),
                     Collections.singletonList(listenAddress));
-            final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
+            final AlmostEverywhereAgreementFilter almostEverywhereAgreementFilter =
+                    new AlmostEverywhereAgreementFilter(K, H, L);
             linkFailureDetector = linkFailureDetector != null ? linkFailureDetector
                     : new PingPongFailureDetector.Factory(listenAddress, messagingClient);
 
             final Map<Endpoint, Metadata> metadataMap = metadata.getMetadataCount() > 0
                                                     ? Collections.singletonMap(listenAddress, metadata)
                                                     : Collections.emptyMap();
-            final MembershipService membershipService = new MembershipService(listenAddress, watermarkBuffer,
-                                                            membershipView, sharedResources, settings, messagingClient,
-                                                            linkFailureDetector, metadataMap, subscriptions);
+            final MembershipService membershipService = new MembershipService(listenAddress,
+                                            almostEverywhereAgreementFilter, membershipView, sharedResources, settings,
+                                            messagingClient, linkFailureDetector, metadataMap, subscriptions);
             messagingServer.setMembershipService(membershipService);
             messagingServer.start();
             return new Cluster(messagingServer, membershipService, sharedResources, listenAddress);
@@ -430,12 +431,13 @@ public final class Cluster {
 
             final MembershipView membershipViewFinal =
                     new MembershipView(K, identifiersSeen, allEndpoints);
-            final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
+            final AlmostEverywhereAgreementFilter almostEverywhereAgreementFilter =
+                    new AlmostEverywhereAgreementFilter(K, H, L);
             linkFailureDetector = linkFailureDetector != null ? linkFailureDetector
                                                   : new PingPongFailureDetector.Factory(listenAddress, messagingClient);
             final MembershipService membershipService =
-                    new MembershipService(listenAddress, watermarkBuffer, membershipViewFinal, sharedResources,
-                                          settings, messagingClient, linkFailureDetector, allMetadata, subscriptions);
+                    new MembershipService(listenAddress, almostEverywhereAgreementFilter, membershipViewFinal,
+                           sharedResources, settings, messagingClient, linkFailureDetector, allMetadata, subscriptions);
             messagingServer.setMembershipService(membershipService);
             if (LOG.isTraceEnabled()) {
                 LOG.trace("{} has observers {}", listenAddress,

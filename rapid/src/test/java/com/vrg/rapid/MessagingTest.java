@@ -467,12 +467,13 @@ public class MessagingTest {
      */
     private void createAndStartMembershipService(final Endpoint serverAddr)
             throws IOException, MembershipView.NodeAlreadyInRingException {
-        final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
+        final AlmostEverywhereAgreementFilter almostEverywhereAgreementFilter =
+                new AlmostEverywhereAgreementFilter(K, H, L);
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, Utils.nodeIdFromUUID(UUID.randomUUID()));
         final IMessagingClient client = new GrpcClient(serverAddr);
-        final MembershipService service = new MembershipService(serverAddr, watermarkBuffer, membershipView, resources,
-                new Settings(), client, new PingPongFailureDetector.Factory(serverAddr, client));
+        final MembershipService service = new MembershipService(serverAddr, almostEverywhereAgreementFilter,
+            membershipView, resources, new Settings(), client, new PingPongFailureDetector.Factory(serverAddr, client));
         final IMessagingServer rpcServer = new GrpcServer(serverAddr, resources, false);
         rpcServer.setMembershipService(service);
         rpcServer.start();
@@ -486,13 +487,14 @@ public class MessagingTest {
     private void createAndStartMembershipService(final Endpoint serverAddr,
                                                              final List<ServerDropInterceptors.FirstN> interceptors)
             throws IOException, MembershipView.NodeAlreadyInRingException {
-        final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
+        final AlmostEverywhereAgreementFilter almostEverywhereAgreementFilter =
+                new AlmostEverywhereAgreementFilter(K, H, L);
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, Utils.nodeIdFromUUID(UUID.randomUUID()));
         final IMessagingClient client = new GrpcClient(serverAddr);
         final IMessagingServer rpcServer = new TestingGrpcServer(serverAddr, interceptors, false);
-        final MembershipService service = new MembershipService(serverAddr, watermarkBuffer, membershipView, resources,
-                new Settings(), client, new PingPongFailureDetector.Factory(serverAddr, client));
+        final MembershipService service = new MembershipService(serverAddr, almostEverywhereAgreementFilter,
+            membershipView, resources, new Settings(), client, new PingPongFailureDetector.Factory(serverAddr, client));
         rpcServer.setMembershipService(service);
         rpcServer.start();
         rpcServers.add(rpcServer);
@@ -505,10 +507,11 @@ public class MessagingTest {
     private void createAndStartMembershipService(final Endpoint serverAddr,
                                                       final MembershipView membershipView)
             throws IOException {
-        final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
+        final AlmostEverywhereAgreementFilter almostEverywhereAgreementFilter =
+                new AlmostEverywhereAgreementFilter(K, H, L);
         final IMessagingClient client = new GrpcClient(serverAddr);
-        final MembershipService service = new MembershipService(serverAddr, watermarkBuffer, membershipView, resources,
-                new Settings(), client, new PingPongFailureDetector.Factory(serverAddr, client));
+        final MembershipService service = new MembershipService(serverAddr, almostEverywhereAgreementFilter,
+            membershipView, resources, new Settings(), client, new PingPongFailureDetector.Factory(serverAddr, client));
         final IMessagingServer rpcServer = new GrpcServer(serverAddr, resources, false);
         rpcServer.setMembershipService(service);
         rpcServer.start();

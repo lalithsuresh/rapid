@@ -73,7 +73,7 @@ public final class MembershipService {
     private static final int DEFAULT_FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 0;
     static final int DEFAULT_FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
     private final MembershipView membershipView;
-    private final WatermarkBuffer watermarkBuffer;
+    private final AlmostEverywhereAgreementFilter almostEverywhereAgreementFilter;
     private final Endpoint myAddr;
     private final IBroadcaster broadcaster;
     private final Map<Endpoint, LinkedBlockingDeque<SettableFuture<RapidResponse>>> joinersToRespondTo =
@@ -109,15 +109,15 @@ public final class MembershipService {
     private final ISettings settings;
 
 
-    MembershipService(final Endpoint myAddr, final WatermarkBuffer watermarkBuffer,
+    MembershipService(final Endpoint myAddr, final AlmostEverywhereAgreementFilter almostEverywhereAgreementFilter,
                       final MembershipView membershipView, final SharedResources sharedResources,
                       final ISettings settings, final IMessagingClient messagingClient,
                       final ILinkFailureDetectorFactory linkFailureDetector) {
-        this(myAddr, watermarkBuffer, membershipView, sharedResources, settings, messagingClient, linkFailureDetector,
-             Collections.emptyMap(), new EnumMap<>(ClusterEvents.class));
+        this(myAddr, almostEverywhereAgreementFilter, membershipView, sharedResources, settings, messagingClient,
+             linkFailureDetector, Collections.emptyMap(), new EnumMap<>(ClusterEvents.class));
     }
 
-    MembershipService(final Endpoint myAddr, final WatermarkBuffer watermarkBuffer,
+    MembershipService(final Endpoint myAddr, final AlmostEverywhereAgreementFilter almostEverywhereAgreementFilter,
                       final MembershipView membershipView, final SharedResources sharedResources,
                       final ISettings settings, final IMessagingClient messagingClient,
                       final ILinkFailureDetectorFactory linkFailureDetector, final Map<Endpoint, Metadata> metadataMap,
@@ -125,7 +125,7 @@ public final class MembershipService {
         this.myAddr = myAddr;
         this.settings = settings;
         this.membershipView = membershipView;
-        this.watermarkBuffer = watermarkBuffer;
+        this.almostEverywhereAgreementFilter = almostEverywhereAgreementFilter;
         this.sharedResources = sharedResources;
         this.metadataManager = new MetadataManager();
         this.metadataManager.addMetadata(metadataMap);
@@ -301,12 +301,12 @@ public final class MembershipService {
                     // First, we filter out invalid messages that violate membership invariants.
                     .filter(msg -> filterLinkUpdateMessages(messageBatch, msg, membershipSize, currentConfigurationId))
                     // We then apply all the valid messages into our condition detector to obtain a view change proposal
-                    .map(watermarkBuffer::aggregateForProposal)
+                    .map(almostEverywhereAgreementFilter::aggregateForProposal)
                     .flatMap(List::stream)
                     .collect(Collectors.toSet());
 
             // Lastly, we apply implicit detections
-            proposal.addAll(watermarkBuffer.invalidateFailingLinks(membershipView));
+            proposal.addAll(almostEverywhereAgreementFilter.invalidateFailingLinks(membershipView));
 
             // If we have a proposal for this stage, start an instance of consensus on it.
             if (!proposal.isEmpty()) {
@@ -382,7 +382,7 @@ public final class MembershipService {
         subscriptions.get(ClusterEvents.VIEW_CHANGE).forEach(cb -> cb.accept(currentConfigurationId, statusChanges));
 
         // Clear data structures for the next round.
-        watermarkBuffer.clear();
+        almostEverywhereAgreementFilter.clear();
         announcedProposal = false;
         fastPaxosInstance = new FastPaxos(myAddr, currentConfigurationId, membershipView.getMembershipSize(),
                                           messagingClient, broadcaster, backgroundTasksExecutor,
