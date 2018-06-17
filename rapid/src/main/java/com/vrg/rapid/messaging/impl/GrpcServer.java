@@ -82,7 +82,7 @@ public class GrpcServer extends MembershipServiceGrpc.MembershipServiceImplBase 
              *  1) the system is configured to use a failure detector that relies on Rapid's probe messages
              *  2) the node receiving the probe message has been added to the cluster but has not yet completed
              *     its bootstrap process (has not received its join-confirmation yet).
-             *  3) By virtue of 2), the node is "about to be up" and therefore informs the monitor that it is
+             *  3) By virtue of 2), the node is "about to be up" and therefore informs the observer that it is
              *     still bootstrapping. This extra information may or may not be respected by the failure detector,
              *     but is useful in large deployments.
              */

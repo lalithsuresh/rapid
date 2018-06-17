@@ -21,7 +21,7 @@ import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.messaging.IMessagingServer;
 import com.vrg.rapid.messaging.impl.GrpcClient;
 import com.vrg.rapid.messaging.impl.GrpcServer;
-import com.vrg.rapid.monitoring.ILinkFailureDetectorFactory;
+import com.vrg.rapid.monitoring.IEdgeFailureDetectorFactory;
 import com.vrg.rapid.monitoring.impl.PingPongFailureDetector;
 import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.JoinMessage;
@@ -138,7 +138,7 @@ public final class Cluster {
 
     public static class Builder {
         private final Endpoint listenAddress;
-        @Nullable private ILinkFailureDetectorFactory linkFailureDetector = null;
+        @Nullable private IEdgeFailureDetectorFactory edgeFailureDetector = null;
         private Metadata metadata = Metadata.getDefaultInstance();
         private Settings settings = new Settings();
         private final Map<ClusterEvents, List<BiConsumer<Long, List<NodeStatusChange>>>> subscriptions =
@@ -183,14 +183,14 @@ public final class Cluster {
         }
 
         /**
-         * Set a link failure detector to use for monitors to watch their monitorees.
+         * Set a link failure detector to use for observers to watch their subjects.
          *
-         * @param linkFailureDetector A link failure detector used as input for Rapid's failure detection.
+         * @param edgeFailureDetector A link failure detector used as input for Rapid's failure detection.
          */
         @ExperimentalApi
-        public Builder setLinkFailureDetectorFactory(final ILinkFailureDetectorFactory linkFailureDetector) {
-            Objects.requireNonNull(linkFailureDetector);
-            this.linkFailureDetector = linkFailureDetector;
+        public Builder setEdgeFailureDetectorFactory(final IEdgeFailureDetectorFactory edgeFailureDetector) {
+            Objects.requireNonNull(edgeFailureDetector);
+            this.edgeFailureDetector = edgeFailureDetector;
             return this;
         }
 
@@ -240,16 +240,16 @@ public final class Cluster {
             final NodeId currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
             final MembershipView membershipView = new MembershipView(K, Collections.singletonList(currentIdentifier),
                     Collections.singletonList(listenAddress));
-            final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
-            linkFailureDetector = linkFailureDetector != null ? linkFailureDetector
+            final MultiNodeCutDetector cutDetector = new MultiNodeCutDetector(K, H, L);
+            edgeFailureDetector = edgeFailureDetector != null ? edgeFailureDetector
                     : new PingPongFailureDetector.Factory(listenAddress, messagingClient);
 
             final Map<Endpoint, Metadata> metadataMap = metadata.getMetadataCount() > 0
                                                     ? Collections.singletonMap(listenAddress, metadata)
                                                     : Collections.emptyMap();
-            final MembershipService membershipService = new MembershipService(listenAddress, watermarkBuffer,
-                                                            membershipView, sharedResources, settings, messagingClient,
-                                                            linkFailureDetector, metadataMap, subscriptions);
+            final MembershipService membershipService = new MembershipService(listenAddress,
+                    cutDetector, membershipView, sharedResources, settings,
+                                            messagingClient, edgeFailureDetector, metadataMap, subscriptions);
             messagingServer.setMembershipService(membershipService);
             messagingServer.start();
             return new Cluster(messagingServer, membershipService, sharedResources, listenAddress);
@@ -321,14 +321,14 @@ public final class Cluster {
 
         /**
          * A single attempt by a node to join a cluster. This includes phase one, where it contacts
-         * a seed node to receive a list of monitors to contact and the configuration to join. If successful,
-         * it triggers phase two where it contacts those monitors who then vouch for the joiner's admission
+         * a seed node to receive a list of observers to contact and the configuration to join. If successful,
+         * it triggers phase two where it contacts those observers who then vouch for the joiner's admission
          * into the cluster.
          */
         private Cluster joinAttempt(final Endpoint seedAddress, final NodeId currentIdentifier, final int attempt)
                                                                 throws ExecutionException, InterruptedException {
             assert messagingClient != null;
-            // First, get the configuration ID and the monitors to contact from the seed node.
+            // First, get the configuration ID and the observers to contact from the seed node.
             final RapidRequest preJoinMessage = Utils.toRapidRequest(PreJoinMessage.newBuilder()
                                                                             .setSender(listenAddress)
                                                                             .setNodeId(currentIdentifier)
@@ -349,7 +349,7 @@ public final class Cluster {
 
             /*
              * HOSTNAME_ALREADY_IN_RING is a special case. If the joinPhase2 request times out before
-             * the join confirmation arrives from a monitor, a client may re-try a join by contacting
+             * the join confirmation arrives from an observer, a client may re-try a join by contacting
              * the seed and get this response. It should simply get the configuration streamed to it.
              * To do that, that client tries the join protocol but with a configuration id of -1.
              */
@@ -359,7 +359,7 @@ public final class Cluster {
                     listenAddress, configurationToJoin, attempt);
 
             /*
-             * Phase one complete. Now send a phase two message to all our monitors, and if there is a valid
+             * Phase one complete. Now send a phase two message to all our observers, and if there is a valid
              * response, construct a Cluster object based on it.
              */
             final Optional<JoinResponse> response = sendJoinPhase2Messages(joinPhaseOneResult,
@@ -377,25 +377,25 @@ public final class Cluster {
         }
 
         /**
-         * Identifies the set of monitors to reach out to from the phase one message, and sends a join phase 2 message.
+         * Identifies the set of observers to reach out to from the phase one message, and sends a join phase 2 message.
          */
         private List<RapidResponse> sendJoinPhase2Messages(final JoinResponse joinPhaseOneResult,
                                         final long configurationToJoin, final NodeId currentIdentifier)
                                                             throws ExecutionException, InterruptedException {
             assert messagingClient != null;
-            // We have the list of monitors. Now contact them as part of phase 2.
-            final List<Endpoint> monitorList = joinPhaseOneResult.getEndpointsList();
-            final Map<Endpoint, List<Integer>> ringNumbersPerMonitor = new HashMap<>(K);
+            // We have the list of observers. Now contact them as part of phase 2.
+            final List<Endpoint> observerList = joinPhaseOneResult.getEndpointsList();
+            final Map<Endpoint, List<Integer>> ringNumbersPerObserver = new HashMap<>(K);
 
             // Batch together requests to the same node.
             int ringNumber = 0;
-            for (final Endpoint monitor: monitorList) {
-                ringNumbersPerMonitor.computeIfAbsent(monitor, k -> new ArrayList<>()).add(ringNumber);
+            for (final Endpoint observer: observerList) {
+                ringNumbersPerObserver.computeIfAbsent(observer, k -> new ArrayList<>()).add(ringNumber);
                 ringNumber++;
             }
 
             final List<ListenableFuture<RapidResponse>> responseFutures = new ArrayList<>();
-            for (final Map.Entry<Endpoint, List<Integer>> entry: ringNumbersPerMonitor.entrySet()) {
+            for (final Map.Entry<Endpoint, List<Integer>> entry: ringNumbersPerObserver.entrySet()) {
                 final JoinMessage msg = JoinMessage.newBuilder()
                         .setSender(listenAddress)
                         .setNodeId(currentIdentifier)
@@ -430,18 +430,18 @@ public final class Cluster {
 
             final MembershipView membershipViewFinal =
                     new MembershipView(K, identifiersSeen, allEndpoints);
-            final WatermarkBuffer watermarkBuffer = new WatermarkBuffer(K, H, L);
-            linkFailureDetector = linkFailureDetector != null ? linkFailureDetector
+            final MultiNodeCutDetector cutDetector = new MultiNodeCutDetector(K, H, L);
+            edgeFailureDetector = edgeFailureDetector != null ? edgeFailureDetector
                                                   : new PingPongFailureDetector.Factory(listenAddress, messagingClient);
             final MembershipService membershipService =
-                    new MembershipService(listenAddress, watermarkBuffer, membershipViewFinal, sharedResources,
-                                          settings, messagingClient, linkFailureDetector, allMetadata, subscriptions);
+                    new MembershipService(listenAddress, cutDetector, membershipViewFinal,
+                           sharedResources, settings, messagingClient, edgeFailureDetector, allMetadata, subscriptions);
             messagingServer.setMembershipService(membershipService);
             if (LOG.isTraceEnabled()) {
-                LOG.trace("{} has monitors {}", listenAddress,
-                        membershipViewFinal.getMonitorsOf(listenAddress));
-                LOG.trace("{} has monitorees {}", listenAddress,
-                        membershipViewFinal.getMonitorsOf(listenAddress));
+                LOG.trace("{} has observers {}", listenAddress,
+                        membershipViewFinal.getObserversOf(listenAddress));
+                LOG.trace("{} has subjects {}", listenAddress,
+                        membershipViewFinal.getObserversOf(listenAddress));
             }
             return new Cluster(messagingServer, membershipService, sharedResources, listenAddress);
         }

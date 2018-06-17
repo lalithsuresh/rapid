@@ -15,8 +15,8 @@ package com.vrg.rapid;
 
 import com.google.common.collect.ImmutableList;
 import com.vrg.rapid.pb.Endpoint;
-import com.vrg.rapid.pb.LinkStatus;
-import com.vrg.rapid.pb.LinkUpdateMessage;
+import com.vrg.rapid.pb.EdgeStatus;
+import com.vrg.rapid.pb.AlertMessage;
 
 import javax.annotation.concurrent.GuardedBy;
 import java.util.ArrayList;
@@ -32,12 +32,14 @@ import java.util.Set;
  * A filter that outputs a view change proposal about a node only if:
  * - there are H reports about a node.
  * - there is no other node about which there are more than L but less than H reports.
+ *
+ * The output of this filter gives us almost-everywhere agreement
  */
-final class WatermarkBuffer {
+final class MultiNodeCutDetector {
     private static final int K_MIN = 3;
-    private final int K;
-    private final int H;
-    private final int L;
+    private final int K; // Number of observers per subject and vice versa
+    private final int H; // High watermark
+    private final int L; // Low watermark
     @GuardedBy("lock") private int proposalCount = 0;
     @GuardedBy("lock") private int updatesInProgress = 0;
     @GuardedBy("lock") private final Map<Endpoint, Map<Integer, Endpoint>> reportsPerHost;
@@ -46,7 +48,7 @@ final class WatermarkBuffer {
     @GuardedBy("lock") private boolean seenLinkDownEvents = false;
     private final Object lock = new Object();
 
-    WatermarkBuffer(final int K, final int H, final int L) {
+    MultiNodeCutDetector(final int K, final int H, final int L) {
         if (H > K || L > H || K < K_MIN || L <= 0 || H <= 0) {
             throw new IllegalArgumentException("Arguments do not satisfy K > H >= L >= 0:" +
                                                " (K: " + K + ", H: " + H + ", L: " + L);
@@ -64,27 +66,27 @@ final class WatermarkBuffer {
     }
 
     /**
-     * Apply a LinkUpdateMessage against the Watermark filter. When an update moves a host
+     * Apply a AlertMessage against the cut detector. When an update moves a host
      * past the H threshold of reports, and no other host has between H and L reports, the
      * method returns a view change proposal.
      *
-     * @param msg A LinkUpdateMessage to apply against the filter
+     * @param msg A AlertMessage to apply against the filter
      * @return a list of endpoints about which a view change has been recorded. Empty list if there is no proposal.
      */
-    List<Endpoint> aggregateForProposal(final LinkUpdateMessage msg) {
+    List<Endpoint> aggregateForProposal(final AlertMessage msg) {
         Objects.requireNonNull(msg);
         final ArrayList<Endpoint> proposals = new ArrayList<>();
         msg.getRingNumberList().forEach(ringNumber ->
-           proposals.addAll(aggregateForProposal(msg.getLinkSrc(), msg.getLinkDst(), msg.getLinkStatus(), ringNumber)));
+           proposals.addAll(aggregateForProposal(msg.getEdgeSrc(), msg.getEdgeDst(), msg.getEdgeStatus(), ringNumber)));
         return proposals;
     }
 
     private List<Endpoint> aggregateForProposal(final Endpoint linkSrc, final Endpoint linkDst,
-                                                final LinkStatus linkStatus, final int ringNumber) {
+                                                final EdgeStatus edgeStatus, final int ringNumber) {
         assert ringNumber <= K;
 
         synchronized (lock) {
-            if (linkStatus == LinkStatus.DOWN) {
+            if (edgeStatus == EdgeStatus.DOWN) {
                 seenLinkDownEvents = true;
             }
 
@@ -126,13 +128,13 @@ final class WatermarkBuffer {
     }
 
     /**
-     * Invalidates links between nodes that are failing or have failed. This step may be skipped safely
+     * Invalidates edges between nodes that are failing or have failed. This step may be skipped safely
      * when there are no failing nodes.
      *
-     * @param view MembershipView object required to find monitor-monitoree relationships between failing nodes.
+     * @param view MembershipView object required to find observer-subject relationships between failing nodes.
      * @return A list of endpoints representing a view change proposal.
      */
-    List<Endpoint> invalidateFailingLinks(final MembershipView view) {
+    List<Endpoint> invalidateFailingEdges(final MembershipView view) {
         synchronized (lock) {
             // Link invalidation is only required when we have failing nodes
             if (!seenLinkDownEvents) {
@@ -142,16 +144,16 @@ final class WatermarkBuffer {
             final List<Endpoint> proposalsToReturn = new ArrayList<>();
             final List<Endpoint> preProposalCopy = ImmutableList.copyOf(preProposal);
             for (final Endpoint nodeInFlux: preProposalCopy) {
-                final List<Endpoint> monitors = view.isHostPresent(nodeInFlux)
-                                                    ? view.getMonitorsOf(nodeInFlux)          // For failing nodes
-                                                    : view.getExpectedMonitorsOf(nodeInFlux); // For joining nodes
-                // Account for all links between nodes that are past the L threshold
+                final List<Endpoint> observers = view.isHostPresent(nodeInFlux)
+                                                    ? view.getObserversOf(nodeInFlux)          // For failing nodes
+                                                    : view.getExpectedObserversOf(nodeInFlux); // For joining nodes
+                // Account for all edges between nodes that are past the L threshold
                 int ringNumber = 0;
-                for (final Endpoint monitor : monitors) {
-                    if (proposal.contains(monitor) || preProposal.contains(monitor)) {
-                        // Implicit detection of link between monitor and nodeInFlux
-                        final LinkStatus linkStatus = view.isHostPresent(nodeInFlux) ? LinkStatus.DOWN : LinkStatus.UP;
-                        proposalsToReturn.addAll(aggregateForProposal(monitor, nodeInFlux, linkStatus, ringNumber));
+                for (final Endpoint observer : observers) {
+                    if (proposal.contains(observer) || preProposal.contains(observer)) {
+                        // Implicit detection of edges between observer and nodeInFlux
+                        final EdgeStatus edgeStatus = view.isHostPresent(nodeInFlux) ? EdgeStatus.DOWN : EdgeStatus.UP;
+                        proposalsToReturn.addAll(aggregateForProposal(observer, nodeInFlux, edgeStatus, ringNumber));
                     }
                     ringNumber++;
                 }

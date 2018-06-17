@@ -32,7 +32,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
- * Tests for a standalone MembershipView object (no watermark buffer).
+ * Tests for a standalone MembershipView object.
  */
 public class MembershipViewTest {
     private static final int K = 10;
@@ -169,8 +169,8 @@ public class MembershipViewTest {
         try {
             final Endpoint n1 = Utils.hostFromParts("127.0.0.1", 1);
             mview.ringAdd(n1, Utils.nodeIdFromUUID(UUID.randomUUID()));
-            assertEquals(0, mview.getMonitoreesOf(n1).size());
-            assertEquals(0, mview.getMonitorsOf(n1).size());
+            assertEquals(0, mview.getSubjectsOf(n1).size());
+            assertEquals(0, mview.getObserversOf(n1).size());
         } catch (final MembershipView.NodeAlreadyInRingException | MembershipView.NodeNotInRingException e) {
             fail();
         }
@@ -178,13 +178,13 @@ public class MembershipViewTest {
         final Endpoint n2 = Utils.hostFromParts("127.0.0.1", 2);
 
         try {
-            mview.getMonitoreesOf(n2);
+            mview.getSubjectsOf(n2);
             fail();
         } catch (final MembershipView.NodeNotInRingException ignored) {
         }
 
         try {
-            mview.getMonitorsOf(n2);
+            mview.getObserversOf(n2);
             fail();
         } catch (final MembershipView.NodeNotInRingException ignored) {
         }
@@ -200,14 +200,14 @@ public class MembershipViewTest {
         final Endpoint n = Utils.hostFromParts("127.0.0.1", 1);
 
         try {
-            mview.getMonitoreesOf(n);
+            mview.getSubjectsOf(n);
         } catch (final MembershipView.NodeNotInRingException e) {
             numExceptions++;
         }
         assertEquals(1, numExceptions);
 
         try {
-            mview.getMonitorsOf(n);
+            mview.getObserversOf(n);
         } catch (final MembershipView.NodeNotInRingException e) {
             numExceptions++;
         }
@@ -225,10 +225,10 @@ public class MembershipViewTest {
             final Endpoint n2 = Utils.hostFromParts("127.0.0.1", 2);
             mview.ringAdd(n1, Utils.nodeIdFromUUID(UUID.randomUUID()));
             mview.ringAdd(n2, Utils.nodeIdFromUUID(UUID.randomUUID()));
-            assertEquals(K, mview.getMonitoreesOf(n1).size());
-            assertEquals(K, mview.getMonitorsOf(n1).size());
-            assertEquals(1, ImmutableSet.copyOf(mview.getMonitoreesOf(n1)).size());
-            assertEquals(1, ImmutableSet.copyOf(mview.getMonitorsOf(n1)).size());
+            assertEquals(K, mview.getSubjectsOf(n1).size());
+            assertEquals(K, mview.getObserversOf(n1).size());
+            assertEquals(1, ImmutableSet.copyOf(mview.getSubjectsOf(n1)).size());
+            assertEquals(1, ImmutableSet.copyOf(mview.getObserversOf(n1)).size());
         } catch (final MembershipView.NodeAlreadyInRingException | MembershipView.NodeNotInRingException e) {
             fail();
         }
@@ -247,15 +247,15 @@ public class MembershipViewTest {
             mview.ringAdd(n1, Utils.nodeIdFromUUID(UUID.randomUUID()));
             mview.ringAdd(n2, Utils.nodeIdFromUUID(UUID.randomUUID()));
             mview.ringAdd(n3, Utils.nodeIdFromUUID(UUID.randomUUID()));
-            assertEquals(K, mview.getMonitoreesOf(n1).size());
-            assertEquals(K, mview.getMonitorsOf(n1).size());
-            assertEquals(2, ImmutableSet.copyOf(mview.getMonitoreesOf(n1)).size());
-            assertEquals(2, ImmutableSet.copyOf(mview.getMonitorsOf(n1)).size());
+            assertEquals(K, mview.getSubjectsOf(n1).size());
+            assertEquals(K, mview.getObserversOf(n1).size());
+            assertEquals(2, ImmutableSet.copyOf(mview.getSubjectsOf(n1)).size());
+            assertEquals(2, ImmutableSet.copyOf(mview.getObserversOf(n1)).size());
             mview.ringDelete(n2);
-            assertEquals(K, mview.getMonitoreesOf(n1).size());
-            assertEquals(K, mview.getMonitorsOf(n1).size());
-            assertEquals(1, ImmutableSet.copyOf(mview.getMonitoreesOf(n1)).size());
-            assertEquals(1, ImmutableSet.copyOf(mview.getMonitorsOf(n1)).size());
+            assertEquals(K, mview.getSubjectsOf(n1).size());
+            assertEquals(K, mview.getObserversOf(n1).size());
+            assertEquals(1, ImmutableSet.copyOf(mview.getSubjectsOf(n1)).size());
+            assertEquals(1, ImmutableSet.copyOf(mview.getObserversOf(n1)).size());
         } catch (final MembershipView.NodeAlreadyInRingException | MembershipView.NodeNotInRingException e) {
             fail();
         }
@@ -282,10 +282,10 @@ public class MembershipViewTest {
 
         for (int i = 0; i < numNodes; i++) {
             try {
-                final int numMonitorees = mview.getMonitoreesOf(list.get(i)).size();
-                final int numMonitors = mview.getMonitorsOf(list.get(i)).size();
-                assertTrue("NumMonitorees: " + numMonitorees, K == numMonitorees);
-                assertTrue("NumMonitors: " + numMonitors, K == numMonitors);
+                final int numSubjects = mview.getSubjectsOf(list.get(i)).size();
+                final int numObservers = mview.getObserversOf(list.get(i)).size();
+                assertTrue("NumSubjects: " + numSubjects, K == numSubjects);
+                assertTrue("NumObservers: " + numObservers, K == numObservers);
             } catch (final MembershipView.NodeNotInRingException e) {
                 fail();
             }
@@ -307,9 +307,9 @@ public class MembershipViewTest {
         }
 
         final Endpoint joiningNode = Utils.hostFromParts("127.0.0.1", serverPort + 1);
-        assertEquals(K, mview.getExpectedMonitorsOf(joiningNode).size());
-        assertEquals(1, ImmutableSet.copyOf(mview.getExpectedMonitorsOf(joiningNode)).size());
-        assertEquals(n, mview.getExpectedMonitorsOf(joiningNode).toArray()[0]);
+        assertEquals(K, mview.getExpectedObserversOf(joiningNode).size());
+        assertEquals(1, ImmutableSet.copyOf(mview.getExpectedObserversOf(joiningNode)).size());
+        assertEquals(n, mview.getExpectedObserversOf(joiningNode).toArray()[0]);
     }
 
     /**
@@ -321,7 +321,7 @@ public class MembershipViewTest {
         final int numNodes = 20;
         final int serverPortBase = 1234;
         final Endpoint joiningNode = Utils.hostFromParts("127.0.0.1", serverPortBase - 1);
-        int numMonitors = 0;
+        int numObservers = 0;
         for (int i = 0; i < numNodes; i++) {
             final Endpoint n = Utils.hostFromParts("127.0.0.1", serverPortBase + i);
             try {
@@ -330,17 +330,17 @@ public class MembershipViewTest {
                 fail();
             }
 
-            final int numMonitorsActual = mview.getExpectedMonitorsOf(joiningNode).size();
+            final int numObserversActual = mview.getExpectedObserversOf(joiningNode).size();
 
             // we could compare against i + 1 but that condition is not guaranteed
             // to hold true since we are not constructing deterministic expanders
-            assertTrue(numMonitors <= numMonitorsActual);
-            numMonitors = numMonitorsActual;
+            assertTrue(numObservers <= numObserversActual);
+            numObservers = numObserversActual;
         }
 
-        // See if we have roughly K monitors.
-        assertTrue(K - 3 <= numMonitors);
-        assertTrue(K >= numMonitors);
+        // See if we have roughly K observers.
+        assertTrue(K - 3 <= numObservers);
+        assertTrue(K >= numObservers);
     }
 
 

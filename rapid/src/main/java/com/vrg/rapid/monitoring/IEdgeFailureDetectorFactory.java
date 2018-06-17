@@ -17,10 +17,10 @@ import com.vrg.rapid.pb.Endpoint;
 import io.grpc.ExperimentalApi;
 
 /**
- * The LinkFailureDetector interface. Objects that implement this interface can be
+ * The EdgeFailureDetector interface. Objects that implement this interface can be
  * supplied to the MembershipService to perform failure detection.
  */
 @ExperimentalApi
-public interface ILinkFailureDetectorFactory {
-    Runnable createInstance(final Endpoint monitor, final Runnable notifier);
+public interface IEdgeFailureDetectorFactory {
+    Runnable createInstance(final Endpoint observer, final Runnable notifier);
 }

@@ -14,7 +14,7 @@
 package com.vrg.rapid;
 
 import com.vrg.rapid.pb.Endpoint;
-import com.vrg.rapid.pb.LinkStatus;
+import com.vrg.rapid.pb.EdgeStatus;
 import com.vrg.rapid.pb.Metadata;
 
 /**
@@ -23,11 +23,11 @@ import com.vrg.rapid.pb.Metadata;
  */
 public class NodeStatusChange {
     private final Endpoint endpoint;
-    private final LinkStatus status;
+    private final EdgeStatus status;
     private final Metadata metadata;
 
     NodeStatusChange(final Endpoint Endpoint,
-                     final LinkStatus status,
+                     final EdgeStatus status,
                      final Metadata metadata) {
         this.endpoint = Endpoint;
         this.status = status;
@@ -38,7 +38,7 @@ public class NodeStatusChange {
         return endpoint;
     }
 
-    public LinkStatus getStatus() {
+    public EdgeStatus getStatus() {
         return status;
     }
 

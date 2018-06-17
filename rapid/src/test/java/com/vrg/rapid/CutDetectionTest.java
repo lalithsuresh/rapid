@@ -14,8 +14,8 @@
 package com.vrg.rapid;
 
 import com.vrg.rapid.pb.Endpoint;
-import com.vrg.rapid.pb.LinkStatus;
-import com.vrg.rapid.pb.LinkUpdateMessage;
+import com.vrg.rapid.pb.EdgeStatus;
+import com.vrg.rapid.pb.AlertMessage;
 import org.junit.Test;
 
 import java.util.ArrayList;
@@ -28,9 +28,9 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 /**
- * Tests for a watermark-buffer
+ * Tests for multi node cut detection
  */
-public class WatermarkBufferTest {
+public class CutDetectionTest {
     private static final int K = 10;
     private static final int H = 8;
     private static final int L = 2;
@@ -40,199 +40,199 @@ public class WatermarkBufferTest {
      * A series of updates with the right ring indexes
      */
     @Test
-    public void waterMarkTest() {
-        final WatermarkBuffer wb = new WatermarkBuffer(K, H, L);
+    public void cutDetectionTest() {
+        final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L);
         final Endpoint dst = Utils.hostFromParts("127.0.0.2", 2);
         List<Endpoint> ret;
 
         for (int i = 0; i < H - 1; i++) {
-            ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                    Utils.hostFromParts("127.0.0.1", i + 1), dst, LinkStatus.UP, CONFIGURATION_ID, i));
+            ret = wb.aggregateForProposal(createAlertMessage(
+                    Utils.hostFromParts("127.0.0.1", i + 1), dst, EdgeStatus.UP, CONFIGURATION_ID, i));
             assertEquals(0, ret.size());
             assertEquals(0, wb.getNumProposals());
         }
 
-        ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                Utils.hostFromParts("127.0.0.1", H), dst, LinkStatus.UP, CONFIGURATION_ID, H - 1));
+        ret = wb.aggregateForProposal(createAlertMessage(
+                Utils.hostFromParts("127.0.0.1", H), dst, EdgeStatus.UP, CONFIGURATION_ID, H - 1));
         assertEquals(1, ret.size());
         assertEquals(1, wb.getNumProposals());
     }
 
     @Test
-    public void waterMarkTestBlockingOneBlocker() {
-        final WatermarkBuffer wb = new WatermarkBuffer(K, H, L);
+    public void cutDetectionTestBlockingOneBlocker() {
+        final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L);
         final Endpoint dst1 = Utils.hostFromParts("127.0.0.2", 2);
         final Endpoint dst2 = Utils.hostFromParts("127.0.0.3", 2);
         List<Endpoint> ret;
 
         for (int i = 0; i < H - 1; i++) {
-            ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                    Utils.hostFromParts("127.0.0.1", i + 1), dst1, LinkStatus.UP, CONFIGURATION_ID, i));
+            ret = wb.aggregateForProposal(createAlertMessage(
+                    Utils.hostFromParts("127.0.0.1", i + 1), dst1, EdgeStatus.UP, CONFIGURATION_ID, i));
             assertEquals(0, ret.size());
             assertEquals(0, wb.getNumProposals());
         }
 
         for (int i = 0; i < H - 1; i++) {
-            ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                    Utils.hostFromParts("127.0.0.1", i + 1), dst2, LinkStatus.UP, CONFIGURATION_ID, i));
+            ret = wb.aggregateForProposal(createAlertMessage(
+                    Utils.hostFromParts("127.0.0.1", i + 1), dst2, EdgeStatus.UP, CONFIGURATION_ID, i));
             assertEquals(0, ret.size());
             assertEquals(0, wb.getNumProposals());
         }
 
-        ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                Utils.hostFromParts("127.0.0.1", H), dst1, LinkStatus.UP, CONFIGURATION_ID, H - 1));
+        ret = wb.aggregateForProposal(createAlertMessage(
+                Utils.hostFromParts("127.0.0.1", H), dst1, EdgeStatus.UP, CONFIGURATION_ID, H - 1));
         assertEquals(0, ret.size());
         assertEquals(0, wb.getNumProposals());
 
-        ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                Utils.hostFromParts("127.0.0.1", H), dst2, LinkStatus.UP, CONFIGURATION_ID, H - 1));
+        ret = wb.aggregateForProposal(createAlertMessage(
+                Utils.hostFromParts("127.0.0.1", H), dst2, EdgeStatus.UP, CONFIGURATION_ID, H - 1));
         assertEquals(2, ret.size());
         assertEquals(1, wb.getNumProposals());
     }
 
 
     @Test
-    public void waterMarkTestBlockingThreeBlockers() {
-        final WatermarkBuffer wb = new WatermarkBuffer(K, H, L);
+    public void cutDetectionTestBlockingThreeBlockers() {
+        final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L);
         final Endpoint dst1 = Utils.hostFromParts("127.0.0.2", 2);
         final Endpoint dst2 = Utils.hostFromParts("127.0.0.3", 2);
         final Endpoint dst3 = Utils.hostFromParts("127.0.0.4", 2);
         List<Endpoint> ret;
 
         for (int i = 0; i < H - 1; i++) {
-            ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                    Utils.hostFromParts("127.0.0.1", i + 1), dst1, LinkStatus.UP, CONFIGURATION_ID, i));
+            ret = wb.aggregateForProposal(createAlertMessage(
+                    Utils.hostFromParts("127.0.0.1", i + 1), dst1, EdgeStatus.UP, CONFIGURATION_ID, i));
             assertEquals(0, ret.size());
             assertEquals(0, wb.getNumProposals());
         }
 
         for (int i = 0; i < H - 1; i++) {
-            ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                    Utils.hostFromParts("127.0.0.1", i + 1), dst2, LinkStatus.UP, CONFIGURATION_ID, i));
+            ret = wb.aggregateForProposal(createAlertMessage(
+                    Utils.hostFromParts("127.0.0.1", i + 1), dst2, EdgeStatus.UP, CONFIGURATION_ID, i));
             assertEquals(0, ret.size());
             assertEquals(0, wb.getNumProposals());
         }
 
         for (int i = 0; i < H - 1; i++) {
-            ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                    Utils.hostFromParts("127.0.0.1", i + 1), dst3, LinkStatus.UP, CONFIGURATION_ID, i));
+            ret = wb.aggregateForProposal(createAlertMessage(
+                    Utils.hostFromParts("127.0.0.1", i + 1), dst3, EdgeStatus.UP, CONFIGURATION_ID, i));
             assertEquals(0, ret.size());
             assertEquals(0, wb.getNumProposals());
         }
 
-        ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                Utils.hostFromParts("127.0.0.1", H), dst1, LinkStatus.UP, CONFIGURATION_ID, H - 1));
+        ret = wb.aggregateForProposal(createAlertMessage(
+                Utils.hostFromParts("127.0.0.1", H), dst1, EdgeStatus.UP, CONFIGURATION_ID, H - 1));
         assertEquals(0, ret.size());
         assertEquals(0, wb.getNumProposals());
 
-        ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                Utils.hostFromParts("127.0.0.1", H), dst3, LinkStatus.UP, CONFIGURATION_ID, H - 1));
+        ret = wb.aggregateForProposal(createAlertMessage(
+                Utils.hostFromParts("127.0.0.1", H), dst3, EdgeStatus.UP, CONFIGURATION_ID, H - 1));
         assertEquals(0, ret.size());
         assertEquals(0, wb.getNumProposals());
 
-        ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                Utils.hostFromParts("127.0.0.1", H), dst2, LinkStatus.UP, CONFIGURATION_ID, H - 1));
+        ret = wb.aggregateForProposal(createAlertMessage(
+                Utils.hostFromParts("127.0.0.1", H), dst2, EdgeStatus.UP, CONFIGURATION_ID, H - 1));
         assertEquals(3, ret.size());
         assertEquals(1, wb.getNumProposals());
     }
 
     @Test
-    public void waterMarkTestBlockingMultipleBlockersPastH() {
-        final WatermarkBuffer wb = new WatermarkBuffer(K, H, L);
+    public void cutDetectionTestBlockingMultipleBlockersPastH() {
+        final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L);
         final Endpoint dst1 = Utils.hostFromParts("127.0.0.2", 2);
         final Endpoint dst2 = Utils.hostFromParts("127.0.0.3", 2);
         final Endpoint dst3 = Utils.hostFromParts("127.0.0.4", 2);
         List<Endpoint> ret;
 
         for (int i = 0; i < H - 1; i++) {
-            ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                    Utils.hostFromParts("127.0.0.1", i + 1), dst1, LinkStatus.UP, CONFIGURATION_ID, i));
+            ret = wb.aggregateForProposal(createAlertMessage(
+                    Utils.hostFromParts("127.0.0.1", i + 1), dst1, EdgeStatus.UP, CONFIGURATION_ID, i));
             assertEquals(0, ret.size());
             assertEquals(0, wb.getNumProposals());
         }
 
         for (int i = 0; i < H - 1; i++) {
-            ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                    Utils.hostFromParts("127.0.0.1", i + 1), dst2, LinkStatus.UP, CONFIGURATION_ID, i));
+            ret = wb.aggregateForProposal(createAlertMessage(
+                    Utils.hostFromParts("127.0.0.1", i + 1), dst2, EdgeStatus.UP, CONFIGURATION_ID, i));
             assertEquals(0, ret.size());
             assertEquals(0, wb.getNumProposals());
         }
 
         for (int i = 0; i < H - 1; i++) {
-            ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                    Utils.hostFromParts("127.0.0.1", i + 1), dst3, LinkStatus.UP, CONFIGURATION_ID, i));
+            ret = wb.aggregateForProposal(createAlertMessage(
+                    Utils.hostFromParts("127.0.0.1", i + 1), dst3, EdgeStatus.UP, CONFIGURATION_ID, i));
             assertEquals(0, ret.size());
             assertEquals(0, wb.getNumProposals());
         }
 
         // Unlike the previous test, add more reports for
         // dst1 and dst3 past the H boundary.
-        wb.aggregateForProposal(createLinkUpdateMessage(
-                Utils.hostFromParts("127.0.0.1", H), dst1, LinkStatus.UP, CONFIGURATION_ID, H - 1));
-        ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                Utils.hostFromParts("127.0.0.1", H + 1), dst1, LinkStatus.UP, CONFIGURATION_ID, H - 1));
+        wb.aggregateForProposal(createAlertMessage(
+                Utils.hostFromParts("127.0.0.1", H), dst1, EdgeStatus.UP, CONFIGURATION_ID, H - 1));
+        ret = wb.aggregateForProposal(createAlertMessage(
+                Utils.hostFromParts("127.0.0.1", H + 1), dst1, EdgeStatus.UP, CONFIGURATION_ID, H - 1));
         assertEquals(0, ret.size());
         assertEquals(0, wb.getNumProposals());
 
-        wb.aggregateForProposal(createLinkUpdateMessage(
-                Utils.hostFromParts("127.0.0.1", H), dst3, LinkStatus.UP, CONFIGURATION_ID, H - 1));
-        ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                Utils.hostFromParts("127.0.0.1", H + 1), dst3, LinkStatus.UP, CONFIGURATION_ID, H - 1));
+        wb.aggregateForProposal(createAlertMessage(
+                Utils.hostFromParts("127.0.0.1", H), dst3, EdgeStatus.UP, CONFIGURATION_ID, H - 1));
+        ret = wb.aggregateForProposal(createAlertMessage(
+                Utils.hostFromParts("127.0.0.1", H + 1), dst3, EdgeStatus.UP, CONFIGURATION_ID, H - 1));
         assertEquals(0, ret.size());
         assertEquals(0, wb.getNumProposals());
 
 
-        ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                Utils.hostFromParts("127.0.0.1", H), dst2, LinkStatus.UP, CONFIGURATION_ID, H - 1));
+        ret = wb.aggregateForProposal(createAlertMessage(
+                Utils.hostFromParts("127.0.0.1", H), dst2, EdgeStatus.UP, CONFIGURATION_ID, H - 1));
         assertEquals(3, ret.size());
         assertEquals(1, wb.getNumProposals());
     }
 
     @Test
-    public void waterMarkTestBelowL() {
-        final WatermarkBuffer wb = new WatermarkBuffer(K, H, L);
+    public void cutDetectionTestBelowL() {
+        final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L);
         final Endpoint dst1 = Utils.hostFromParts("127.0.0.2", 2);
         final Endpoint dst2 = Utils.hostFromParts("127.0.0.3", 2);
         final Endpoint dst3 = Utils.hostFromParts("127.0.0.4", 2);
         List<Endpoint> ret;
 
         for (int i = 0; i < H - 1; i++) {
-            ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                    Utils.hostFromParts("127.0.0.1", i + 1), dst1, LinkStatus.UP, CONFIGURATION_ID, i));
+            ret = wb.aggregateForProposal(createAlertMessage(
+                    Utils.hostFromParts("127.0.0.1", i + 1), dst1, EdgeStatus.UP, CONFIGURATION_ID, i));
             assertEquals(0, ret.size());
             assertEquals(0, wb.getNumProposals());
         }
 
         // Unlike the previous test, dst2 has < L updates
         for (int i = 0; i < L - 1; i++) {
-            ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                    Utils.hostFromParts("127.0.0.1", i + 1), dst2, LinkStatus.UP, CONFIGURATION_ID, i));
+            ret = wb.aggregateForProposal(createAlertMessage(
+                    Utils.hostFromParts("127.0.0.1", i + 1), dst2, EdgeStatus.UP, CONFIGURATION_ID, i));
             assertEquals(0, ret.size());
             assertEquals(0, wb.getNumProposals());
         }
 
         for (int i = 0; i < H - 1; i++) {
-            ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                    Utils.hostFromParts("127.0.0.1", i + 1), dst3, LinkStatus.UP, CONFIGURATION_ID, i));
+            ret = wb.aggregateForProposal(createAlertMessage(
+                    Utils.hostFromParts("127.0.0.1", i + 1), dst3, EdgeStatus.UP, CONFIGURATION_ID, i));
             assertEquals(0, ret.size());
             assertEquals(0, wb.getNumProposals());
         }
 
-        ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                Utils.hostFromParts("127.0.0.1", H), dst1, LinkStatus.UP, CONFIGURATION_ID, H - 1));
+        ret = wb.aggregateForProposal(createAlertMessage(
+                Utils.hostFromParts("127.0.0.1", H), dst1, EdgeStatus.UP, CONFIGURATION_ID, H - 1));
         assertEquals(0, ret.size());
         assertEquals(0, wb.getNumProposals());
 
-        ret = wb.aggregateForProposal(createLinkUpdateMessage(
-                Utils.hostFromParts("127.0.0.1", H), dst3, LinkStatus.UP, CONFIGURATION_ID, H - 1));
+        ret = wb.aggregateForProposal(createAlertMessage(
+                Utils.hostFromParts("127.0.0.1", H), dst3, EdgeStatus.UP, CONFIGURATION_ID, H - 1));
         assertEquals(2, ret.size());
         assertEquals(1, wb.getNumProposals());
     }
 
 
     @Test
-    public void waterMarkTestBatch() {
-        final WatermarkBuffer wb = new WatermarkBuffer(K, H, L);
+    public void cutDetectionTestBatch() {
+        final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L);
         final int numNodes = 3;
         final List<Endpoint> endpoints = new ArrayList<>();
         for (int i = 0; i < numNodes; i++) {
@@ -242,8 +242,8 @@ public class WatermarkBufferTest {
         final List<Endpoint> proposal = new ArrayList<>();
         for (final Endpoint endpoint : endpoints) {
             for (int ringNumber = 0; ringNumber < K; ringNumber++) {
-                proposal.addAll(wb.aggregateForProposal(createLinkUpdateMessage(
-                        Utils.hostFromParts("127.0.0.1", 1), endpoint, LinkStatus.UP,
+                proposal.addAll(wb.aggregateForProposal(createAlertMessage(
+                        Utils.hostFromParts("127.0.0.1", 1), endpoint, EdgeStatus.UP,
                         CONFIGURATION_ID, ringNumber)));
             }
         }
@@ -252,9 +252,9 @@ public class WatermarkBufferTest {
     }
 
     @Test
-    public void waterMarkTestLinkInvalidation() {
+    public void cutDetectionTestLinkInvalidation() {
         final MembershipView mView = new MembershipView(K);
-        final WatermarkBuffer wb = new WatermarkBuffer(K, H, L);
+        final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L);
         final int numNodes = 30;
         final List<Endpoint> endpoints = new ArrayList<>();
         for (int i = 0; i < numNodes; i++) {
@@ -264,51 +264,51 @@ public class WatermarkBufferTest {
         }
 
         final Endpoint dst = endpoints.get(0);
-        final List<Endpoint> monitors = mView.getMonitorsOf(dst);
-        assertEquals(K, monitors.size());
+        final List<Endpoint> observers = mView.getObserversOf(dst);
+        assertEquals(K, observers.size());
 
         List<Endpoint> ret;
 
-        // This adds alerts from the monitors[0, H - 1) of node dst.
+        // This adds alerts from the observers[0, H - 1) of node dst.
         for (int i = 0; i < H - 1; i++) {
-            ret = wb.aggregateForProposal(createLinkUpdateMessage(monitors.get(i), dst,
-                                                                  LinkStatus.DOWN, CONFIGURATION_ID, i));
+            ret = wb.aggregateForProposal(createAlertMessage(observers.get(i), dst,
+                                                                  EdgeStatus.DOWN, CONFIGURATION_ID, i));
             assertEquals(0, ret.size());
             assertEquals(0, wb.getNumProposals());
         }
 
-        // Next, we add alerts *about* monitors[H, K) of node dst.
-        final Set<Endpoint> failedMonitors = new HashSet<>(K - H - 1);
+        // Next, we add alerts *about* observers[H, K) of node dst.
+        final Set<Endpoint> failedObservers = new HashSet<>(K - H - 1);
         for (int i = H - 1; i < K; i++) {
-            final List<Endpoint> monitorsOfMonitor = mView.getMonitorsOf(monitors.get(i));
-            failedMonitors.add(monitors.get(i));
+            final List<Endpoint> observersOfObserver = mView.getObserversOf(observers.get(i));
+            failedObservers.add(observers.get(i));
             for (int j = 0; j < K; j++) {
-                ret = wb.aggregateForProposal(createLinkUpdateMessage(monitorsOfMonitor.get(j), monitors.get(i),
-                        LinkStatus.DOWN, CONFIGURATION_ID, j));
+                ret = wb.aggregateForProposal(createAlertMessage(observersOfObserver.get(j), observers.get(i),
+                        EdgeStatus.DOWN, CONFIGURATION_ID, j));
                 assertEquals(0, ret.size());
                 assertEquals(0, wb.getNumProposals());
             }
         }
 
-        // At this point, (K - H - 1) monitors of dst will be past H, and dst will be in H - 1. Link invalidation
-        // should bring the failed monitors and dst to the stable region.
-        ret = wb.invalidateFailingLinks(mView);
+        // At this point, (K - H - 1) observers of dst will be past H, and dst will be in H - 1. Link invalidation
+        // should bring the failed observers and dst to the stable region.
+        ret = wb.invalidateFailingEdges(mView);
         assertEquals(4, ret.size());
         assertEquals(1, wb.getNumProposals());
         for (final Endpoint node: ret) {
-            assertTrue(failedMonitors.contains(node) || node.equals(dst));
+            assertTrue(failedObservers.contains(node) || node.equals(dst));
         }
     }
 
-    private LinkUpdateMessage createLinkUpdateMessage(final Endpoint src,
+    private AlertMessage createAlertMessage(final Endpoint src,
                                                       final Endpoint dst,
-                                                      final LinkStatus status,
+                                                      final EdgeStatus status,
                                                       final long configuration,
                                                       final int ringNumber) {
-        return LinkUpdateMessage.newBuilder()
-                .setLinkSrc(src)
-                .setLinkDst(dst)
-                .setLinkStatus(status)
+        return AlertMessage.newBuilder()
+                .setEdgeSrc(src)
+                .setEdgeDst(dst)
+                .setEdgeStatus(status)
                 .addRingNumber(ringNumber)
                 .setConfigurationId(configuration).build();
     }

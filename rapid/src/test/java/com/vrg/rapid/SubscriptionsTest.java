@@ -2,7 +2,7 @@ package com.vrg.rapid;
 
 import com.vrg.rapid.pb.Endpoint;
 import com.google.protobuf.ByteString;
-import com.vrg.rapid.pb.LinkStatus;
+import com.vrg.rapid.pb.EdgeStatus;
 import com.vrg.rapid.pb.Metadata;
 import org.junit.Test;
 
@@ -51,8 +51,8 @@ public class SubscriptionsTest {
         assertEquals(1, joinCb.numTimesCalled());
         assertEquals(2, seedCb.getNotificationLog().size());
         assertEquals(1, joinCb.getNotificationLog().size());
-        testNodeStatus(seedCb.getNotificationLog(), LinkStatus.UP);
-        testNodeStatus(joinCb.getNotificationLog(), LinkStatus.UP);
+        testNodeStatus(seedCb.getNotificationLog(), EdgeStatus.UP);
+        testNodeStatus(joinCb.getNotificationLog(), EdgeStatus.UP);
 
         seedCluster.shutdown();
         nonSeed.shutdown();
@@ -91,10 +91,10 @@ public class SubscriptionsTest {
         assertEquals(2, seedCb2.numTimesCalled());
         assertEquals(1, joinCb1.numTimesCalled());
         assertEquals(1, joinCb2.numTimesCalled());
-        testNodeStatus(seedCb1.getNotificationLog(), LinkStatus.UP);
-        testNodeStatus(seedCb2.getNotificationLog(), LinkStatus.UP);
-        testNodeStatus(joinCb1.getNotificationLog(), LinkStatus.UP);
-        testNodeStatus(joinCb2.getNotificationLog(), LinkStatus.UP);
+        testNodeStatus(seedCb1.getNotificationLog(), EdgeStatus.UP);
+        testNodeStatus(seedCb2.getNotificationLog(), EdgeStatus.UP);
+        testNodeStatus(joinCb1.getNotificationLog(), EdgeStatus.UP);
+        testNodeStatus(joinCb2.getNotificationLog(), EdgeStatus.UP);
 
         seedCluster.shutdown();
         nonSeed.shutdown();
@@ -131,9 +131,9 @@ public class SubscriptionsTest {
         assertEquals(2, seedCb1.numTimesCalled());
         assertEquals(1, seedCb2.numTimesCalled());
         assertEquals(1, joinCb1.numTimesCalled());
-        testNodeStatus(seedCb1.getNotificationLog(), LinkStatus.UP);
-        testNodeStatus(seedCb2.getNotificationLog(), LinkStatus.UP);
-        testNodeStatus(joinCb1.getNotificationLog(), LinkStatus.UP);
+        testNodeStatus(seedCb1.getNotificationLog(), EdgeStatus.UP);
+        testNodeStatus(seedCb2.getNotificationLog(), EdgeStatus.UP);
+        testNodeStatus(joinCb1.getNotificationLog(), EdgeStatus.UP);
 
         seedCluster.shutdown();
         nonSeed.shutdown();
@@ -157,7 +157,7 @@ public class SubscriptionsTest {
         final ByteString byteString = ByteString.copyFrom("seed", Charset.defaultCharset());
         final Cluster seedCluster = new Cluster.Builder(seedEndpoint)
                 .addSubscription(ClusterEvents.VIEW_CHANGE, seedCb1)
-                .setLinkFailureDetectorFactory(fdFactory)
+                .setEdgeFailureDetectorFactory(fdFactory)
                 .setMetadata(Collections.singletonMap("role", byteString))
                 .useSettings(settings)
                 .start();
@@ -173,7 +173,7 @@ public class SubscriptionsTest {
             final TestCallback joinerCb1 = new TestCallback();
             joiners.add(new Cluster.Builder(joiner)
                     .addSubscription(ClusterEvents.VIEW_CHANGE, joinerCb1)
-                    .setLinkFailureDetectorFactory(fdJoiner)
+                    .setEdgeFailureDetectorFactory(fdJoiner)
                     .useSettings(settings)
                     .join(seedEndpoint));
             fds.add(fdJoiner);
@@ -183,11 +183,11 @@ public class SubscriptionsTest {
         // Each node will hear a number of notifications equal to the number of nodes that joined
         // after it, as well as the notification from its own initialization
         assertEquals(numNodes + 1, seedCb1.numTimesCalled());
-        testNodeStatus(seedCb1.getNotificationLog(), LinkStatus.UP);
+        testNodeStatus(seedCb1.getNotificationLog(), EdgeStatus.UP);
         for (int i = 0; i < numNodes; i++) {
             assertEquals(numNodes - i, callbacks.get(i).numTimesCalled());
             assertEquals(numNodes - i, callbacks.get(i).getNotificationLog().size());
-            testNodeStatus(callbacks.get(i).getNotificationLog(), LinkStatus.UP);
+            testNodeStatus(callbacks.get(i).getNotificationLog(), EdgeStatus.UP);
         }
 
         // Fail the seed node and wait for the dissemination to kick in
@@ -198,12 +198,12 @@ public class SubscriptionsTest {
         Thread.sleep(2000);
 
         // All joiners should receive one more event that includes the seed host having failed. This event
-        // should be of type LinkStatus.DOWN, and should also include the metadata about the seed node
+        // should be of type EdgeStatus.DOWN, and should also include the metadata about the seed node
         for (int i = 0; i < numNodes; i++) {
             assertEquals(numNodes - i + 1, callbacks.get(i).getNotificationLog().size());
             final List<NodeStatusChange> lastNotification = callbacks.get(i).getNotificationLog().get(numNodes - i);
             assertEquals(1, lastNotification.size());
-            assertEquals(LinkStatus.DOWN, lastNotification.get(0).getStatus());
+            assertEquals(EdgeStatus.DOWN, lastNotification.get(0).getStatus());
             assertEquals(seedEndpoint, lastNotification.get(0).getEndpoint());
 
             // Now verify metadata
@@ -221,7 +221,7 @@ public class SubscriptionsTest {
     /**
      * Helper that scans a notification log and checks whether all values match a given expectedValue.
      */
-    private void testNodeStatus(final List<List<NodeStatusChange>> log, final LinkStatus expectedValue) {
+    private void testNodeStatus(final List<List<NodeStatusChange>> log, final EdgeStatus expectedValue) {
         for (final List<NodeStatusChange> entry: log) {
             for (final NodeStatusChange status: entry) {
                 assertEquals(expectedValue, status.getStatus());

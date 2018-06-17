@@ -686,7 +686,7 @@ public class ClusterTest {
      * between attempts. This is used to give failure detector logic some time to kick in.
      *
      * @param expectedSize expected size of each cluster
-     * @param maxTries number of tries to checkMonitoree if the cluster has stabilized.
+     * @param maxTries number of tries to checkSubject if the cluster has stabilized.
      * @param intervalInMs the time duration between checks.
      */
     private void waitAndVerifyAgreement(final int expectedSize, final int maxTries, final int intervalInMs)
@@ -734,7 +734,7 @@ public class ClusterTest {
         Cluster.Builder builder = new Cluster.Builder(endpoint).useSettings(settings);
         if (useStaticFd) {
             final StaticFailureDetector.Factory fdFactory = new StaticFailureDetector.Factory(new HashSet<>());
-            builder = builder.setLinkFailureDetectorFactory(fdFactory);
+            builder = builder.setEdgeFailureDetectorFactory(fdFactory);
             staticFds.put(endpoint, fdFactory);
         }
         if (serverInterceptors.containsKey(endpoint)) {
