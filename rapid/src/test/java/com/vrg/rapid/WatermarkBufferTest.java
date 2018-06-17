@@ -264,39 +264,39 @@ public class WatermarkBufferTest {
         }
 
         final Endpoint dst = endpoints.get(0);
-        final List<Endpoint> monitors = mView.getMonitorsOf(dst);
-        assertEquals(K, monitors.size());
+        final List<Endpoint> observers = mView.getObserversOf(dst);
+        assertEquals(K, observers.size());
 
         List<Endpoint> ret;
 
-        // This adds alerts from the monitors[0, H - 1) of node dst.
+        // This adds alerts from the observers[0, H - 1) of node dst.
         for (int i = 0; i < H - 1; i++) {
-            ret = wb.aggregateForProposal(createLinkUpdateMessage(monitors.get(i), dst,
+            ret = wb.aggregateForProposal(createLinkUpdateMessage(observers.get(i), dst,
                                                                   LinkStatus.DOWN, CONFIGURATION_ID, i));
             assertEquals(0, ret.size());
             assertEquals(0, wb.getNumProposals());
         }
 
-        // Next, we add alerts *about* monitors[H, K) of node dst.
-        final Set<Endpoint> failedMonitors = new HashSet<>(K - H - 1);
+        // Next, we add alerts *about* observers[H, K) of node dst.
+        final Set<Endpoint> failedObservers = new HashSet<>(K - H - 1);
         for (int i = H - 1; i < K; i++) {
-            final List<Endpoint> monitorsOfMonitor = mView.getMonitorsOf(monitors.get(i));
-            failedMonitors.add(monitors.get(i));
+            final List<Endpoint> observersOfObserver = mView.getObserversOf(observers.get(i));
+            failedObservers.add(observers.get(i));
             for (int j = 0; j < K; j++) {
-                ret = wb.aggregateForProposal(createLinkUpdateMessage(monitorsOfMonitor.get(j), monitors.get(i),
+                ret = wb.aggregateForProposal(createLinkUpdateMessage(observersOfObserver.get(j), observers.get(i),
                         LinkStatus.DOWN, CONFIGURATION_ID, j));
                 assertEquals(0, ret.size());
                 assertEquals(0, wb.getNumProposals());
             }
         }
 
-        // At this point, (K - H - 1) monitors of dst will be past H, and dst will be in H - 1. Link invalidation
-        // should bring the failed monitors and dst to the stable region.
+        // At this point, (K - H - 1) observers of dst will be past H, and dst will be in H - 1. Link invalidation
+        // should bring the failed observers and dst to the stable region.
         ret = wb.invalidateFailingLinks(mView);
         assertEquals(4, ret.size());
         assertEquals(1, wb.getNumProposals());
         for (final Endpoint node: ret) {
-            assertTrue(failedMonitors.contains(node) || node.equals(dst));
+            assertTrue(failedObservers.contains(node) || node.equals(dst));
         }
     }
 

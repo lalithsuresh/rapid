@@ -37,9 +37,8 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
- * Hosts K permutations of the memberlist that represent the monitoring
- * relationship between nodes; every node monitors its successor on each ring.
- *
+ * Hosts K permutations of the memberlist that represent the monitoring relationship between nodes;
+ * every node (an observer) observers its successor (a subject) on each ring.
  */
 @ThreadSafe
 final class MembershipView {
@@ -160,13 +159,13 @@ final class MembershipView {
     }
 
     /**
-     * Returns the set of monitors for {@code node}
+     * Returns the set of observers for {@code node}
 
      * @param node input node
-     * @return the set of monitors for {@code node}
+     * @return the set of observers for {@code node}
      * @throws NodeNotInRingException thrown if {@code node} is not in the ring
      */
-    List<Endpoint> getMonitorsOf(final Endpoint node) {
+    List<Endpoint> getObserversOf(final Endpoint node) {
         Objects.requireNonNull(node);
         rwLock.readLock().lock();
         try {
@@ -178,19 +177,19 @@ final class MembershipView {
                 return Collections.emptyList();
             }
 
-            final List<Endpoint> monitors = new ArrayList<>();
+            final List<Endpoint> observers = new ArrayList<>();
 
             for (int k = 0; k < K; k++) {
                 final NavigableSet<Endpoint> list = rings.get(k);
                 final Endpoint successor = list.higher(node);
                 if (successor == null) {
-                    monitors.add(list.first());
+                    observers.add(list.first());
                 }
                 else {
-                    monitors.add(successor);
+                    observers.add(successor);
                 }
             }
-            return monitors;
+            return observers;
         } finally {
             rwLock.readLock().unlock();
         }
@@ -203,7 +202,7 @@ final class MembershipView {
      * @return the set of nodes monitored by {@code node}
      * @throws NodeNotInRingException thrown if {@code node} is not in the ring
      */
-    List<Endpoint> getMonitoreesOf(final Endpoint node) {
+    List<Endpoint> getSubjectsOf(final Endpoint node) {
         Objects.requireNonNull(node);
         rwLock.readLock().lock();
         try {
@@ -221,14 +220,14 @@ final class MembershipView {
     }
 
     /**
-     * Returns the expected monitors of {@code node}, even before it is
+     * Returns the expected observers of {@code node}, even before it is
      * added to the ring. Used during the bootstrap protocol to identify
      * the nodes responsible for gatekeeping a joining peer.
      *
      * @param node input node
      * @return the list of nodes monitored by {@code node}. Empty list if the membership is empty.
      */
-    List<Endpoint> getExpectedMonitorsOf(final Endpoint node) {
+    List<Endpoint> getExpectedObserversOf(final Endpoint node) {
         Objects.requireNonNull(node);
         rwLock.readLock().lock();
         try {
@@ -242,22 +241,22 @@ final class MembershipView {
     }
 
     /**
-     * Used by getExpectedMonitorsOf() and getMonitorsOf().
+     * Used by getExpectedObserversOf() and getObserversOf().
      */
     private List<Endpoint> getPredecessorsOf(final Endpoint node) {
-        final List<Endpoint> monitorees = new ArrayList<>();
+        final List<Endpoint> subjects = new ArrayList<>();
 
         for (int k = 0; k < K; k++) {
             final NavigableSet<Endpoint> list = rings.get(k);
             final Endpoint predecessor = list.lower(node);
             if (predecessor == null) {
-                monitorees.add(list.last());
+                subjects.add(list.last());
             }
             else {
-                monitorees.add(predecessor);
+                subjects.add(predecessor);
             }
         }
-        return monitorees;
+        return subjects;
     }
 
     /**
@@ -327,25 +326,25 @@ final class MembershipView {
     }
 
     /**
-     * Get the ring number of a monitor for a given monitoree
+     * Get the ring number of an observer for a given subject
      *
-     * @param monitor The monitor node
-     * @param monitoree The monitoree node
-     * @return the indexes k such that {@code monitoree} is a successor of {@code monitoree} on ring[k].
+     * @param observer The observer node
+     * @param subject The subject node
+     * @return the indexes k such that {@code subject} is a successor of {@code subject} on ring[k].
      */
-    List<Integer> getRingNumbers(final Endpoint monitor, final Endpoint monitoree) {
+    List<Integer> getRingNumbers(final Endpoint observer, final Endpoint subject) {
         rwLock.readLock().lock();
         try {
             // TODO: do this in one scan
-            final List<Endpoint> monitorees = getMonitoreesOf(monitor);
-            if (monitorees.isEmpty()) {
+            final List<Endpoint> subjects = getSubjectsOf(observer);
+            if (subjects.isEmpty()) {
                 return Collections.emptyList();
             }
 
             final List<Integer> ringIndexes = new ArrayList<>();
             int ringNumber = 0;
-            for (final Endpoint node: monitorees) {
-                if (node.equals(monitoree)) {
+            for (final Endpoint node: subjects) {
+                if (node.equals(subject)) {
                     ringIndexes.add(ringNumber);
                 }
                 ringNumber++;

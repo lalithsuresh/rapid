@@ -22,5 +22,5 @@ import io.grpc.ExperimentalApi;
  */
 @ExperimentalApi
 public interface ILinkFailureDetectorFactory {
-    Runnable createInstance(final Endpoint monitor, final Runnable notifier);
+    Runnable createInstance(final Endpoint observer, final Runnable notifier);
 }

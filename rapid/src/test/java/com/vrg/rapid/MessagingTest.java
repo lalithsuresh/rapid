@@ -167,14 +167,14 @@ public class MessagingTest {
                                                                Utils.nodeIdFromUUID(UUID.randomUUID()));
         assertNotNull(phaseOneResult);
         assertEquals(JoinStatusCode.SAFE_TO_JOIN, phaseOneResult.getStatusCode());
-        assertEquals(K, phaseOneResult.getEndpointsCount()); // this is the monitor list
+        assertEquals(K, phaseOneResult.getEndpointsCount()); // this is the observer list
 
-        // Verify that the monitors retrieved from the seed are the same
+        // Verify that the observers retrieved from the seed are the same
         final List<Endpoint> hostsAtClient = phaseOneResult.getEndpointsList();
-        final List<Endpoint> monitorsOriginal = membershipView.getExpectedMonitorsOf(joinerAddr);
+        final List<Endpoint> observersOriginal = membershipView.getExpectedObserversOf(joinerAddr);
 
         final Iterator iter1 = hostsAtClient.iterator();
-        final Iterator iter2 = monitorsOriginal.iterator();
+        final Iterator iter2 = observersOriginal.iterator();
         for (int i = 0; i < hostsAtClient.size(); i++) {
             assertEquals(iter1.next(), iter2.next());
         }
@@ -208,22 +208,22 @@ public class MessagingTest {
 
         assertNotNull(phaseOneResult);
         assertEquals(JoinStatusCode.SAFE_TO_JOIN, phaseOneResult.getStatusCode());
-        assertEquals(K, phaseOneResult.getEndpointsCount()); // this is the monitor list
+        assertEquals(K, phaseOneResult.getEndpointsCount()); // this is the observer list
 
-        // Verify that the monitors retrieved from the seed are the same
+        // Verify that the observers retrieved from the seed are the same
         final List<Endpoint> hostsAtClient = phaseOneResult.getEndpointsList();
-        final Map<Endpoint, List<Integer>> ringNumbersPerMonitor = new HashMap<>(K);
+        final Map<Endpoint, List<Integer>> ringNumbersPerObserver = new HashMap<>(K);
 
         // Batch together requests to the same node.
         int ringNumber = 0;
-        for (final Endpoint monitor: hostsAtClient) {
-            ringNumbersPerMonitor.computeIfAbsent(monitor, k -> new ArrayList<>()).add(ringNumber);
+        for (final Endpoint observer: hostsAtClient) {
+            ringNumbersPerObserver.computeIfAbsent(observer, k -> new ArrayList<>()).add(ringNumber);
             ringNumber++;
         }
 
         // Try #1: successfully join here.
         final List<ListenableFuture<RapidResponse>> responseFutures = new ArrayList<>();
-        for (final Map.Entry<Endpoint, List<Integer>> entry: ringNumbersPerMonitor.entrySet()) {
+        for (final Map.Entry<Endpoint, List<Integer>> entry: ringNumbersPerObserver.entrySet()) {
             final RapidRequest msg = Utils.toRapidRequest(JoinMessage.newBuilder()
                     .setSender(joinerAddr)
                     .setNodeId(uuid)
@@ -234,7 +234,7 @@ public class MessagingTest {
         }
         final List<JoinResponse> joinResponses = Futures.successfulAsList(responseFutures).get()
                 .stream().filter(Objects::nonNull).map(RapidResponse::getJoinResponse).collect(Collectors.toList());
-        assertEquals(ringNumbersPerMonitor.size(), joinResponses.size());
+        assertEquals(ringNumbersPerObserver.size(), joinResponses.size());
 
         for (final JoinResponse response: joinResponses) {
             assertEquals(JoinStatusCode.SAFE_TO_JOIN, response.getStatusCode());
@@ -242,7 +242,7 @@ public class MessagingTest {
 
         // Try #2. Should get back the full configuration from all nodes.
         final List<ListenableFuture<RapidResponse>> retryFutures = new ArrayList<>();
-        for (final Map.Entry<Endpoint, List<Integer>> entry: ringNumbersPerMonitor.entrySet()) {
+        for (final Map.Entry<Endpoint, List<Integer>> entry: ringNumbersPerObserver.entrySet()) {
             final RapidRequest msg = Utils.toRapidRequest(JoinMessage.newBuilder()
                     .setSender(joinerAddr)
                     .setNodeId(uuid)
@@ -253,7 +253,7 @@ public class MessagingTest {
         }
         final List<JoinResponse> retriedJoinResponses = Futures.successfulAsList(retryFutures).get()
                 .stream().map(RapidResponse::getJoinResponse).collect(Collectors.toList());
-        assertEquals(ringNumbersPerMonitor.size(), retriedJoinResponses.size());
+        assertEquals(ringNumbersPerObserver.size(), retriedJoinResponses.size());
 
         for (final JoinResponse response: retriedJoinResponses) {
             assertEquals(JoinStatusCode.SAFE_TO_JOIN, response.getStatusCode());
@@ -285,10 +285,10 @@ public class MessagingTest {
 
         // Verify that the hostnames retrieved at the joining peer
         // matches that of the seed node.
-        final List<Endpoint> monitorList = response.getEndpointsList();
+        final List<Endpoint> observerList = response.getEndpointsList();
 
-        final Iterator<Endpoint> iterJoiner = monitorList.iterator();
-        final Iterator<Endpoint> iterSeed = membershipView.getExpectedMonitorsOf(joinerAddress).iterator();
+        final Iterator<Endpoint> iterJoiner = observerList.iterator();
+        final Iterator<Endpoint> iterSeed = membershipView.getExpectedObserversOf(joinerAddress).iterator();
         for (int i = 0; i < K; i++) {
             assertEquals(iterJoiner.next(), iterSeed.next());
         }
@@ -319,10 +319,10 @@ public class MessagingTest {
 
         // Verify that the hostnames retrieved at the joining peer
         // matches that of the seed node.
-        final List<Endpoint> monitorList = response.getEndpointsList();
+        final List<Endpoint> observerList = response.getEndpointsList();
 
-        final Iterator<Endpoint> iterJoiner = monitorList.iterator();
-        final Iterator<Endpoint> iterSeed = membershipView.getExpectedMonitorsOf(joinerAddress).iterator();
+        final Iterator<Endpoint> iterJoiner = observerList.iterator();
+        final Iterator<Endpoint> iterSeed = membershipView.getExpectedObserversOf(joinerAddress).iterator();
         for (int i = 0; i < K; i++) {
             assertEquals(iterJoiner.next(), iterSeed.next());
         }
@@ -350,7 +350,7 @@ public class MessagingTest {
         rpcServer.start();
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr1, nodeIdentifier1);
-        membershipView.ringAdd(serverAddr2, nodeIdentifier2); // This causes server1 to monitor server2
+        membershipView.ringAdd(serverAddr2, nodeIdentifier2); // This causes server1 to observer server2
         createAndStartMembershipService(serverAddr1, membershipView);
         // While the above drives our failure detector logic, we explicitly test with a probe call
         // to make sure we get a BOOTSTRAPPING response from the RpcServer listening on serverAddr2.

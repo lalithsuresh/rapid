@@ -492,7 +492,7 @@ public class PaxosTests {
      * Wait and then verify all consensus decisions
      *
      * @param expectedSize expected size of each cluster
-     * @param maxTries number of tries to checkMonitoree if the cluster has stabilized.
+     * @param maxTries number of tries to checkSubject if the cluster has stabilized.
      * @param intervalInMs the time duration between checks.
      * @param decisions the reported consensus decisions
      */

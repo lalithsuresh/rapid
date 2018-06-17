@@ -145,7 +145,7 @@ public final class MembershipService {
 
         this.broadcaster.setMembership(membershipView.getRing(0));
         // this::linkFailureNotification is invoked by the failure detector whenever an edge
-        // to a monitor is marked faulty.
+        // to an observer is marked faulty.
         this.failureDetectorJobs = new ArrayList<>();
 
         // Prepare consensus instance
@@ -187,8 +187,8 @@ public final class MembershipService {
 
     /**
      * This is invoked by a new node joining the network at a seed node.
-     * The seed responds with the current configuration ID and a list of monitors
-     * for the joiner, who then moves on to phase 2 of the protocol with its monitors.
+     * The seed responds with the current configuration ID and a list of observers
+     * for the joiner, who then moves on to phase 2 of the protocol with its observers.
      */
     private ListenableFuture<RapidResponse> handleMessage(final PreJoinMessage msg) {
         final SettableFuture<RapidResponse> future = SettableFuture.create();
@@ -205,8 +205,8 @@ public final class MembershipService {
                     membershipView.getCurrentConfigurationId(), membershipView.getMembershipSize());
             if (statusCode.equals(JoinStatusCode.SAFE_TO_JOIN)
                     || statusCode.equals(JoinStatusCode.HOSTNAME_ALREADY_IN_RING)) {
-                // Return a list of monitors for the joiner to contact for phase 2 of the protocol
-                builder.addAllEndpoints(membershipView.getExpectedMonitorsOf(joiningEndpoint));
+                // Return a list of observers for the joiner to contact for phase 2 of the protocol
+                builder.addAllEndpoints(membershipView.getExpectedObserversOf(joiningEndpoint));
             }
             future.set(Utils.toRapidResponse(builder.build()));
         });
@@ -216,7 +216,7 @@ public final class MembershipService {
     /**
      * Invoked by gatekeepers of a joining node. They perform any failure checking
      * required before propagating a LinkUpdateMessage with the status UP. After the watermarking
-     * and consensus succeeds, the monitor informs the joiner about the new configuration it
+     * and consensus succeeds, the observer informs the joiner about the new configuration it
      * is now a part of.
      */
     private ListenableFuture<RapidResponse> handleMessage(final JoinMessage joinMessage) {
@@ -257,8 +257,8 @@ public final class MembershipService {
                     LOG.info("Joining host already present : {sender:{}, config:{}, myConfig:{}, size:{}}",
                             Utils.loggable(joinMessage.getSender()), joinMessage.getConfigurationId(),
                             currentConfiguration, membershipView.getMembershipSize());
-                    // Race condition where a monitor already crossed H messages for the joiner and changed
-                    // the configuration, but the JoinPhase2 messages show up at the monitor
+                    // Race condition where a observer already crossed H messages for the joiner and changed
+                    // the configuration, but the JoinPhase2 messages show up at the observer
                     // after it has already added the joiner. In this case, we simply
                     // tell the sender that they're safe to join.
                     responseBuilder = responseBuilder.setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
@@ -405,7 +405,7 @@ public final class MembershipService {
     }
 
     /**
-     * Invoked by monitors of a node for failure detection.
+     * Invoked by observers of a node for failure detection.
      */
     private ListenableFuture<RapidResponse> handleMessage(final ProbeMessage probeMessage) {
         LOG.trace("handleProbeMessage from {}", Utils.loggable(probeMessage.getSender()));
@@ -425,30 +425,30 @@ public final class MembershipService {
 
 
     /**
-     * This is a notification from a local link failure detector at a monitor. This changes
-     * the status of the edge between the monitor and the monitoree to DOWN.
+     * This is a notification from a local link failure detector at an observer. This changes
+     * the status of the edge between the observer and the subject to DOWN.
      *
-     * @param monitoree The monitoree that has failed.
+     * @param subject The subject that has failed.
      */
-    private void linkFailureNotification(final Endpoint monitoree, final long configurationId) {
+    private void linkFailureNotification(final Endpoint subject, final long configurationId) {
         sharedResources.getProtocolExecutor().execute(() -> {
             if (configurationId != membershipView.getCurrentConfigurationId()) {
                 LOG.info("Ignoring failure notification from old configuration" +
-                                " {monitoree:{}, config:{}, oldConfiguration:{}}",
-                        Utils.loggable(monitoree), membershipView.getCurrentConfigurationId(), configurationId);
+                                " {subject:{}, config:{}, oldConfiguration:{}}",
+                        Utils.loggable(subject), membershipView.getCurrentConfigurationId(), configurationId);
                 return;
             }
             if (LOG.isDebugEnabled()) {
                 final int size = membershipView.getMembershipSize();
-                LOG.debug("Announcing LinkFail event {monitoree:{}, monitor:{}, config:{}, size:{}}",
-                        Utils.loggable(monitoree), configurationId, size);
+                LOG.debug("Announcing LinkFail event {subject:{}, observer:{}, config:{}, size:{}}",
+                        Utils.loggable(subject), configurationId, size);
             }
             // Note: setUuid is deliberately missing here because it does not affect leaves.
             final LinkUpdateMessage msg = LinkUpdateMessage.newBuilder()
                     .setLinkSrc(myAddr)
-                    .setLinkDst(monitoree)
+                    .setLinkDst(subject)
                     .setLinkStatus(LinkStatus.DOWN)
-                    .addAllRingNumber(membershipView.getRingNumbers(myAddr, monitoree))
+                    .addAllRingNumber(membershipView.getRingNumbers(myAddr, subject))
                     .setConfigurationId(configurationId)
                     .build();
             enqueueLinkUpdateMessage(msg);
@@ -618,18 +618,18 @@ public final class MembershipService {
     /**
      * Invoked eventually by link failure detectors to notify MembershipService of failed nodes
      */
-    private Runnable createNotifierForMonitoree(final Endpoint monitoree) {
-        return () -> linkFailureNotification(monitoree, membershipView.getCurrentConfigurationId());
+    private Runnable createNotifierForSubject(final Endpoint subject) {
+        return () -> linkFailureNotification(subject, membershipView.getCurrentConfigurationId());
     }
 
     /**
      * Creates and schedules failure detector instances based on the fdFactory instance.
      */
     private void createFailureDetectorsForCurrentConfiguration() {
-        final List<ScheduledFuture<?>> jobs = membershipView.getMonitoreesOf(myAddr)
-                .stream().map(monitoree -> backgroundTasksExecutor
-                         .scheduleAtFixedRate(fdFactory.createInstance(monitoree,
-                                createNotifierForMonitoree(monitoree)), // Runnable
+        final List<ScheduledFuture<?>> jobs = membershipView.getSubjectsOf(myAddr)
+                .stream().map(subject -> backgroundTasksExecutor
+                         .scheduleAtFixedRate(fdFactory.createInstance(subject,
+                                createNotifierForSubject(subject)), // Runnable
                                 DEFAULT_FAILURE_DETECTOR_INITIAL_DELAY_IN_MS,
                                 settings.getFailureDetectorIntervalInMs(),
                                 TimeUnit.MILLISECONDS))

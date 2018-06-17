@@ -129,7 +129,7 @@ final class WatermarkBuffer {
      * Invalidates links between nodes that are failing or have failed. This step may be skipped safely
      * when there are no failing nodes.
      *
-     * @param view MembershipView object required to find monitor-monitoree relationships between failing nodes.
+     * @param view MembershipView object required to find observer-subject relationships between failing nodes.
      * @return A list of endpoints representing a view change proposal.
      */
     List<Endpoint> invalidateFailingLinks(final MembershipView view) {
@@ -142,16 +142,16 @@ final class WatermarkBuffer {
             final List<Endpoint> proposalsToReturn = new ArrayList<>();
             final List<Endpoint> preProposalCopy = ImmutableList.copyOf(preProposal);
             for (final Endpoint nodeInFlux: preProposalCopy) {
-                final List<Endpoint> monitors = view.isHostPresent(nodeInFlux)
-                                                    ? view.getMonitorsOf(nodeInFlux)          // For failing nodes
-                                                    : view.getExpectedMonitorsOf(nodeInFlux); // For joining nodes
+                final List<Endpoint> observers = view.isHostPresent(nodeInFlux)
+                                                    ? view.getObserversOf(nodeInFlux)          // For failing nodes
+                                                    : view.getExpectedObserversOf(nodeInFlux); // For joining nodes
                 // Account for all links between nodes that are past the L threshold
                 int ringNumber = 0;
-                for (final Endpoint monitor : monitors) {
-                    if (proposal.contains(monitor) || preProposal.contains(monitor)) {
-                        // Implicit detection of link between monitor and nodeInFlux
+                for (final Endpoint observer : observers) {
+                    if (proposal.contains(observer) || preProposal.contains(observer)) {
+                        // Implicit detection of link between observer and nodeInFlux
                         final LinkStatus linkStatus = view.isHostPresent(nodeInFlux) ? LinkStatus.DOWN : LinkStatus.UP;
-                        proposalsToReturn.addAll(aggregateForProposal(monitor, nodeInFlux, linkStatus, ringNumber));
+                        proposalsToReturn.addAll(aggregateForProposal(observer, nodeInFlux, linkStatus, ringNumber));
                     }
                     ringNumber++;
                 }

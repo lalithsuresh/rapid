@@ -10,18 +10,18 @@ import java.util.Set;
  */
 class StaticFailureDetector implements Runnable {
     private final Set<Endpoint> failedNodes;
-    private final Endpoint monitoree;
+    private final Endpoint subject;
     private final Runnable notifier;
 
-    private StaticFailureDetector(final Endpoint monitoree, final Runnable notifier,
+    private StaticFailureDetector(final Endpoint subject, final Runnable notifier,
                           final Set<Endpoint> blackList) {
-        this.monitoree = monitoree;
+        this.subject = subject;
         this.notifier = notifier;
         this.failedNodes = blackList;
     }
 
     private boolean hasFailed() {
-        return failedNodes.contains(monitoree);
+        return failedNodes.contains(subject);
     }
 
     @Override
@@ -39,8 +39,8 @@ class StaticFailureDetector implements Runnable {
         }
 
         @Override
-        public Runnable createInstance(final Endpoint monitor, final Runnable notification) {
-            return new StaticFailureDetector(monitor, notification, blackList);
+        public Runnable createInstance(final Endpoint observer, final Runnable notification) {
+            return new StaticFailureDetector(observer, notification, blackList);
         }
 
         void addFailedNodes(final Set<Endpoint> nodes) {

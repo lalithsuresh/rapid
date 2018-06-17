@@ -43,7 +43,7 @@ public class PingPongFailureDetector implements Runnable {
     // treating that as a failure condition.
     private static final int BOOTSTRAP_COUNT_THRESHOLD = 30;
     private final Endpoint address;
-    private final Endpoint monitoree;
+    private final Endpoint subject;
     private final AtomicInteger failureCount;
     private final AtomicInteger bootstrapResponseCount;
     private final IMessagingClient rpcClient;
@@ -53,10 +53,10 @@ public class PingPongFailureDetector implements Runnable {
     // A cache for probe messages. Avoids creating an unnecessary copy of a probe message each time.
     private final RapidRequest probeMessage;
 
-    private PingPongFailureDetector(final Endpoint address, final Endpoint monitoree,
+    private PingPongFailureDetector(final Endpoint address, final Endpoint subject,
                                     final IMessagingClient rpcClient, final Runnable notifier) {
         this.address = address;
-        this.monitoree = monitoree;
+        this.subject = subject;
         this.rpcClient = rpcClient;
         this.notifier = notifier;
         this.failureCount = new AtomicInteger(0);
@@ -65,7 +65,7 @@ public class PingPongFailureDetector implements Runnable {
                 ProbeMessage.newBuilder().setSender(address).build()).build();
     }
 
-    // Executed at monitor
+    // Executed at observer
     private boolean hasFailed() {
         return failureCount.get() >= FAILURE_THRESHOLD;
     }
@@ -77,17 +77,17 @@ public class PingPongFailureDetector implements Runnable {
             notifier.run();
         }
         else {
-            LOG.trace("{} sending probe to {}", address, monitoree);
-            Futures.addCallback(rpcClient.sendMessageBestEffort(monitoree, probeMessage),
-                    new ProbeCallback(monitoree));
+            LOG.trace("{} sending probe to {}", address, subject);
+            Futures.addCallback(rpcClient.sendMessageBestEffort(subject, probeMessage),
+                    new ProbeCallback(subject));
         }
     }
 
     private class ProbeCallback implements FutureCallback<RapidResponse> {
-        final Endpoint monitoree;
+        final Endpoint subject;
 
-        ProbeCallback(final Endpoint monitoree) {
-            this.monitoree = monitoree;
+        ProbeCallback(final Endpoint subject) {
+            this.subject = subject;
         }
 
         @Override
@@ -112,15 +112,15 @@ public class PingPongFailureDetector implements Runnable {
             handleProbeOnFailure(throwable);
         }
 
-        // Executed at monitor
+        // Executed at observer
         private void handleProbeOnSuccess() {
-            LOG.trace("handleProbeOnSuccess at {} from {}", address, monitoree);
+            LOG.trace("handleProbeOnSuccess at {} from {}", address, subject);
         }
 
-        // Executed at monitor
+        // Executed at observer
         private void handleProbeOnFailure(final Throwable throwable) {
             failureCount.incrementAndGet();
-            LOG.trace("handleProbeOnFailure at {} from {}: {}", address, monitoree, throwable.getLocalizedMessage());
+            LOG.trace("handleProbeOnFailure at {} from {}: {}", address, subject, throwable.getLocalizedMessage());
         }
     }
 
@@ -134,8 +134,8 @@ public class PingPongFailureDetector implements Runnable {
         }
 
         @Override
-        public Runnable createInstance(final Endpoint monitoree, final Runnable notifier) {
-            return new PingPongFailureDetector(address, monitoree, messagingClient, notifier);
+        public Runnable createInstance(final Endpoint subject, final Runnable notifier) {
+            return new PingPongFailureDetector(address, subject, messagingClient, notifier);
         }
     }
 }
