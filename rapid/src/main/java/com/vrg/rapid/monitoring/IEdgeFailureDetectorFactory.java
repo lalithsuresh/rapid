@@ -17,10 +17,18 @@ import com.vrg.rapid.pb.Endpoint;
 import io.grpc.ExperimentalApi;
 
 /**
- * The EdgeFailureDetector interface. Objects that implement this interface can be
+ * The EdgeFailureDetector interface. Implementations of this interface can be
  * supplied to the MembershipService to perform failure detection.
+ **
+ * On every configuration change, createInstance() is invoked by the membership
+ * service at a node to instantiate new monitoring edges to its subjects.
+ *
+ * createInstance() must return a runnable that is expected to be periodically
+ * executed.
+ *
+ * To mark an edge faulty, simply execute notifier.run().
  */
 @ExperimentalApi
 public interface IEdgeFailureDetectorFactory {
-    Runnable createInstance(final Endpoint observer, final Runnable notifier);
+    Runnable createInstance(final Endpoint subject, final Runnable notifier);
 }
