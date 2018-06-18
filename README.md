@@ -90,7 +90,7 @@ If your project uses maven, add the following dependency into your project's pom
   </dependency>
 ```
 
-For a concrete example project, see `rapid-examples/`.
+For a simple example project that uses Rapid's APIs, see `rapid-examples/`.
 
 
 Running Rapid
