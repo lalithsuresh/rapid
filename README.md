@@ -90,7 +90,7 @@ If your project uses maven, add the following dependency into your project's pom
   </dependency>
 ```
 
-For a simple example project that uses Rapid's APIs, see `rapid-examples/`.
+For a simple example project that uses Rapid's APIs, see `examples/`.
 
 
 Running Rapid
@@ -106,7 +106,7 @@ To launch a simple Rapid-based agent, run the following commands in your shell
 from the top-level directory:
 
 ```shell
-  $: java -jar rapid-examples/target/standalone-agent.jar \ 
+  $: java -jar examples/target/standalone-agent.jar \ 
           --listenAddress 127.0.0.1:1234 \
           --seedAddress 127.0.0.1:1234
 ```
@@ -115,11 +115,11 @@ From two other terminals, try adding a few more nodes on different listening
 addresses, but using the same seed address of "127.0.0.1:1234". For example:
 
 ```shell
-  $: java -jar rapid-examples/target/standalone-agent.jar \ 
+  $: java -jar examples/target/standalone-agent.jar \ 
           --listenAddress 127.0.0.1:1235 \
           --seedAddress 127.0.0.1:1234
 
-  $: java -jar rapid-examples/target/standalone-agent.jar \
+  $: java -jar examples/target/standalone-agent.jar \
           --listenAddress 127.0.0.1:1236 \
           --seedAddress 127.0.0.1:1234
 ```
@@ -131,7 +131,7 @@ bootstrap via node 127.0.0.1:1234.
   #! /bin/bash
   for each in `seq 1235 1245`;
   do
-        java -jar rapid-examples/target/standalone-agent.jar \
+        java -jar examples/target/standalone-agent.jar \
              --listenAddress 127.0.0.1:$each \
              --seedAddress 127.0.0.1:1234 &> /tmp/rapid.$each &
   done

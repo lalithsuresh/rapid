@@ -19,7 +19,7 @@
         </dependency>
         <dependency>
             <groupId>com.vrg</groupId>
-            <artifactId>rapid-examples</artifactId>
+            <artifactId>examples</artifactId>
             <version>1.0-SNAPSHOT</version>
             <scope>test</scope>
         </dependency>
@@ -40,7 +40,7 @@
                 <configuration>
                     <systemPropertyVariables>
                         <rapidExamplesAllInOneJar>
-                            ${project.build.directory}/../../rapid-examples/target/standalone-agent.jar
+                            ${project.build.directory}/../../examples/target/standalone-agent.jar
                         </rapidExamplesAllInOneJar>
                         <testLogFolder>${project.build.directory}/../logs/</testLogFolder>
                     </systemPropertyVariables>
