@@ -11,6 +11,7 @@ import org.apache.commons.cli.ParseException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.List;
 
@@ -21,13 +22,16 @@ public class StandaloneAgent {
     private static final Logger LOG = LoggerFactory.getLogger(StandaloneAgent.class);
     private static final int SLEEP_INTERVAL_MS = 1000;
     private static final int MAX_TRIES = 400;
-    private final HostAndPort listenAddress;
-    private final Cluster cluster;
+    final HostAndPort listenAddress;
+    final HostAndPort seedAddress;
+    @Nullable private Cluster cluster = null;
 
-    StandaloneAgent(final HostAndPort listenAddress, final HostAndPort seedAddress)
-            throws IOException, InterruptedException {
+    StandaloneAgent(final HostAndPort listenAddress, final HostAndPort seedAddress) {
         this.listenAddress = listenAddress;
+        this.seedAddress = seedAddress;
+    }
 
+    public void startCluster() throws IOException, InterruptedException {
         // The first node X of the cluster calls .start(), the rest call .join(X)
         if (listenAddress.equals(seedAddress)) {
             cluster = new Cluster.Builder(listenAddress)
@@ -48,28 +52,28 @@ public class StandaloneAgent {
     /**
      * Executed whenever a Cluster VIEW_CHANGE_PROPOSAL event occurs.
      */
-    private void onViewChangeProposal(final Long configurationId, final List<NodeStatusChange> viewChange) {
+    void onViewChangeProposal(final Long configurationId, final List<NodeStatusChange> viewChange) {
         LOG.info("The condition detector has outputted a proposal: {} {}", viewChange, configurationId);
     }
 
     /**
      * Executed whenever a Cluster KICKED event occurs.
      */
-    private void onKicked(final Long configurationId, final List<NodeStatusChange> viewChange) {
+    void onKicked(final Long configurationId, final List<NodeStatusChange> viewChange) {
         LOG.info("We got kicked from the network: {} {}", viewChange, configurationId);
     }
 
     /**
      * Executed whenever a Cluster VIEW_CHANGE event occurs.
      */
-    private void onViewChange(final Long configurationId, final List<NodeStatusChange> viewChange) {
+    void onViewChange(final Long configurationId, final List<NodeStatusChange> viewChange) {
         LOG.info("View change detected: {} {}", viewChange, configurationId);
     }
 
     /**
      * Prints the current membership
      */
-    private void printClusterMembership() {
+    void printClusterMembership() {
         LOG.info("Node {} -- cluster size {}", listenAddress, cluster.getMembershipSize());
     }
 
@@ -87,6 +91,7 @@ public class StandaloneAgent {
         // Bring up Rapid node
         try {
             final StandaloneAgent agent = new StandaloneAgent(listenAddress, seedAddress);
+            agent.startCluster();
             for (int i = 0; i < MAX_TRIES; i++) {
                 agent.printClusterMembership();
                 Thread.sleep(SLEEP_INTERVAL_MS);

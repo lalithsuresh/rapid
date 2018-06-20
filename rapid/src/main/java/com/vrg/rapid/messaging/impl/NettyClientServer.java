@@ -60,6 +60,10 @@ public class NettyClientServer implements IMessagingClient, IMessagingServer {
     @Nullable private MembershipService membershipService = null;
     @Nullable private ChannelFuture serverChannel = null;
 
+    public NettyClientServer(final Endpoint listenAddress) {
+        this(listenAddress, new SharedResources(listenAddress));
+    }
+
     public NettyClientServer(final Endpoint listenAddress, final SharedResources resources) {
         this.listenAddress = listenAddress;
         this.outstandingRequests = CacheBuilder.newBuilder()
