@@ -14,9 +14,9 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
-import com.vrg.rapid.pb.Endpoint;
 import com.google.protobuf.ByteString;
 import com.vrg.rapid.messaging.impl.GrpcClient;
+import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.RapidRequest;
 import org.junit.After;
 import org.junit.Before;
