@@ -6,4 +6,8 @@
         <Class name="com.vrg.rapid.SubscriptionsTest" />
         <Bug pattern="UC_USELESS_OBJECT" />
     </Match>
+    <Match>
+        <Class name="com.vrg.rapid.NettyClientServerTest" />
+        <Bug pattern="UC_USELESS_OBJECT" />
+    </Match>
 </FindBugsFilter>

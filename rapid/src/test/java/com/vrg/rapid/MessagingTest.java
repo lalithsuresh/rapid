@@ -15,6 +15,7 @@ package com.vrg.rapid;
 
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.UncheckedExecutionException;
 import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.messaging.IMessagingServer;
 import com.vrg.rapid.messaging.impl.GrpcClient;
@@ -67,12 +68,12 @@ public class MessagingTest {
     @Nullable private SharedResources resources = null;
 
     @Before
-    public void prepare() throws InterruptedException {
+    public void prepare() {
         resources = new SharedResources(Utils.hostFromParts(LOCALHOST_IP, SERVER_PORT_BASE));
     }
 
     @After
-    public void cleanup() throws InterruptedException {
+    public void cleanup() {
         rpcServers.forEach(IMessagingServer::shutdown);
         rpcServers.clear();
         for (final MembershipService service: services) {
@@ -458,9 +459,12 @@ public class MessagingTest {
             client.sendMessage(dst, Utils.toRapidRequest(ProbeMessage.getDefaultInstance())).get();
             fail("sendProbeMessage did not throw an exception");
         } catch (final ExecutionException | GrpcClient.ShuttingDownException ignored) {
+        } catch (final UncheckedExecutionException e) {
+            if (!(e.getCause() instanceof GrpcClient.ShuttingDownException)) {
+                throw e;
+            }
         }
     }
-
 
     /**
      * Create a membership service listenting on serverAddr

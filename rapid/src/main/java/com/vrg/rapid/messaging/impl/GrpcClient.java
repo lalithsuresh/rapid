@@ -18,12 +18,8 @@ import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import com.google.common.cache.RemovalListener;
-import com.google.common.cache.RemovalListeners;
-import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
-import com.google.common.util.concurrent.SettableFuture;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.vrg.rapid.Settings;
 import com.vrg.rapid.SharedResources;
 import com.vrg.rapid.messaging.IMessagingClient;
@@ -33,10 +29,8 @@ import com.vrg.rapid.pb.MembershipServiceGrpc.MembershipServiceFutureStub;
 import com.vrg.rapid.pb.RapidRequest;
 import com.vrg.rapid.pb.RapidResponse;
 import io.grpc.Channel;
-import io.grpc.Status;
-import io.grpc.StatusRuntimeException;
+import io.grpc.ManagedChannel;
 import io.grpc.inprocess.InProcessChannelBuilder;
-import io.grpc.internal.ManagedChannelImpl;
 import io.grpc.netty.NettyChannelBuilder;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoopGroup;
@@ -89,13 +83,13 @@ public class GrpcClient implements IMessagingClient {
         this.backgroundExecutor = sharedResources.getBackgroundExecutor();
         this.eventLoopGroup = settings.getUseInProcessTransport() ? null : sharedResources.getEventLoopGroup();
         final RemovalListener<Endpoint, Channel> removalListener =
-                removal -> shutdownChannel((ManagedChannelImpl) removal.getValue());
+                removal -> shutdownChannel((ManagedChannel) removal.getValue());
         this.channelMap = CacheBuilder.newBuilder()
                 .expireAfterAccess(30, TimeUnit.SECONDS)
-                .removalListener(RemovalListeners.asynchronous(removalListener, backgroundExecutor))
+                .removalListener(removalListener)
                 .build(new CacheLoader<Endpoint, Channel>() {
                     @Override
-                    public Channel load(final Endpoint endpoint) throws Exception {
+                    public Channel load(final Endpoint endpoint) {
                         return getChannel(endpoint);
                     }
                 });
@@ -115,7 +109,9 @@ public class GrpcClient implements IMessagingClient {
                             TimeUnit.MILLISECONDS);
             return stub.sendRequest(msg);
         };
-        return callWithRetries(call, remote, settings.getGrpcDefaultRetries());
+        final Runnable onCallFailure = () -> channelMap.invalidate(remote);
+        return Retries.callWithRetries(call, remote, settings.getGrpcDefaultRetries(), onCallFailure,
+                                       backgroundExecutor);
     }
 
     /**
@@ -131,7 +127,8 @@ public class GrpcClient implements IMessagingClient {
                     stub = getFutureStub(remote).withDeadlineAfter(getTimeoutForMessageMs(msg), TimeUnit.MILLISECONDS);
                     return stub.sendRequest(msg);
                 };
-                return callWithRetries(call, remote, 0);
+                final Runnable onCallFailure = () -> channelMap.invalidate(remote);
+                return Retries.callWithRetries(call, remote, 0, onCallFailure, backgroundExecutor);
             }).get();
         } catch (final InterruptedException | ExecutionException e) {
             Thread.currentThread().interrupt();
@@ -148,75 +145,6 @@ public class GrpcClient implements IMessagingClient {
         channelMap.invalidateAll();
     }
 
-    /**
-     * Takes a call and retries it, returning the result as soon as it completes or the exception
-     * caught from the last retry attempt.
-     *
-     * Adapted from https://github.com/spotify/futures-extra/.../AsyncRetrier.java
-     *
-     * @param call A supplier of a ListenableFuture, representing the call being retried.
-     * @param retries The number of retry attempts to be performed before giving up
-     * @param <T> The type of the response.
-     * @return Returns a ListenableFuture of type T, that hosts the result of the supplied {@code call}.
-     */
-    @CanIgnoreReturnValue
-    private <T> ListenableFuture<T> callWithRetries(final Supplier<ListenableFuture<T>> call,
-                                                    final Endpoint remote,
-                                                    final int retries) {
-        final SettableFuture<T> settable = SettableFuture.create();
-        startCallWithRetry(call, remote, settable, retries);
-        return settable;
-    }
-
-    /**
-     * Adapted from https://github.com/spotify/futures-extra/.../AsyncRetrier.java
-     */
-    @SuppressWarnings("checkstyle:illegalcatch")
-    private <T> void startCallWithRetry(final Supplier<ListenableFuture<T>> call,
-                                        final Endpoint remote,
-                                        final SettableFuture<T> signal,
-                                        final int retries) {
-        if (isShuttingDown.get() || Thread.currentThread().isInterrupted()) {
-            signal.setException(new ShuttingDownException("GrpcClient is shutting down or has been interrupted"));
-            return;
-        }
-        final ListenableFuture<T> callFuture = call.get();
-        Futures.addCallback(callFuture, new FutureCallback<T>() {
-            @Override
-            public void onSuccess(@Nullable final T result) {
-                signal.set(result);
-            }
-
-            @Override
-            public void onFailure(final Throwable throwable) {
-                LOG.trace("Retrying call to {} because of exception {}", remote, throwable);
-                handleFailure(call, remote, signal, retries, throwable);
-            }
-        }, backgroundExecutor);
-    }
-
-    /**
-     * Adapted from https://github.com/spotify/futures-extra/.../AsyncRetrier.java
-     */
-    private <T> void handleFailure(final Supplier<ListenableFuture<T>> code,
-                                   final Endpoint remote,
-                                   final SettableFuture<T> future,
-                                   final int retries,
-                                   final Throwable t) {
-        // GRPC returns an UNAVAILABLE error when the TCP connection breaks and there is no way to recover
-        // from it . We therefore shutdown the channel, and subsequent calls will try to re-establish it.
-        if (t instanceof StatusRuntimeException
-            && ((StatusRuntimeException) t).getStatus().getCode().equals(Status.Code.UNAVAILABLE)) {
-            channelMap.invalidate(remote);
-        }
-
-        if (retries > 0) {
-            startCallWithRetry(code, remote, future, retries - 1);
-        } else {
-            future.setException(t);
-        }
-    }
-
     private MembershipServiceFutureStub getFutureStub(final Endpoint remote) {
         if (isShuttingDown.get()) {
             throw new ShuttingDownException("GrpcClient is shutting down");
@@ -225,7 +153,7 @@ public class GrpcClient implements IMessagingClient {
         return MembershipServiceGrpc.newFutureStub(channel);
     }
 
-    private void shutdownChannel(final ManagedChannelImpl channel) {
+    private void shutdownChannel(final ManagedChannel channel) {
         channel.shutdown();
     }
 
