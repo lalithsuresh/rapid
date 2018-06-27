@@ -64,6 +64,17 @@ monitoring edge to a subject *s* as faulty by implementing a simple interface
 overlay using the user-supplied template for a monitoring edge.
 
 
+Pluggable messaging
+===================
+
+When embedding a membership service in a larger system, there is no reason
+for the membership service to use its own messaging implementation. For
+this reason, Rapid also allows users to plugin their own messaging 
+implementations by implementing two interfaces, `IMessagingClient` and
+`IMessagingServer`. To see example usage, have a look at 
+`examples/src/main/.../AgentWithNettyMessaging.java`.
+
+
 Where can I read more?
 ======================
 
@@ -136,3 +147,7 @@ bootstrap via node 127.0.0.1:1234.
              --seedAddress 127.0.0.1:1234 &> /tmp/rapid.$each &
   done
 ```
+
+
+To run the `AgentWithNettyMessaging` example, replace `standalone-agent.jar`
+in the above commands with `netty-based-agent.jar`.
