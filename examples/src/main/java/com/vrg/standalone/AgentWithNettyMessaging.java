@@ -59,6 +59,12 @@ public class AgentWithNettyMessaging extends StandaloneAgent {
                 this::onKicked);
     }
 
+    /**
+     * Prints the current membership
+     */
+    private void printClusterMembership() {
+        LOG.info("Node {} -- cluster size {}", listenAddress, cluster.getMembershipSize());
+    }
 
     public static void main(final String[] args) throws ParseException {
         final Options options = new Options();

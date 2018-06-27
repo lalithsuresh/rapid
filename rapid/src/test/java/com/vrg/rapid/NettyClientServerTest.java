@@ -20,7 +20,7 @@ import static org.junit.Assert.assertNotNull;
 public class NettyClientServerTest {
 
     /**
-     * Tests NettyClientServer messaging
+     * Tests NettyClientServer messaging from many clients to one server
      */
     @Test
     public void sendMessageNetty() throws IOException, InterruptedException, ExecutionException {
@@ -58,6 +58,48 @@ public class NettyClientServerTest {
             if (serverInstance != null) {
                 serverInstance.shutdown();
             }
+        }
+    }
+
+    /**
+     * Tests NettyClientServer messaging from one client to many servers
+     */
+    @Test
+    @SuppressWarnings("all")
+    public void sendMessageNettyMultipleServers() throws IOException, InterruptedException, ExecutionException {
+        final List<Cluster> clusters = new ArrayList<>(10);
+        try {
+            final int numServers = 10;
+            final SharedResources resources = new SharedResources(Endpoint.getDefaultInstance());
+
+            for (int i = 0; i < numServers; i++) {
+                final Endpoint server = Endpoint.newBuilder().setHostname("127.0.0.1")
+                        .setPort(9001 + i).build();
+                final NettyClientServer serverMessaging = new NettyClientServer(server, resources);
+                final Cluster cluster = new Cluster.Builder(server)
+                        .setMessagingClientAndServer(serverMessaging, serverMessaging)
+                        .start();
+                clusters.add(cluster);
+            }
+            final SharedResources resources2 = new SharedResources(Endpoint.getDefaultInstance());
+
+            final Endpoint clientEp = Endpoint.newBuilder().setHostname("127.0.0.1")
+                    .setPort(9000).build();
+            final NettyClientServer clientMessaging = new NettyClientServer(clientEp, resources2);
+            for (int i = 0; i < numServers; i++) {
+                final Endpoint server = Endpoint.newBuilder().setHostname("127.0.0.1")
+                        .setPort(9001 + i).build();
+                final RapidRequest msg = RapidRequest.newBuilder().setProbeMessage(ProbeMessage.getDefaultInstance())
+                        .build();
+                final RapidResponse rapidResponse1 = clientMessaging.sendMessage(server, msg).get();
+                assertNotNull(rapidResponse1);
+                final RapidResponse rapidResponse2 = clientMessaging.sendMessage(server, msg).get();
+                assertNotNull(rapidResponse2);
+                final RapidResponse rapidResponse3 = clientMessaging.sendMessage(server, msg).get();
+                assertNotNull(rapidResponse3);
+            }
+        } finally {
+            clusters.forEach(Cluster::shutdown);
         }
     }
 }

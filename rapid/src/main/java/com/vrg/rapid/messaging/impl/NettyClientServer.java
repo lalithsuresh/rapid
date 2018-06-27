@@ -9,6 +9,7 @@ import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
+import com.google.protobuf.TextFormat;
 import com.vrg.rapid.MembershipService;
 import com.vrg.rapid.SharedResources;
 import com.vrg.rapid.messaging.IMessagingClient;
@@ -33,6 +34,8 @@ import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.serialization.ClassResolvers;
 import io.netty.handler.codec.serialization.ObjectDecoder;
 import io.netty.handler.codec.serialization.ObjectEncoder;
+import io.netty.handler.timeout.ReadTimeoutException;
+import io.netty.handler.timeout.ReadTimeoutHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -44,13 +47,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Simple implementation of messaging over TCP with Netty. The main
- * advantage over gRPC is the decreased memory pressure (about 4x).
+ * Simple implementation of messaging over TCP with Netty.
  */
 public class NettyClientServer implements IMessagingClient, IMessagingServer {
     private static final Logger LOG = LoggerFactory.getLogger(NettyClientServer.class);
-    private static final int RETRY_COUNT = 5;
     private static final FutureLoader FUTURE_LOADER = new FutureLoader();
+    private static final int DEFAULT_TIMEOUT_SECONDS = 30;
     private final Endpoint listenAddress;
     private final LoadingCache<Endpoint, ChannelFuture> channelCache;
     private final LoadingCache<Long, SettableFuture<RapidResponse>> outstandingRequests;
@@ -67,7 +69,7 @@ public class NettyClientServer implements IMessagingClient, IMessagingServer {
     public NettyClientServer(final Endpoint listenAddress, final SharedResources resources) {
         this.listenAddress = listenAddress;
         this.outstandingRequests = CacheBuilder.newBuilder()
-            .expireAfterAccess(30, TimeUnit.SECONDS)
+            .expireAfterAccess(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .build(FUTURE_LOADER);
         this.resources = resources;
 
@@ -78,7 +80,7 @@ public class NettyClientServer implements IMessagingClient, IMessagingServer {
                                  removal.getValue().channel().close()
                                          .addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
         this.channelCache = CacheBuilder.newBuilder()
-                .expireAfterAccess(30, TimeUnit.SECONDS)
+                .expireAfterAccess(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                 .removalListener(removalListener)
                 .build(new ClientChannelLoader(clientBootstrap));
         final ClientHandler clientHandler = new ClientHandler();
@@ -97,21 +99,8 @@ public class NettyClientServer implements IMessagingClient, IMessagingServer {
      */
     @Override
     public ListenableFuture<RapidResponse> sendMessage(final Endpoint remote, final RapidRequest msg) {
-        // Configure the client.
-        final Runnable onCallFailure = () -> channelCache.invalidate(remote);
-        return Retries.callWithRetries(() -> {
-            try {
-                final long reqNo = counter.incrementAndGet();
-                final SettableFuture<RapidResponse> future = outstandingRequests.get(reqNo);
-                final ChannelFuture f = channelCache.get(remote);
-                ignoreFuture(f.channel().writeAndFlush(new WrappedRapidRequest(reqNo, msg),
-                                                       f.channel().voidPromise()));
-
-                return future;
-            } catch (final ExecutionException e) {
-                return Futures.immediateFailedFuture(e);
-            }
-        }, remote, RETRY_COUNT, onCallFailure, resources.getBackgroundExecutor());
+        return Futures.withTimeout(sendOnce(remote, msg), DEFAULT_TIMEOUT_SECONDS,
+                                   TimeUnit.SECONDS, resources.getScheduledTasksExecutor());
     }
 
     /**
@@ -120,6 +109,18 @@ public class NettyClientServer implements IMessagingClient, IMessagingServer {
     @Override
     public ListenableFuture<RapidResponse> sendMessageBestEffort(final Endpoint remote, final RapidRequest msg) {
         return sendMessage(remote, msg);
+    }
+
+    private ListenableFuture<RapidResponse> sendOnce(final Endpoint remote, final RapidRequest msg) {
+        try {
+            final long reqNo = counter.incrementAndGet();
+            final SettableFuture<RapidResponse> future = outstandingRequests.get(reqNo);
+            final ChannelFuture f = channelCache.get(remote);
+            ignoreFuture(f.channel().writeAndFlush(new WrappedRapidRequest(reqNo, msg), f.channel().voidPromise()));
+            return future;
+        } catch (final ExecutionException e) {
+            return Futures.immediateFailedFuture(e);
+        }
     }
 
     /**
@@ -134,7 +135,6 @@ public class NettyClientServer implements IMessagingClient, IMessagingServer {
                 .channel(NioServerSocketChannel.class)
                 .option(ChannelOption.SO_BACKLOG, 1000)
                 .option(ChannelOption.SO_REUSEADDR, true)
-                .option(ChannelOption.TCP_NODELAY, true)
                 .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .childHandler(new ServerChannelInitializer(serverHandler));
         try {
@@ -152,7 +152,7 @@ public class NettyClientServer implements IMessagingClient, IMessagingServer {
     @Override
     public void shutdown() {
         if (serverChannel != null) {
-            serverChannel.channel().closeFuture().awaitUninterruptibly(5, TimeUnit.SECONDS);
+            serverChannel.channel().closeFuture().awaitUninterruptibly(0, TimeUnit.SECONDS);
         }
         channelCache.invalidateAll();
     }
@@ -169,23 +169,30 @@ public class NettyClientServer implements IMessagingClient, IMessagingServer {
         }
     }
 
-
+    @ChannelHandler.Sharable
     private class ClientHandler extends ChannelInboundHandlerAdapter {
         @Override
         public void channelActive(final ChannelHandlerContext ctx) {
-            LOG.debug("Client has successfully connected to the server {}", listenAddress);
+            LOG.info("Client {} has successfully connected to server {}",
+                    TextFormat.shortDebugString(listenAddress), ctx.channel().remoteAddress());
         }
 
         @Override
         public void channelInactive(final ChannelHandlerContext ctx) throws Exception {
-            LOG.debug("Closed connection to the server {}", listenAddress);
+            LOG.info("Closed connection from {} to the server {}",
+                    TextFormat.shortDebugString(listenAddress), ctx.channel().remoteAddress());
             super.channelInactive(ctx);
         }
 
         @Override
         public void exceptionCaught(final ChannelHandlerContext ctx, final Throwable cause) {
-            LOG.debug("Exception caught at client {}", cause);
-            ctx.close().addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+            if (cause instanceof ReadTimeoutException) {
+                // do something
+                LOG.info("Read timeout exception");
+            } else {
+                LOG.info("Exception caught at client {}", cause);
+                ctx.close().addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
+            }
         }
 
         @Override
@@ -199,12 +206,14 @@ public class NettyClientServer implements IMessagingClient, IMessagingServer {
     private class ServerHandler extends ChannelInboundHandlerAdapter {
         @Override
         public void channelActive(final ChannelHandlerContext ctx) {
-            LOG.debug("Client has connected to the server {}", listenAddress);
+            LOG.info("Client {} has connected to the server {}", ctx.channel().remoteAddress(),
+                    TextFormat.shortDebugString(listenAddress));
         }
 
         @Override
         public void channelInactive(final ChannelHandlerContext ctx) {
-            LOG.debug("Client has disconnected from the server {}", listenAddress);
+            LOG.info("Client {} has disconnected from the server {}", ctx.channel().remoteAddress(),
+                    TextFormat.shortDebugString(listenAddress));
         }
 
         @Override
@@ -232,7 +241,7 @@ public class NettyClientServer implements IMessagingClient, IMessagingServer {
 
         @Override
         public void exceptionCaught(final ChannelHandlerContext ctx, final Throwable cause) {
-            LOG.debug("Exception caught at server {}", cause);
+            LOG.info("Exception caught at server {}", cause);
             ctx.close().addListener(ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE);
         }
     }
@@ -320,7 +329,9 @@ public class NettyClientServer implements IMessagingClient, IMessagingServer {
         @Override
         public void initChannel(final SocketChannel channel) {
             final ChannelPipeline pipeline = channel.pipeline();
-            pipeline.addLast(new ObjectEncoder(),
+            pipeline.addLast(
+                    new ReadTimeoutHandler(30, TimeUnit.SECONDS),
+                    new ObjectEncoder(),
                     new ObjectDecoder(ClassResolvers.softCachingConcurrentResolver(null)),
                     clientHandler);
         }

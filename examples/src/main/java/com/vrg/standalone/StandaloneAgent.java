@@ -73,7 +73,7 @@ public class StandaloneAgent {
     /**
      * Prints the current membership
      */
-    void printClusterMembership() {
+    private void printClusterMembership() {
         LOG.info("Node {} -- cluster size {}", listenAddress, cluster.getMembershipSize());
     }
 

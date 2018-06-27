@@ -119,7 +119,8 @@ public class SharedResources {
      * use Netty's DefaultThreadFactory.
      */
     private DefaultThreadFactory newFastLocalThreadFactory(final String poolName, final Endpoint address) {
-        return new DefaultThreadFactory(poolName + "-" + address, true);
+        return new DefaultThreadFactory(poolName + "-" + address.getHostname() + ":"
+                + address.getPort(), true);
     }
 
     /**

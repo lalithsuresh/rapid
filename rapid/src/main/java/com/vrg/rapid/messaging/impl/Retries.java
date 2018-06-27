@@ -58,7 +58,7 @@ class Retries {
             @Override
             public void onFailure(final Throwable throwable) {
                 onCallFailure.run();
-                LOG.trace("Retrying call to {} because of exception {}", remote, throwable);
+                LOG.error("Retrying call to {} because of exception {}", remote, throwable);
                 handleFailure(call, remote, signal, retries, throwable, onCallFailure, backgroundExecutor);
             }
         }, backgroundExecutor);
