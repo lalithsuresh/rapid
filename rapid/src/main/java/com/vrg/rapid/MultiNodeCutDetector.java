@@ -43,7 +43,7 @@ final class MultiNodeCutDetector {
     @GuardedBy("lock") private int proposalCount = 0;
     @GuardedBy("lock") private int updatesInProgress = 0;
     @GuardedBy("lock") private final Map<Endpoint, Map<Integer, Endpoint>> reportsPerHost;
-    @GuardedBy("lock") private final ArrayList<Endpoint> proposal = new ArrayList<>();
+    @GuardedBy("lock") private final Set<Endpoint> proposal = new HashSet<>();
     @GuardedBy("lock") private final Set<Endpoint> preProposal = new HashSet<>();
     @GuardedBy("lock") private boolean seenLinkDownEvents = false;
     private final Object lock = new Object();
@@ -65,6 +65,25 @@ final class MultiNodeCutDetector {
         }
     }
 
+
+    /**
+     * Apply a AlertMessage against the cut detector. When an update moves a host
+     * past the H threshold of reports, and no other host has between H and L reports, the
+     * method returns a view change proposal.
+     *
+     * @param msgs A list of AlertMessages to apply against the filter
+     * @return a list of endpoints about which a view change has been recorded. Empty list if there is no proposal.
+     */
+    Set<Endpoint> aggregateForProposal(final List<AlertMessage> msgs, final MembershipView view) {
+        Objects.requireNonNull(msgs);
+        final Set<Endpoint> proposals = new HashSet<>();
+        msgs.forEach(msg -> msg.getRingNumberList()
+                               .forEach(ringNumber -> proposals.addAll(aggregateForProposal(msg.getEdgeSrc(),
+                                                        msg.getEdgeDst(), msg.getEdgeStatus(), ringNumber))));
+        proposals.addAll(invalidateFailingEdges(view));
+        return proposals;
+    }
+
     /**
      * Apply a AlertMessage against the cut detector. When an update moves a host
      * past the H threshold of reports, and no other host has between H and L reports, the
@@ -73,12 +92,8 @@ final class MultiNodeCutDetector {
      * @param msg A AlertMessage to apply against the filter
      * @return a list of endpoints about which a view change has been recorded. Empty list if there is no proposal.
      */
-    List<Endpoint> aggregateForProposal(final AlertMessage msg) {
-        Objects.requireNonNull(msg);
-        final ArrayList<Endpoint> proposals = new ArrayList<>();
-        msg.getRingNumberList().forEach(ringNumber ->
-           proposals.addAll(aggregateForProposal(msg.getEdgeSrc(), msg.getEdgeDst(), msg.getEdgeStatus(), ringNumber)));
-        return proposals;
+    Set<Endpoint> aggregateForProposal(final AlertMessage msg, final MembershipView view) {
+        return aggregateForProposal(Collections.singletonList(msg), view);
     }
 
     private List<Endpoint> aggregateForProposal(final Endpoint linkSrc, final Endpoint linkDst,
@@ -134,7 +149,7 @@ final class MultiNodeCutDetector {
      * @param view MembershipView object required to find observer-subject relationships between failing nodes.
      * @return A list of endpoints representing a view change proposal.
      */
-    List<Endpoint> invalidateFailingEdges(final MembershipView view) {
+    private List<Endpoint> invalidateFailingEdges(final MembershipView view) {
         synchronized (lock) {
             // Link invalidation is only required when we have failing nodes
             if (!seenLinkDownEvents) {

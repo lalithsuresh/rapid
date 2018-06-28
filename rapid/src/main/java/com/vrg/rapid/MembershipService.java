@@ -19,13 +19,13 @@ import com.google.common.util.concurrent.SettableFuture;
 import com.vrg.rapid.messaging.IBroadcaster;
 import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.monitoring.IEdgeFailureDetectorFactory;
+import com.vrg.rapid.pb.AlertMessage;
 import com.vrg.rapid.pb.BatchedAlertMessage;
+import com.vrg.rapid.pb.EdgeStatus;
 import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
-import com.vrg.rapid.pb.EdgeStatus;
-import com.vrg.rapid.pb.AlertMessage;
 import com.vrg.rapid.pb.Metadata;
 import com.vrg.rapid.pb.NodeId;
 import com.vrg.rapid.pb.PreJoinMessage;
@@ -294,19 +294,17 @@ public final class MembershipService {
             // => we have initiated consensus and cannot go back on our proposal.
             if (announcedProposal) {
                 future.set(null);
+                return;
             }
             final long currentConfigurationId = membershipView.getCurrentConfigurationId();
             final int membershipSize = membershipView.getMembershipSize();
-            final Set<Endpoint> proposal = messageBatch.getMessagesList().stream()
+
+            // Apply all the valid messages into our cut detector to obtain a view change proposal
+            final List<AlertMessage> validMessages = messageBatch.getMessagesList().stream()
                     // First, we filter out invalid messages that violate membership invariants.
                     .filter(msg -> filterAlertMessages(messageBatch, msg, membershipSize, currentConfigurationId))
-                    // We then apply all the valid messages into our condition detector to obtain a view change proposal
-                    .map(cutDetection::aggregateForProposal)
-                    .flatMap(List::stream)
-                    .collect(Collectors.toSet());
-
-            // Lastly, we apply implicit detections
-            proposal.addAll(cutDetection.invalidateFailingEdges(membershipView));
+                    .collect(Collectors.toList());
+            final Set<Endpoint> proposal = cutDetection.aggregateForProposal(validMessages, membershipView);
 
             // If we have a proposal for this stage, start an instance of consensus on it.
             if (!proposal.isEmpty()) {
@@ -319,9 +317,9 @@ public final class MembershipService {
                     subscriptions.get(ClusterEvents.VIEW_CHANGE_PROPOSAL)
                                  .forEach(cb -> cb.accept(currentConfigurationId, result));
                 }
-                fastPaxosInstance.propose(new ArrayList<>(proposal.stream()
-                                                            .sorted(Utils.AddressComparator.getComparatorWithSeed(0))
-                                                            .collect(Collectors.toList())));
+                fastPaxosInstance.propose(proposal.stream()
+                                                  .sorted(Utils.AddressComparator.getComparatorWithSeed(0))
+                                                  .collect(Collectors.toList()));
             }
             future.set(null);
         });
