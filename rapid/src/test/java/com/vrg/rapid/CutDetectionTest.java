@@ -13,6 +13,7 @@
 
 package com.vrg.rapid;
 
+import com.google.common.util.concurrent.ListenableFuture;
 import com.vrg.rapid.pb.AlertMessage;
 import com.vrg.rapid.pb.EdgeStatus;
 import com.vrg.rapid.pb.Endpoint;
@@ -23,8 +24,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -42,127 +45,128 @@ public class CutDetectionTest {
      * A series of updates with the right ring indexes
      */
     @Test
-    public void cutDetectionTest() {
+    public void cutDetectionTest() throws ExecutionException, InterruptedException {
         final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L);
         final Endpoint dst = Utils.hostFromParts("127.0.0.2", 2);
-        Set<Endpoint> ret;
+
 
         for (int i = 0; i < H - 1; i++) {
             final AlertMessage msg = createAlertMessage(Utils.hostFromParts(HOST, i + 1), dst, i);
-            ret = wb.aggregateForProposal(msg, dummyView);
-            assertEquals(0, ret.size());
+            final boolean res = wb.aggregateForProposal(msg, dummyView).isDone();
+            assertFalse(res);
             assertEquals(0, wb.getNumProposals());
         }
 
         final AlertMessage decidingMessage = createAlertMessage(Utils.hostFromParts(HOST, H), dst, H - 1);
-        ret = wb.aggregateForProposal(decidingMessage, dummyView);
-        assertEquals(1, ret.size());
+        final ListenableFuture<Set<Endpoint>> ret = wb.aggregateForProposal(decidingMessage, dummyView);
+        assertTrue(ret.isDone());
+        assertEquals(1, ret.get().size());
         assertEquals(1, wb.getNumProposals());
     }
 
     @Test
-    public void cutDetectionTestBlockingOneBlocker() {
+    public void cutDetectionTestBlockingOneBlocker() throws ExecutionException, InterruptedException {
         final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L);
         final Endpoint dst1 = Utils.hostFromParts("127.0.0.2", 2);
         final Endpoint dst2 = Utils.hostFromParts("127.0.0.3", 2);
-        Set<Endpoint> ret;
 
         for (int i = 0; i < H - 1; i++) {
             final AlertMessage msg = createAlertMessage(Utils.hostFromParts(HOST, i + 1), dst1, i);
-            ret = wb.aggregateForProposal(msg, dummyView);
-            assertEquals(0, ret.size());
+            final boolean res = wb.aggregateForProposal(msg, dummyView).isDone();
+            assertFalse(res);
             assertEquals(0, wb.getNumProposals());
         }
 
         for (int i = 0; i < H - 1; i++) {
             final AlertMessage msg = createAlertMessage(Utils.hostFromParts(HOST, i + 1), dst2, i);
-            ret = wb.aggregateForProposal(msg, dummyView);
-            assertEquals(0, ret.size());
+            final boolean res  = wb.aggregateForProposal(msg, dummyView).isDone();
+            assertFalse(res);
             assertEquals(0, wb.getNumProposals());
         }
         final AlertMessage beforeBlocker = createAlertMessage(Utils.hostFromParts(HOST, H), dst1, H - 1);
-        ret = wb.aggregateForProposal(beforeBlocker, dummyView);
-        assertEquals(0, ret.size());
+        final boolean res = wb.aggregateForProposal(beforeBlocker, dummyView).isDone();
+        assertFalse(res);
         assertEquals(0, wb.getNumProposals());
 
         final AlertMessage decidingMessage = createAlertMessage(Utils.hostFromParts(HOST, H), dst2,H - 1);
-        ret = wb.aggregateForProposal(decidingMessage, dummyView);
-        assertEquals(2, ret.size());
+        final ListenableFuture<Set<Endpoint>> ret = wb.aggregateForProposal(decidingMessage, dummyView);
+        assertTrue(ret.isDone());
+        assertEquals(2, ret.get().size());
         assertEquals(1, wb.getNumProposals());
     }
 
 
     @Test
-    public void cutDetectionTestBlockingThreeBlockers() {
+    public void cutDetectionTestBlockingThreeBlockers() throws ExecutionException, InterruptedException {
         final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L);
         final Endpoint dst1 = Utils.hostFromParts("127.0.0.2", 2);
         final Endpoint dst2 = Utils.hostFromParts("127.0.0.3", 2);
         final Endpoint dst3 = Utils.hostFromParts("127.0.0.4", 2);
-        Set<Endpoint> ret;
 
         for (int i = 0; i < H - 1; i++) {
             final AlertMessage msg = createAlertMessage(Utils.hostFromParts(HOST, i + 1), dst1, i);
-            ret = wb.aggregateForProposal(msg, dummyView);
-            assertEquals(0, ret.size());
+            final boolean res = wb.aggregateForProposal(msg, dummyView).isDone();
+            assertFalse(res);
             assertEquals(0, wb.getNumProposals());
         }
 
         for (int i = 0; i < H - 1; i++) {
             final AlertMessage msg = createAlertMessage(Utils.hostFromParts(HOST, i + 1), dst2, i);
-            ret = wb.aggregateForProposal(msg, dummyView);
-            assertEquals(0, ret.size());
+            final boolean res = wb.aggregateForProposal(msg, dummyView).isDone();
+            assertFalse(res);
             assertEquals(0, wb.getNumProposals());
         }
 
         for (int i = 0; i < H - 1; i++) {
             final AlertMessage msg = createAlertMessage(Utils.hostFromParts(HOST, i + 1), dst3, i);
-            ret = wb.aggregateForProposal(msg, dummyView);
-            assertEquals(0, ret.size());
+            final boolean res = wb.aggregateForProposal(msg, dummyView).isDone();
+            assertFalse(res);
             assertEquals(0, wb.getNumProposals());
         }
 
         final AlertMessage dst1Blocker = createAlertMessage(Utils.hostFromParts(HOST, H), dst1, H - 1);
-        ret = wb.aggregateForProposal(dst1Blocker, dummyView);
-        assertEquals(0, ret.size());
+        final boolean resDst1 = wb.aggregateForProposal(dst1Blocker, dummyView).isDone();
+        assertFalse(resDst1);
         assertEquals(0, wb.getNumProposals());
 
         final AlertMessage dst3Blocker = createAlertMessage(Utils.hostFromParts(HOST, H), dst3, H - 1);
-        ret = wb.aggregateForProposal(dst3Blocker, dummyView);
-        assertEquals(0, ret.size());
+        final boolean resDst3 = wb.aggregateForProposal(dst3Blocker, dummyView).isDone();
+        assertFalse(resDst3);
         assertEquals(0, wb.getNumProposals());
 
         final AlertMessage dst2Blocker = createAlertMessage(Utils.hostFromParts(HOST, H), dst2, H - 1);
-        ret = wb.aggregateForProposal(dst2Blocker, dummyView);
-        assertEquals(3, ret.size());
+        final ListenableFuture<Set<Endpoint>> ret = wb.aggregateForProposal(dst2Blocker, dummyView);
+        assertTrue(ret.isDone());
+        assertEquals(3, ret.get().size());
         assertEquals(1, wb.getNumProposals());
     }
 
     @Test
-    public void cutDetectionTestBlockingMultipleBlockersPastH() {
+    public void cutDetectionTestBlockingMultipleBlockersPastH() throws ExecutionException, InterruptedException {
         final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L);
         final Endpoint dst1 = Utils.hostFromParts("127.0.0.2", 2);
         final Endpoint dst2 = Utils.hostFromParts("127.0.0.3", 2);
         final Endpoint dst3 = Utils.hostFromParts("127.0.0.4", 2);
-        Set<Endpoint> ret;
+
 
         for (int i = 0; i < H - 1; i++) {
             final AlertMessage msg = createAlertMessage(Utils.hostFromParts(HOST, i + 1), dst1, i);
-            ret = wb.aggregateForProposal(msg, dummyView);
-            assertEquals(0, ret.size());
+            final boolean res = wb.aggregateForProposal(msg, dummyView).isDone();
+            assertFalse(res);
             assertEquals(0, wb.getNumProposals());
         }
 
         for (int i = 0; i < H - 1; i++) {
             final AlertMessage msg = createAlertMessage(Utils.hostFromParts(HOST, i + 1), dst2, i);
-            ret = wb.aggregateForProposal(msg, dummyView);
-            assertEquals(0, ret.size());
+            final boolean res = wb.aggregateForProposal(msg, dummyView).isDone();
+            assertFalse(res);
             assertEquals(0, wb.getNumProposals());
         }
 
         for (int i = 0; i < H - 1; i++) {
             final AlertMessage msg = createAlertMessage(Utils.hostFromParts(HOST, i + 1), dst3, i);
-            ret = wb.aggregateForProposal(msg, dummyView);
-            assertEquals(0, ret.size());
+            final boolean res = wb.aggregateForProposal(msg, dummyView).isDone();
+            assertFalse(res);
             assertEquals(0, wb.getNumProposals());
         }
 
@@ -170,69 +174,71 @@ public class CutDetectionTest {
         // dst1 and dst3 past the H boundary.
         final AlertMessage dst1Msg1 = createAlertMessage(Utils.hostFromParts(HOST, H), dst1, H - 1);
         final AlertMessage dst1Msg2 = createAlertMessage(Utils.hostFromParts(HOST, H + 1), dst1, H - 1);
-        wb.aggregateForProposal(dst1Msg1, dummyView);
+        ListenableFuture<Set<Endpoint>> ret = wb.aggregateForProposal(dst1Msg1, dummyView);
+        assertFalse(ret.isDone());
         ret = wb.aggregateForProposal(dst1Msg2, dummyView);
-        assertEquals(0, ret.size());
+        assertFalse(ret.isDone());
         assertEquals(0, wb.getNumProposals());
 
         final AlertMessage dst3Msg1 = createAlertMessage(Utils.hostFromParts(HOST, H), dst3, H - 1);
         final AlertMessage dst3Msg2 = createAlertMessage(Utils.hostFromParts(HOST, H + 1), dst3, H - 1);
-        wb.aggregateForProposal(dst3Msg1, dummyView);
+        ret = wb.aggregateForProposal(dst3Msg1, dummyView);
+        assertFalse(ret.isDone());
         ret = wb.aggregateForProposal(dst3Msg2, dummyView);
-        assertEquals(0, ret.size());
+        assertFalse(ret.isDone());
         assertEquals(0, wb.getNumProposals());
 
         final AlertMessage dst3Msg = createAlertMessage(Utils.hostFromParts(HOST, H), dst2, H - 1);
         ret = wb.aggregateForProposal(dst3Msg, dummyView);
-        assertEquals(3, ret.size());
+        assertEquals(3, ret.get().size());
         assertEquals(1, wb.getNumProposals());
     }
 
     @Test
-    public void cutDetectionTestBelowL() {
+    public void cutDetectionTestBelowL() throws ExecutionException, InterruptedException {
         final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L);
         final Endpoint dst1 = Utils.hostFromParts("127.0.0.2", 2);
         final Endpoint dst2 = Utils.hostFromParts("127.0.0.3", 2);
         final Endpoint dst3 = Utils.hostFromParts("127.0.0.4", 2);
-        Set<Endpoint> ret;
 
         for (int i = 0; i < H - 1; i++) {
             final AlertMessage msg = createAlertMessage(Utils.hostFromParts(HOST, i + 1), dst1, i);
-            ret = wb.aggregateForProposal(msg,
-                    dummyView);
-            assertEquals(0, ret.size());
+            final boolean res = wb.aggregateForProposal(msg,
+                    dummyView).isDone();
+            assertFalse(res);
             assertEquals(0, wb.getNumProposals());
         }
 
         // Unlike the previous test, dst2 has < L updates
         for (int i = 0; i < L - 1; i++) {
             final AlertMessage msg = createAlertMessage(Utils.hostFromParts(HOST, i + 1), dst2, i);
-            ret = wb.aggregateForProposal(msg, dummyView);
-            assertEquals(0, ret.size());
+            final boolean res = wb.aggregateForProposal(msg, dummyView).isDone();
+            assertFalse(res);
             assertEquals(0, wb.getNumProposals());
         }
 
         for (int i = 0; i < H - 1; i++) {
             final AlertMessage msg = createAlertMessage(Utils.hostFromParts(HOST, i + 1), dst3, i);
-            ret = wb.aggregateForProposal(msg, dummyView);
-            assertEquals(0, ret.size());
+            final boolean res = wb.aggregateForProposal(msg, dummyView).isDone();
+            assertFalse(res);
             assertEquals(0, wb.getNumProposals());
         }
 
         final AlertMessage msg = createAlertMessage(Utils.hostFromParts(HOST, H), dst1, H - 1);
-        ret = wb.aggregateForProposal(msg, dummyView);
-        assertEquals(0, ret.size());
+        final boolean res = wb.aggregateForProposal(msg, dummyView).isDone();
+        assertFalse(res);
         assertEquals(0, wb.getNumProposals());
 
         final AlertMessage dst3Msg = createAlertMessage(Utils.hostFromParts(HOST, H), dst3, H - 1);
-        ret = wb.aggregateForProposal(dst3Msg, dummyView);
-        assertEquals(2, ret.size());
+        final ListenableFuture<Set<Endpoint>> ret = wb.aggregateForProposal(dst3Msg, dummyView);
+        assertTrue(ret.isDone());
+        assertEquals(2, ret.get().size());
         assertEquals(1, wb.getNumProposals());
     }
 
 
     @Test
-    public void cutDetectionTestBatch() {
+    public void cutDetectionTestBatch() throws ExecutionException, InterruptedException {
         final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L);
         final int numNodes = 3;
         final List<Endpoint> endpoints = new ArrayList<>();
@@ -240,19 +246,20 @@ public class CutDetectionTest {
             endpoints.add(Utils.hostFromParts("127.0.0.2", 2 + i));
         }
 
-        final List<Endpoint> proposal = new ArrayList<>();
+        final List<AlertMessage> messages = new ArrayList<>();
         for (final Endpoint endpoint : endpoints) {
             for (int ringNumber = 0; ringNumber < K; ringNumber++) {
                 final AlertMessage msg = createAlertMessage(Utils.hostFromParts(HOST, 1), endpoint, ringNumber);
-                proposal.addAll(wb.aggregateForProposal(msg, dummyView));
+                messages.add(msg);
             }
         }
-
-        assertEquals(proposal.size(), numNodes);
+        final ListenableFuture<Set<Endpoint>> ret = wb.aggregateForProposal(messages, dummyView);
+        assertTrue(ret.isDone());
+        assertEquals(ret.get().size(), numNodes);
     }
 
     @Test
-    public void cutDetectionTestLinkInvalidation() {
+    public void cutDetectionTestLinkInvalidation() throws ExecutionException, InterruptedException {
         final MembershipView mView = new MembershipView(K);
         final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L);
         final int numNodes = 30;
@@ -267,16 +274,16 @@ public class CutDetectionTest {
         final List<Endpoint> observers = mView.getObserversOf(dst);
         assertEquals(K, observers.size());
 
-        final Set<Endpoint> ret = new HashSet<>();
 
         // This adds alerts from the observers[0, H - 1) of node dst.
         for (int i = 0; i < H - 1; i++) {
             final AlertMessage msg = createAlertMessage(observers.get(i), dst, EdgeStatus.DOWN, CONFIGURATION_ID, i);
-            ret.addAll(wb.aggregateForProposal(msg, mView));
-            assertEquals(0, ret.size());
+            final boolean res = wb.aggregateForProposal(msg, mView).isDone();
+            assertFalse(res);
             assertEquals(0, wb.getNumProposals());
         }
 
+        final List<AlertMessage> messages = new ArrayList<>();
         // Next, we add alerts *about* observers[H, K) of node dst.
         final Set<Endpoint> failedObservers = new HashSet<>(K - H - 1);
         for (int i = H - 1; i < K; i++) {
@@ -285,15 +292,17 @@ public class CutDetectionTest {
             for (int j = 0; j < K; j++) {
                 final AlertMessage msg = createAlertMessage(observersOfObserver.get(j), observers.get(i),
                                                             EdgeStatus.DOWN, CONFIGURATION_ID, j);
-                ret.addAll(wb.aggregateForProposal(msg, mView));
+                messages.add(msg);
             }
         }
+        final ListenableFuture<Set<Endpoint>> ret = wb.aggregateForProposal(messages, mView);
 
         // At this point, (K - H - 1) observers of dst will be past H, and dst will be in H - 1. Link invalidation
         // should bring the failed observers and dst to the stable region.
-        assertEquals(4, ret.size());
-        assertEquals(3, wb.getNumProposals());
-        for (final Endpoint node: ret) {
+        assertTrue(ret.isDone());
+        assertEquals(4, ret.get().size());
+        assertEquals(1, wb.getNumProposals());
+        for (final Endpoint node: ret.get()) {
             assertTrue(failedObservers.contains(node) || node.equals(dst));
         }
     }

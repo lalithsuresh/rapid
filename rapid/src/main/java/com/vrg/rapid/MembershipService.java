@@ -13,6 +13,7 @@
 
 package com.vrg.rapid;
 
+import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
@@ -36,6 +37,7 @@ import com.vrg.rapid.pb.RapidResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
 import javax.annotation.concurrent.NotThreadSafe;
 import java.util.ArrayList;
@@ -304,28 +306,41 @@ public final class MembershipService {
                     // First, we filter out invalid messages that violate membership invariants.
                     .filter(msg -> filterAlertMessages(messageBatch, msg, membershipSize, currentConfigurationId))
                     .collect(Collectors.toList());
-            final Set<Endpoint> proposal = cutDetection.aggregateForProposal(validMessages, membershipView);
-
-            // If we have a proposal for this stage, start an instance of consensus on it.
-            if (!proposal.isEmpty()) {
-                LOG.info("Proposing membership change of size {}: {}", proposal.size(), Utils.loggable(proposal));
-                announcedProposal = true;
-
-                if (subscriptions.containsKey(ClusterEvents.VIEW_CHANGE_PROPOSAL)) {
-                    final List<NodeStatusChange> result = createNodeStatusChangeList(proposal);
-                    // Inform subscribers that a proposal has been announced.
-                    subscriptions.get(ClusterEvents.VIEW_CHANGE_PROPOSAL)
-                                 .forEach(cb -> cb.accept(currentConfigurationId, result));
+            final ListenableFuture<Set<Endpoint>> proposalFuture = cutDetection.aggregateForProposal(validMessages,
+                                                                                                membershipView);
+            Futures.addCallback(proposalFuture, new FutureCallback<Set<Endpoint>>() {
+                @Override
+                public void onSuccess(@Nullable final Set<Endpoint> proposal) {
+                    onPropose(proposal, currentConfigurationId);
                 }
-                fastPaxosInstance.propose(proposal.stream()
-                                                  .sorted(Utils.AddressComparator.getComparatorWithSeed(0))
-                                                  .collect(Collectors.toList()));
-            }
+
+                @Override
+                public void onFailure(final Throwable throwable) {
+                    LOG.info("proposalFuture threw an exception: ", throwable);
+                }
+            });
             future.set(null);
         });
         return future;
     }
 
+    private void onPropose(final Set<Endpoint> proposal, final long currentConfigurationId) {
+        // If we have a proposal for this stage, start an instance of consensus on it.
+        if (!proposal.isEmpty()) {
+            LOG.info("Proposing membership change of size {}: {}", proposal.size(), Utils.loggable(proposal));
+            announcedProposal = true;
+
+            if (subscriptions.containsKey(ClusterEvents.VIEW_CHANGE_PROPOSAL)) {
+                final List<NodeStatusChange> result = createNodeStatusChangeList(proposal);
+                // Inform subscribers that a proposal has been announced.
+                subscriptions.get(ClusterEvents.VIEW_CHANGE_PROPOSAL)
+                        .forEach(cb -> cb.accept(currentConfigurationId, result));
+            }
+            fastPaxosInstance.propose(proposal.stream()
+                    .sorted(Utils.AddressComparator.getComparatorWithSeed(0))
+                    .collect(Collectors.toList()));
+        }
+    }
 
     /**
      * Receives proposal for the one-step consensus (essentially phase 2 of Fast Paxos).

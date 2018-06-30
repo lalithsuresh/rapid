@@ -14,12 +14,14 @@
 package com.vrg.rapid;
 
 import com.google.common.collect.ImmutableList;
-import com.vrg.rapid.pb.Endpoint;
-import com.vrg.rapid.pb.EdgeStatus;
+import com.google.common.collect.ImmutableSet;
+import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.SettableFuture;
 import com.vrg.rapid.pb.AlertMessage;
+import com.vrg.rapid.pb.EdgeStatus;
+import com.vrg.rapid.pb.Endpoint;
 
 import javax.annotation.concurrent.GuardedBy;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -46,6 +48,7 @@ final class MultiNodeCutDetector {
     @GuardedBy("lock") private final Set<Endpoint> proposal = new HashSet<>();
     @GuardedBy("lock") private final Set<Endpoint> preProposal = new HashSet<>();
     @GuardedBy("lock") private boolean seenLinkDownEvents = false;
+    private SettableFuture<Set<Endpoint>> proposalFuture;
     private final Object lock = new Object();
 
     MultiNodeCutDetector(final int K, final int H, final int L) {
@@ -57,6 +60,7 @@ final class MultiNodeCutDetector {
         this.H = H;
         this.L = L;
         this.reportsPerHost = new HashMap<>();
+        this.proposalFuture = SettableFuture.create();
     }
 
     int getNumProposals() {
@@ -74,14 +78,19 @@ final class MultiNodeCutDetector {
      * @param msgs A list of AlertMessages to apply against the filter
      * @return a list of endpoints about which a view change has been recorded. Empty list if there is no proposal.
      */
-    Set<Endpoint> aggregateForProposal(final List<AlertMessage> msgs, final MembershipView view) {
+    ListenableFuture<Set<Endpoint>> aggregateForProposal(final List<AlertMessage> msgs, final MembershipView view) {
         Objects.requireNonNull(msgs);
-        final Set<Endpoint> proposals = new HashSet<>();
-        msgs.forEach(msg -> msg.getRingNumberList()
-                               .forEach(ringNumber -> proposals.addAll(aggregateForProposal(msg.getEdgeSrc(),
-                                                        msg.getEdgeDst(), msg.getEdgeStatus(), ringNumber))));
-        proposals.addAll(invalidateFailingEdges(view));
-        return proposals;
+        synchronized (lock) {
+            msgs.forEach(msg -> msg.getRingNumberList()
+                    .forEach(ringNumber -> aggregateForProposal(msg.getEdgeSrc(),
+                            msg.getEdgeDst(), msg.getEdgeStatus(), ringNumber)));
+            // Apply implicit detections
+            invalidateFailingEdges(view);
+            if (updatesInProgress == 0 && !proposal.isEmpty()) {
+                proposalFuture.set(ImmutableSet.copyOf(proposal));
+            }
+            return proposalFuture;
+        }
     }
 
     /**
@@ -92,11 +101,11 @@ final class MultiNodeCutDetector {
      * @param msg A AlertMessage to apply against the filter
      * @return a list of endpoints about which a view change has been recorded. Empty list if there is no proposal.
      */
-    Set<Endpoint> aggregateForProposal(final AlertMessage msg, final MembershipView view) {
+    ListenableFuture<Set<Endpoint>> aggregateForProposal(final AlertMessage msg, final MembershipView view) {
         return aggregateForProposal(Collections.singletonList(msg), view);
     }
 
-    private List<Endpoint> aggregateForProposal(final Endpoint linkSrc, final Endpoint linkDst,
+    private void aggregateForProposal(final Endpoint linkSrc, final Endpoint linkDst,
                                                 final EdgeStatus edgeStatus, final int ringNumber) {
         assert ringNumber <= K;
 
@@ -110,7 +119,7 @@ final class MultiNodeCutDetector {
                                                                  k -> new HashMap<>(K));
 
             if (reportsForHost.containsKey(ringNumber)) {
-                return Collections.emptyList();  // duplicate announcement, ignore.
+                return;  // duplicate announcement, ignore.
             }
 
             reportsForHost.put(ringNumber, linkSrc);
@@ -132,13 +141,8 @@ final class MultiNodeCutDetector {
                     // No outstanding updates, so all nodes that have crossed the H threshold of reports are
                     // now part of a single proposal.
                     proposalCount++;
-                    final List<Endpoint> ret = ImmutableList.copyOf(proposal);
-                    proposal.clear();
-                    return ret;
                 }
             }
-
-            return Collections.emptyList();
         }
     }
 
@@ -147,16 +151,15 @@ final class MultiNodeCutDetector {
      * when there are no failing nodes.
      *
      * @param view MembershipView object required to find observer-subject relationships between failing nodes.
-     * @return A list of endpoints representing a view change proposal.
      */
-    private List<Endpoint> invalidateFailingEdges(final MembershipView view) {
+    private void invalidateFailingEdges(final MembershipView view) {
         synchronized (lock) {
             // Link invalidation is only required when we have failing nodes
             if (!seenLinkDownEvents) {
-                return Collections.emptyList();
+                return;
             }
 
-            final List<Endpoint> proposalsToReturn = new ArrayList<>();
+            // We iterate on a copy of this.preProposal because aggregateForProposal() modifies it.
             final List<Endpoint> preProposalCopy = ImmutableList.copyOf(preProposal);
             for (final Endpoint nodeInFlux: preProposalCopy) {
                 final List<Endpoint> observers = view.isHostPresent(nodeInFlux)
@@ -168,13 +171,11 @@ final class MultiNodeCutDetector {
                     if (proposal.contains(observer) || preProposal.contains(observer)) {
                         // Implicit detection of edges between observer and nodeInFlux
                         final EdgeStatus edgeStatus = view.isHostPresent(nodeInFlux) ? EdgeStatus.DOWN : EdgeStatus.UP;
-                        proposalsToReturn.addAll(aggregateForProposal(observer, nodeInFlux, edgeStatus, ringNumber));
+                        aggregateForProposal(observer, nodeInFlux, edgeStatus, ringNumber);
                     }
                     ringNumber++;
                 }
             }
-
-            return ImmutableList.copyOf(proposalsToReturn);
         }
     }
 
@@ -189,6 +190,7 @@ final class MultiNodeCutDetector {
             proposalCount = 0;
             preProposal.clear();
             seenLinkDownEvents = false;
+            proposalFuture = SettableFuture.create();
         }
     }
 }
