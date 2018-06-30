@@ -307,7 +307,7 @@ public final class MembershipService {
                     .filter(msg -> filterAlertMessages(messageBatch, msg, membershipSize, currentConfigurationId))
                     .collect(Collectors.toList());
             final ListenableFuture<Set<Endpoint>> proposalFuture = cutDetection.aggregateForProposal(validMessages,
-                                                                                                membershipView);
+                                                                                                     membershipView);
             Futures.addCallback(proposalFuture, new FutureCallback<Set<Endpoint>>() {
                 @Override
                 public void onSuccess(@Nullable final Set<Endpoint> proposal) {
@@ -316,7 +316,7 @@ public final class MembershipService {
 
                 @Override
                 public void onFailure(final Throwable throwable) {
-                    LOG.info("proposalFuture threw an exception: ", throwable);
+                    LOG.error("proposalFuture threw an exception: ", throwable);
                 }
             });
             future.set(null);
@@ -326,7 +326,8 @@ public final class MembershipService {
 
     private void onPropose(final Set<Endpoint> proposal, final long currentConfigurationId) {
         // If we have a proposal for this stage, start an instance of consensus on it.
-        if (!proposal.isEmpty()) {
+        if (!proposal.isEmpty() && membershipView.getCurrentConfigurationId() == currentConfigurationId
+                && !announcedProposal) {
             LOG.info("Proposing membership change of size {}: {}", proposal.size(), Utils.loggable(proposal));
             announcedProposal = true;
 
