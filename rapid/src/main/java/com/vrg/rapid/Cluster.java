@@ -240,7 +240,7 @@ public final class Cluster {
             final NodeId currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
             final MembershipView membershipView = new MembershipView(K, Collections.singletonList(currentIdentifier),
                     Collections.singletonList(listenAddress));
-            final MultiNodeCutDetector cutDetector = new MultiNodeCutDetector(K, H, L);
+            final MultiNodeCutDetector cutDetector = new MultiNodeCutDetector(K, H, L, sharedResources);
             edgeFailureDetector = edgeFailureDetector != null ? edgeFailureDetector
                     : new PingPongFailureDetector.Factory(listenAddress, messagingClient);
 
@@ -429,7 +429,7 @@ public final class Cluster {
 
             final MembershipView membershipViewFinal =
                     new MembershipView(K, identifiersSeen, allEndpoints);
-            final MultiNodeCutDetector cutDetector = new MultiNodeCutDetector(K, H, L);
+            final MultiNodeCutDetector cutDetector = new MultiNodeCutDetector(K, H, L, sharedResources);
             edgeFailureDetector = edgeFailureDetector != null ? edgeFailureDetector
                                                   : new PingPongFailureDetector.Factory(listenAddress, messagingClient);
             final MembershipService membershipService =

@@ -472,7 +472,7 @@ public class MessagingTest {
     private void createAndStartMembershipService(final Endpoint serverAddr)
             throws IOException, MembershipView.NodeAlreadyInRingException {
         final MultiNodeCutDetector cutDetector =
-                new MultiNodeCutDetector(K, H, L);
+                new MultiNodeCutDetector(K, H, L, resources);
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, Utils.nodeIdFromUUID(UUID.randomUUID()));
         final IMessagingClient client = new GrpcClient(serverAddr);
@@ -492,7 +492,7 @@ public class MessagingTest {
                                                              final List<ServerDropInterceptors.FirstN> interceptors)
             throws IOException, MembershipView.NodeAlreadyInRingException {
         final MultiNodeCutDetector cutDetector =
-                new MultiNodeCutDetector(K, H, L);
+                new MultiNodeCutDetector(K, H, L, resources);
         final MembershipView membershipView = new MembershipView(K);
         membershipView.ringAdd(serverAddr, Utils.nodeIdFromUUID(UUID.randomUUID()));
         final IMessagingClient client = new GrpcClient(serverAddr);
@@ -512,7 +512,7 @@ public class MessagingTest {
                                                       final MembershipView membershipView)
             throws IOException {
         final MultiNodeCutDetector cutDetector =
-                new MultiNodeCutDetector(K, H, L);
+                new MultiNodeCutDetector(K, H, L, resources);
         final IMessagingClient client = new GrpcClient(serverAddr);
         final MembershipService service = new MembershipService(serverAddr, cutDetector,
             membershipView, resources, new Settings(), client, new PingPongFailureDetector.Factory(serverAddr, client));

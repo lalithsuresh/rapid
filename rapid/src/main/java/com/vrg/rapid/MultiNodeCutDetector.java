@@ -15,12 +15,15 @@ package com.vrg.rapid;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.util.concurrent.FutureCallback;
+import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
 import com.vrg.rapid.pb.AlertMessage;
 import com.vrg.rapid.pb.EdgeStatus;
 import com.vrg.rapid.pb.Endpoint;
 
+import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
 import java.util.Collections;
 import java.util.HashMap;
@@ -29,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 /**
  * A filter that outputs a view change proposal about a node only if:
@@ -39,6 +43,7 @@ import java.util.Set;
  */
 final class MultiNodeCutDetector {
     private static final int K_MIN = 3;
+    private static final int REINFORCE_TIMEOUT_DEFAULT_IN_SECONDS = 10;
     private final int K; // Number of observers per subject and vice versa
     private final int H; // High watermark
     private final int L; // Low watermark
@@ -48,19 +53,39 @@ final class MultiNodeCutDetector {
     @GuardedBy("lock") private final Set<Endpoint> proposal = new HashSet<>();
     @GuardedBy("lock") private final Set<Endpoint> preProposal = new HashSet<>();
     @GuardedBy("lock") private boolean seenLinkDownEvents = false;
-    private SettableFuture<Set<Endpoint>> proposalFuture;
     private final Object lock = new Object();
+    private final SharedResources resources;
+    private final int reinforceTimeoutInSeconds;
+    private SettableFuture<Set<Endpoint>> proposalFuture;
+    @Nullable private ListenableFuture<Set<Endpoint>> reinforceFuture = null;
 
-    MultiNodeCutDetector(final int K, final int H, final int L) {
+    MultiNodeCutDetector(final int K, final int H, final int L, final SharedResources resources) {
         if (H > K || L > H || K < K_MIN || L <= 0 || H <= 0) {
             throw new IllegalArgumentException("Arguments do not satisfy K > H >= L >= 0:" +
-                                               " (K: " + K + ", H: " + H + ", L: " + L);
+                    " (K: " + K + ", H: " + H + ", L: " + L);
         }
         this.K = K;
         this.H = H;
         this.L = L;
         this.reportsPerHost = new HashMap<>();
         this.proposalFuture = SettableFuture.create();
+        this.resources = resources;
+        this.reinforceTimeoutInSeconds = REINFORCE_TIMEOUT_DEFAULT_IN_SECONDS;
+    }
+
+    MultiNodeCutDetector(final int K, final int H, final int L, final SharedResources resources,
+                         final int reinforceTimeoutInSeconds) {
+        if (H > K || L > H || K < K_MIN || L <= 0 || H <= 0) {
+            throw new IllegalArgumentException("Arguments do not satisfy K > H >= L >= 0:" +
+                    " (K: " + K + ", H: " + H + ", L: " + L);
+        }
+        this.K = K;
+        this.H = H;
+        this.L = L;
+        this.reportsPerHost = new HashMap<>();
+        this.proposalFuture = SettableFuture.create();
+        this.resources = resources;
+        this.reinforceTimeoutInSeconds = reinforceTimeoutInSeconds;
     }
 
     int getNumProposals() {
@@ -128,6 +153,26 @@ final class MultiNodeCutDetector {
             if (numReportsForHost == L) {
                 updatesInProgress++;
                 preProposal.add(linkDst);
+                if (reinforceFuture == null) {
+                    reinforceFuture = Futures.withTimeout(proposalFuture, reinforceTimeoutInSeconds, TimeUnit.SECONDS,
+                                                          resources.getScheduledTasksExecutor());
+                    Futures.addCallback(reinforceFuture, new FutureCallback<Set<Endpoint>>() {
+                        @Override
+                        public void onSuccess(@Nullable final Set<Endpoint> endpoints) {
+                            // ignore because this means proposalFuture completed as intended.
+                        }
+
+                        @Override
+                        public void onFailure(final Throwable throwable) {
+                            synchronized (lock) {
+                                final Set<Endpoint> result = new HashSet<>(preProposal.size() + proposal.size());
+                                result.addAll(preProposal);
+                                result.addAll(proposal);
+                                proposalFuture.set(result);
+                            }
+                        }
+                    });
+                }
             }
 
             if (numReportsForHost == H) {
@@ -191,6 +236,7 @@ final class MultiNodeCutDetector {
             preProposal.clear();
             seenLinkDownEvents = false;
             proposalFuture = SettableFuture.create();
+            reinforceFuture = null;
         }
     }
 }

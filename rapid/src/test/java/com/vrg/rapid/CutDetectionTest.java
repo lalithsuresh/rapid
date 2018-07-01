@@ -40,13 +40,14 @@ public class CutDetectionTest {
     private static final long CONFIGURATION_ID = -1;  // Should not affect the following tests
     private static final String HOST = "127.0.0.1";
     private final MembershipView dummyView = new MembershipView(K);
+    private final SharedResources resources = new SharedResources(Endpoint.getDefaultInstance());
 
     /**
      * A series of updates with the right ring indexes
      */
     @Test
     public void cutDetectionTest() throws ExecutionException, InterruptedException {
-        final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L);
+        final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L, resources);
         final Endpoint dst = Utils.hostFromParts("127.0.0.2", 2);
 
 
@@ -66,7 +67,7 @@ public class CutDetectionTest {
 
     @Test
     public void cutDetectionTestBlockingOneBlocker() throws ExecutionException, InterruptedException {
-        final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L);
+        final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L, resources);
         final Endpoint dst1 = Utils.hostFromParts("127.0.0.2", 2);
         final Endpoint dst2 = Utils.hostFromParts("127.0.0.3", 2);
 
@@ -98,7 +99,7 @@ public class CutDetectionTest {
 
     @Test
     public void cutDetectionTestBlockingThreeBlockers() throws ExecutionException, InterruptedException {
-        final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L);
+        final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L, resources);
         final Endpoint dst1 = Utils.hostFromParts("127.0.0.2", 2);
         final Endpoint dst2 = Utils.hostFromParts("127.0.0.3", 2);
         final Endpoint dst3 = Utils.hostFromParts("127.0.0.4", 2);
@@ -143,7 +144,7 @@ public class CutDetectionTest {
 
     @Test
     public void cutDetectionTestBlockingMultipleBlockersPastH() throws ExecutionException, InterruptedException {
-        final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L);
+        final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L, resources);
         final Endpoint dst1 = Utils.hostFromParts("127.0.0.2", 2);
         final Endpoint dst2 = Utils.hostFromParts("127.0.0.3", 2);
         final Endpoint dst3 = Utils.hostFromParts("127.0.0.4", 2);
@@ -196,7 +197,7 @@ public class CutDetectionTest {
 
     @Test
     public void cutDetectionTestBelowL() throws ExecutionException, InterruptedException {
-        final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L);
+        final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L, resources);
         final Endpoint dst1 = Utils.hostFromParts("127.0.0.2", 2);
         final Endpoint dst2 = Utils.hostFromParts("127.0.0.3", 2);
         final Endpoint dst3 = Utils.hostFromParts("127.0.0.4", 2);
@@ -239,7 +240,7 @@ public class CutDetectionTest {
 
     @Test
     public void cutDetectionTestBatch() throws ExecutionException, InterruptedException {
-        final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L);
+        final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L, resources);
         final int numNodes = 3;
         final List<Endpoint> endpoints = new ArrayList<>();
         for (int i = 0; i < numNodes; i++) {
@@ -258,10 +259,33 @@ public class CutDetectionTest {
         assertEquals(ret.get().size(), numNodes);
     }
 
+
+    @Test
+    public void cutDetectionTestBatchWithReinforcement() throws ExecutionException, InterruptedException {
+        final int reinforceTimeoutInSeconds = 2;
+        final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L, resources, reinforceTimeoutInSeconds);
+        final int numNodes = 3;
+        final List<Endpoint> endpoints = new ArrayList<>();
+        for (int i = 0; i < numNodes; i++) {
+            endpoints.add(Utils.hostFromParts("127.0.0.2", 2 + i));
+        }
+
+        final List<AlertMessage> messages = new ArrayList<>();
+        for (final Endpoint endpoint : endpoints) {
+            for (int ringNumber = 0; ringNumber < H - 1; ringNumber++) {
+                final AlertMessage msg = createAlertMessage(Utils.hostFromParts(HOST, 1), endpoint, ringNumber);
+                messages.add(msg);
+            }
+        }
+        final ListenableFuture<Set<Endpoint>> ret = wb.aggregateForProposal(messages, dummyView);
+        assertFalse(ret.isDone());
+        assertEquals(ret.get().size(), numNodes);
+    }
+
     @Test
     public void cutDetectionTestLinkInvalidation() throws ExecutionException, InterruptedException {
         final MembershipView mView = new MembershipView(K);
-        final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L);
+        final MultiNodeCutDetector wb = new MultiNodeCutDetector(K, H, L, resources);
         final int numNodes = 30;
         final List<Endpoint> endpoints = new ArrayList<>();
         for (int i = 0; i < numNodes; i++) {

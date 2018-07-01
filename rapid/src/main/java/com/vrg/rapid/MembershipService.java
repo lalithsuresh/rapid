@@ -311,6 +311,7 @@ public final class MembershipService {
             Futures.addCallback(proposalFuture, new FutureCallback<Set<Endpoint>>() {
                 @Override
                 public void onSuccess(@Nullable final Set<Endpoint> proposal) {
+                    assert proposal != null;
                     onPropose(proposal, currentConfigurationId);
                 }
 
