@@ -317,7 +317,7 @@ public final class MembershipService {
 
                 @Override
                 public void onFailure(final Throwable throwable) {
-                    LOG.error("proposalFuture threw an exception: ", throwable);
+                    LOG.debug("proposalFuture threw an exception: ", throwable);
                 }
             });
             future.set(null);

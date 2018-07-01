@@ -15,8 +15,6 @@ package com.vrg.rapid;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.util.concurrent.FutureCallback;
-import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
 import com.vrg.rapid.pb.AlertMessage;
@@ -32,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -47,17 +46,17 @@ final class MultiNodeCutDetector {
     private final int K; // Number of observers per subject and vice versa
     private final int H; // High watermark
     private final int L; // Low watermark
+    private final Object lock = new Object();
     @GuardedBy("lock") private int proposalCount = 0;
     @GuardedBy("lock") private int updatesInProgress = 0;
     @GuardedBy("lock") private final Map<Endpoint, Map<Integer, Endpoint>> reportsPerHost;
     @GuardedBy("lock") private final Set<Endpoint> proposal = new HashSet<>();
     @GuardedBy("lock") private final Set<Endpoint> preProposal = new HashSet<>();
     @GuardedBy("lock") private boolean seenLinkDownEvents = false;
-    private final Object lock = new Object();
     private final SharedResources resources;
     private final int reinforceTimeoutInSeconds;
-    private SettableFuture<Set<Endpoint>> proposalFuture;
-    @Nullable private ListenableFuture<Set<Endpoint>> reinforceFuture = null;
+    @GuardedBy("lock") private SettableFuture<Set<Endpoint>> proposalFuture;
+    @GuardedBy("lock") @Nullable private ScheduledFuture<?> reinforceFuture = null;
 
     MultiNodeCutDetector(final int K, final int H, final int L, final SharedResources resources) {
         if (H > K || L > H || K < K_MIN || L <= 0 || H <= 0) {
@@ -154,24 +153,8 @@ final class MultiNodeCutDetector {
                 updatesInProgress++;
                 preProposal.add(linkDst);
                 if (reinforceFuture == null) {
-                    reinforceFuture = Futures.withTimeout(proposalFuture, reinforceTimeoutInSeconds, TimeUnit.SECONDS,
-                                                          resources.getScheduledTasksExecutor());
-                    Futures.addCallback(reinforceFuture, new FutureCallback<Set<Endpoint>>() {
-                        @Override
-                        public void onSuccess(@Nullable final Set<Endpoint> endpoints) {
-                            // ignore because this means proposalFuture completed as intended.
-                        }
-
-                        @Override
-                        public void onFailure(final Throwable throwable) {
-                            synchronized (lock) {
-                                final Set<Endpoint> result = new HashSet<>(preProposal.size() + proposal.size());
-                                result.addAll(preProposal);
-                                result.addAll(proposal);
-                                proposalFuture.set(result);
-                            }
-                        }
-                    });
+                    reinforceFuture = resources.getScheduledTasksExecutor().schedule(this::reinforce,
+                            reinforceTimeoutInSeconds, TimeUnit.SECONDS);
                 }
             }
 
@@ -221,6 +204,15 @@ final class MultiNodeCutDetector {
                     ringNumber++;
                 }
             }
+        }
+    }
+
+    private void reinforce() {
+        synchronized (lock) {
+            final Set<Endpoint> result = new HashSet<>(preProposal.size() + proposal.size());
+            result.addAll(preProposal);
+            result.addAll(proposal);
+            proposalFuture.set(result);
         }
     }
 
