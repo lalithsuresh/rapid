@@ -355,7 +355,7 @@ public final class Cluster {
             final long configurationToJoin = joinPhaseOneResult.getStatusCode()
                     == JoinStatusCode.HOSTNAME_ALREADY_IN_RING ? -1 : joinPhaseOneResult.getConfigurationId();
             LOG.debug("{} is trying a join under configuration {} (attempt {})",
-                    listenAddress, configurationToJoin, attempt);
+                      Utils.loggable(listenAddress), configurationToJoin, attempt);
 
             /*
              * Phase one complete. Now send a phase two message to all our observers, and if there is a valid
@@ -403,7 +403,8 @@ public final class Cluster {
                         .addAllRingNumber(entry.getValue()).build();
                 final RapidRequest request = Utils.toRapidRequest(msg);
                 LOG.info("{} is sending a join-p2 to {} for config {}",
-                        listenAddress, entry.getKey(), configurationToJoin);
+                        Utils.loggable(listenAddress), Utils.loggable(entry.getKey()),
+                        configurationToJoin);
                 final ListenableFuture<RapidResponse> call = messagingClient.sendMessage(entry.getKey(), request);
                 responseFutures.add(call);
             }
