@@ -78,7 +78,7 @@ implementations by implementing two interfaces, `IMessagingClient` and
 Where can I read more?
 ======================
 
-We suggest you start with our [USENIX ATC 2018 paper](https://github.com/lalithsuresh/rapid/blob/master/docs/atc-2018-camera-ready.pdf).
+We suggest you start with our [USENIX ATC 2018 paper](https://www.usenix.org/conference/atc18/presentation/suresh).
 The paper and an accompanying tech report are both available in the `docs` folder.
 
 
