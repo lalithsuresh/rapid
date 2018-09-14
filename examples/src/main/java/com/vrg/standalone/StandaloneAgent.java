@@ -3,6 +3,7 @@ package com.vrg.standalone;
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.Cluster;
 import com.vrg.rapid.NodeStatusChange;
+import com.vrg.rapid.Settings;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.DefaultParser;
@@ -33,12 +34,18 @@ public class StandaloneAgent {
 
     public void startCluster() throws IOException, InterruptedException {
         // The first node X of the cluster calls .start(), the rest call .join(X)
+        final Settings settings = new Settings();
+        settings.setGrpcTimeoutMs(2000);
+        settings.setGrpcProbeTimeoutMs(2000);
+        settings.setGrpcJoinTimeoutMs(20000);
         if (listenAddress.equals(seedAddress)) {
             cluster = new Cluster.Builder(listenAddress)
+                    .useSettings(settings)
                     .start();
 
         } else {
             cluster = new Cluster.Builder(listenAddress)
+                    .useSettings(settings)
                     .join(seedAddress);
         }
         cluster.registerSubscription(com.vrg.rapid.ClusterEvents.VIEW_CHANGE_PROPOSAL,
