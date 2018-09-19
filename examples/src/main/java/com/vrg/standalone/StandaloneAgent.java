@@ -35,8 +35,8 @@ public class StandaloneAgent {
     public void startCluster() throws IOException, InterruptedException {
         // The first node X of the cluster calls .start(), the rest call .join(X)
         final Settings settings = new Settings();
-        settings.setGrpcTimeoutMs(2000);
-        settings.setGrpcProbeTimeoutMs(2000);
+        settings.setGrpcTimeoutMs(5000);
+        settings.setGrpcProbeTimeoutMs(5000);
         settings.setGrpcJoinTimeoutMs(20000);
         if (listenAddress.equals(seedAddress)) {
             cluster = new Cluster.Builder(listenAddress)
