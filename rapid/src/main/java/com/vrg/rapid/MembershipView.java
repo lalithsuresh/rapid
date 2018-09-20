@@ -26,9 +26,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.NavigableSet;
 import java.util.Objects;
 import java.util.Set;
@@ -45,7 +43,8 @@ final class MembershipView {
     private final int K;
     private static final LongHashFunction HASH_FUNCTION = LongHashFunction.xx(0);
     private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
-    @GuardedBy("rwLock") private final Map<Integer, NavigableSet<Endpoint>> rings;
+    @GuardedBy("rwLock") private final ArrayList<Utils.AddressComparator> addressComparators;
+    @GuardedBy("rwLock") private final ArrayList<NavigableSet<Endpoint>> rings;
     @GuardedBy("rwLock") private final Set<NodeId> identifiersSeen = new TreeSet<>(NodeIdComparator.INSTANCE);
     @GuardedBy("rwLock") private long currentConfigurationId = -1;
     @GuardedBy("rwLock") private Configuration currentConfiguration;
@@ -54,9 +53,12 @@ final class MembershipView {
     MembershipView(final int K) {
         assert K > 0;
         this.K = K;
-        this.rings = new HashMap<>(K);
+        this.rings = new ArrayList<>(K);
+        this.addressComparators = new ArrayList<>(K);
         for (int k = 0; k < K; k++) {
-            this.rings.put(k, new TreeSet<>(Utils.AddressComparator.getComparatorWithSeed(k)));
+            final Utils.AddressComparator comparatorWithSeed = Utils.AddressComparator.getComparatorWithSeed(k);
+            this.addressComparators.add(comparatorWithSeed);
+            this.rings.add(new TreeSet<>(comparatorWithSeed));
         }
         this.currentConfiguration = new Configuration(identifiersSeen, rings.get(0));
     }
@@ -68,10 +70,14 @@ final class MembershipView {
                    final Collection<Endpoint> endpoints) {
         assert K > 0;
         this.K = K;
-        this.rings = new HashMap<>(K);
+        this.rings = new ArrayList<>(K);
+        this.addressComparators = new ArrayList<>(K);
         for (int k = 0; k < K; k++) {
-            this.rings.put(k, new TreeSet<>(Utils.AddressComparator.getComparatorWithSeed(k)));
-            this.rings.get(k).addAll(endpoints);
+            final Utils.AddressComparator comparatorWithSeed = Utils.AddressComparator.getComparatorWithSeed(k);
+            this.addressComparators.add(comparatorWithSeed);
+            final TreeSet<Endpoint> set = new TreeSet<>(comparatorWithSeed);
+            set.addAll(endpoints);
+            this.rings.add(set);
         }
         this.identifiersSeen.addAll(nodeIds);
         this.currentConfiguration = new Configuration(identifiersSeen, rings.get(0));
@@ -150,6 +156,7 @@ final class MembershipView {
 
             for (int k = 0; k < K; k++) {
                 rings.get(k).remove(node);
+                addressComparators.get(k).removeEndpoint(node);
             }
 
             shouldUpdateConfigurationId = true;
@@ -482,6 +489,5 @@ final class MembershipView {
             }
             return hash;
         }
-
     }
 }
