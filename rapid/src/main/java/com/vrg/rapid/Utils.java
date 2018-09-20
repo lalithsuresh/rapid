@@ -190,20 +190,30 @@ final class Utils {
         private static final long serialVersionUID = -4891729390L;
         private static final Map<Integer, AddressComparator> INSTANCES = new HashMap<>();
         private final LongHashFunction hashFunction;
+        private final Map<Endpoint, Long> hashCache;
 
         AddressComparator(final int seed) {
             this.hashFunction = LongHashFunction.xx(seed);
+            this.hashCache = new HashMap<>();
         }
 
         @Override
         public final int compare(final Endpoint c1, final Endpoint c2) {
-            final long hash1 = hashFunction.hashChars(c1.getHostname()) * 31 + hashFunction.hashInt(c1.getPort());
-            final long hash2 = hashFunction.hashChars(c2.getHostname()) * 31 + hashFunction.hashInt(c2.getPort());
+            final long hash1 = hashCache.computeIfAbsent(c1, this::computeHash);
+            final long hash2 = hashCache.computeIfAbsent(c2, this::computeHash);
             return Long.compare(hash1, hash2);
         }
 
         static synchronized AddressComparator getComparatorWithSeed(final int seed) {
             return INSTANCES.computeIfAbsent(seed, AddressComparator::new);
+        }
+
+        private long computeHash(final Endpoint endpoint) {
+            return hashFunction.hashChars(endpoint.getHostname()) * 31 + hashFunction.hashInt(endpoint.getPort());
+        }
+
+        void removeEndpoint(final Endpoint endpoint) {
+            hashCache.remove(endpoint);
         }
     }
 }
