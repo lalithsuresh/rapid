@@ -4,7 +4,6 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
-import com.google.protobuf.TextFormat;
 import com.vrg.rapid.messaging.IBroadcaster;
 import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.pb.Endpoint;
@@ -23,8 +22,10 @@ import javax.annotation.concurrent.NotThreadSafe;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -50,7 +51,7 @@ class Paxos {
     private Rank vrnd;
     private List<Endpoint> vval;
     private final List<Phase1bMessage> phase1bMessages = new ArrayList<>();
-    private final List<Phase2bMessage> acceptResponses = new ArrayList<>();
+    private final Map<Rank, Map<Endpoint, Phase2bMessage>> acceptResponses = new HashMap<>();
 
     private Rank crnd;
     private List<Endpoint> cval;
@@ -85,7 +86,7 @@ class Paxos {
             return;
         }
         crnd = crnd.toBuilder().setRound(round).setNodeIndex(myAddr.hashCode()).build();
-        LOG.trace("Prepare called for round {}", Utils.loggable(crnd));
+        LOG.debug("Prepare called by {} for round {}", Utils.loggable(myAddr), Utils.loggable(crnd));
         final Phase1aMessage prepare = Phase1aMessage.newBuilder()
                                        .setConfigurationId(configurationId)
                                        .setSender(myAddr)
@@ -116,7 +117,7 @@ class Paxos {
             return;
         }
         if (LOG.isTraceEnabled()) {
-            LOG.trace("Sending back vval:{} vrnd:{}", vval, TextFormat.shortDebugString(vrnd));
+            LOG.trace("Sending back vval:{} vrnd:{}", Utils.loggable(vval), Utils.loggable(vrnd));
         }
         final Phase1bMessage phase1bMessage = Phase1bMessage.newBuilder()
                                       .setConfigurationId(configurationId)
@@ -156,7 +157,8 @@ class Paxos {
             // being received, but we can enter the following if statement only once when a valid cval is identified.
             final List<Endpoint> chosenProposal = selectProposalUsingCoordinatorRule(phase1bMessages);
             if (crnd.equals(phase1bMessage.getRnd()) && cval.isEmpty() && !chosenProposal.isEmpty()) {
-                LOG.trace("Proposing: {}", Utils.loggable(chosenProposal));
+                LOG.debug("{} is proposing: {} in rnd {}", Utils.loggable(myAddr),
+                        Utils.loggable(chosenProposal), Utils.loggable(crnd));
                 cval = chosenProposal;
                 final Phase2aMessage phase2aMessage = Phase2aMessage.newBuilder()
                                                    .setSender(myAddr)
@@ -182,13 +184,15 @@ class Paxos {
 
         LOG.trace("At acceptor received phase2aMessage: {}", Utils.loggable(phase2aMessage));
         if (compareRanks(rnd, phase2aMessage.getRnd()) <= 0 && !vrnd.equals(phase2aMessage.getRnd())) {
+            rnd = phase2aMessage.getRnd();
             vrnd = phase2aMessage.getRnd();
             vval = phase2aMessage.getVvalList();
-            LOG.trace("Accepted value in vrnd: {}, vval: {}", Utils.loggable(vrnd), Utils.loggable(vval));
-
+            LOG.trace("{} accepted value in vrnd: {}, vval: {}", Utils.loggable(myAddr),
+                    Utils.loggable(vrnd), Utils.loggable(vval));
             final Phase2bMessage response = Phase2bMessage.newBuilder()
                                                           .setConfigurationId(configurationId)
                                                           .setRnd(phase2aMessage.getRnd())
+                                                          .setSender(myAddr)
                                                           .addAllEndpoints(vval)
                                                           .build();
             final RapidRequest request = Utils.toRapidRequest(response);
@@ -205,11 +209,14 @@ class Paxos {
         if (phase2bMessage.getConfigurationId() != configurationId) {
             return;
         }
-        LOG.trace("Received phase2bMessage: {}", Utils.loggable(phase2bMessage));
-        acceptResponses.add(phase2bMessage);
-        if (acceptResponses.size() > (N / 2) && !decided) {
+        LOG.trace("Received phase2bMessage: {}", Utils.loggable(phase2bMessage.getSender()));
+        final Map<Endpoint, Phase2bMessage> phase2bMessagesInRnd =
+                acceptResponses.computeIfAbsent(phase2bMessage.getRnd(), (k) -> new HashMap<>());
+        phase2bMessagesInRnd.put(phase2bMessage.getSender(), phase2bMessage);
+        if (phase2bMessagesInRnd.size() > (N / 2) && !decided) {
             final List<Endpoint> decision = phase2bMessage.getEndpointsList();
-            LOG.trace("Decided on: {}", decision);
+            LOG.debug("{} decided on: {} for rnd {} {}", Utils.loggable(myAddr), Utils.loggable(decision),
+                      Utils.loggable(phase2bMessage.getRnd()), phase2bMessagesInRnd.size());
             onDecide.accept(decision);
             decided = true;
         }
@@ -258,10 +265,11 @@ class Paxos {
                 .filter(r -> r.getVvalCount() > 0)
                 .map(Phase1bMessage::getVvalList)
                 .collect(Collectors.toList());
+        final Set<List<Endpoint>> setOfCollectedVvals = new HashSet<>(collectedVvals);
         List<Endpoint> chosenProposal = null;
 
         // If V has a single element, then choose v.
-        if (collectedVvals.size() == 1) {
+        if (setOfCollectedVvals.size() == 1) {
             chosenProposal = collectedVvals.iterator().next();
         }
         // if i-quorum Q of acceptors respond, and there is a k-quorum R such that vrnd = k and vval = v,
@@ -293,7 +301,6 @@ class Paxos {
         //         and has not heard a Phase1bMessage from itself yet. Once that arrives, phase1b will be triggered
         //         again.
         //
-        // XXX: one option is to propose a new value of our own that is the union of all proposed values so far.
         if (chosenProposal == null) {
             chosenProposal = phase1bMessages.stream()
                                             .filter(r -> r.getVvalCount() > 0)
