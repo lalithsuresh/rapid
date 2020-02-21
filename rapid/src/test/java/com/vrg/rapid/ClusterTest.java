@@ -503,6 +503,24 @@ public class ClusterTest {
     }
 
     /**
+     * Test a node proactively leaving the cluster
+     */
+    @Test(timeout = 30000)
+    public void testLeaving() throws IOException, InterruptedException {
+        final int numNodes = 10;
+        final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", basePort);
+        createCluster(1, seedEndpoint); // Only bootstrap a seed.
+        verifyCluster(1);
+        for (int i = 0; i < numNodes; i++) {
+            extendCluster(1, seedEndpoint);
+            waitAndVerifyAgreement(i + 2, 5, 1000);
+        }
+        instances.get(seedEndpoint).shutdown();
+        instances.remove(seedEndpoint);
+        waitAndVerifyAgreement(numNodes, 2, 1000);
+    }
+
+    /**
      * Creates a cluster of size {@code numNodes} with a seed {@code seedEndpoint}.
      *
      * @param numNodes cluster size

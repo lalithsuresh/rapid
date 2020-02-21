@@ -33,6 +33,7 @@ import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
 import com.vrg.rapid.pb.RapidRequest;
 import com.vrg.rapid.pb.RapidResponse;
+import com.vrg.rapid.pb.LeaveMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,6 +54,8 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiConsumer;
@@ -72,6 +75,7 @@ public final class MembershipService {
     private static final int BATCHING_WINDOW_IN_MS = 100;
     private static final int DEFAULT_FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 0;
     static final int DEFAULT_FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
+    private static final int LEAVE_MESSAGE_TIMEOUT = 1000;
     private final MembershipView membershipView;
     private final MultiNodeCutDetector cutDetection;
     private final Endpoint myAddr;
@@ -179,6 +183,8 @@ public final class MembershipService {
             case PHASE2AMESSAGE:
             case PHASE2BMESSAGE:
                 return handleConsensusMessages(msg);
+            case LEAVEMESSAGE:
+                return handleLeaveMessage(msg);
             case CONTENT_NOT_SET:
             default:
                 throw new IllegalArgumentException("Unidentified RapidRequest type " + msg.getContentCase());
@@ -341,6 +347,15 @@ public final class MembershipService {
         return future;
     }
 
+    /**
+     * Propagates the intent of a node to leave the group
+     */
+    private ListenableFuture<RapidResponse> handleLeaveMessage(final RapidRequest request) {
+        final SettableFuture<RapidResponse> future = SettableFuture.create();
+        edgeFailureNotification(request.getLeaveMessage().getSender(), membershipView.getCurrentConfigurationId());
+        future.set(null);
+        return future;
+    }
 
     /**
      * This is invoked by FastPaxos modules when they arrive at a decision.
@@ -494,9 +509,36 @@ public final class MembershipService {
      * Shuts down all the executors.
      */
     void shutdown() {
+        leave();
         alertBatcherJob.cancel(true);
         failureDetectorJobs.forEach(k -> k.cancel(true));
         messagingClient.shutdown();
+        membershipView.reset();
+    }
+
+    /**
+     * Leaves the cluster by telling all the observers to proactively trigger failure.
+     * This operation is blocking, as we need to wait to send the alert messages before shutting down the rest
+     */
+    void leave() {
+        final LeaveMessage leaveMessage = LeaveMessage.newBuilder().setSender(myAddr).build();
+        final RapidRequest leave = RapidRequest.newBuilder().setLeaveMessage(leaveMessage).build();
+        try {
+            membershipView.getObserversOf(myAddr).forEach(endpoint -> {
+                try {
+                    messagingClient
+                            .sendMessageBestEffort(endpoint, leave)
+                            .get(LEAVE_MESSAGE_TIMEOUT, TimeUnit.MILLISECONDS);
+                } catch (final InterruptedException | ExecutionException e) {
+                    LOG.trace("Exception while leaving", e);
+                } catch (final TimeoutException e) {
+                    LOG.trace("Timeout while leaving", e);
+                }
+            });
+        } catch (final MembershipView.NodeNotInRingException e) {
+            // we already were removed, so that's fine
+            LOG.trace("Node was already removed prior to leaving", e);
+        }
     }
 
     /**

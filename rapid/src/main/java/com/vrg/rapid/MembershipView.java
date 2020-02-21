@@ -406,6 +406,29 @@ final class MembershipView {
         }
     }
 
+    /**
+     * Resets the state of the membership view
+     */
+
+    void reset() {
+        rwLock.readLock().lock();
+        try {
+            identifiersSeen.clear();
+            rings.clear();
+            addressComparators.clear();
+            for (int k = 0; k < K; k++) {
+                final Utils.AddressComparator comparatorWithSeed = Utils.AddressComparator.getComparatorWithSeed(k);
+                this.addressComparators.add(comparatorWithSeed);
+                this.rings.add(new TreeSet<>(comparatorWithSeed));
+            }
+            this.currentConfiguration = new Configuration(identifiersSeen, rings.get(0));
+            this.currentConfigurationId = -1;
+            this.shouldUpdateConfigurationId = true;
+        } finally {
+            rwLock.readLock().unlock();
+        }
+    }
+
     private static final class NodeIdComparator implements Comparator<NodeId>, Serializable {
         private static final long serialVersionUID = -4891729395L;
         private static final NodeIdComparator INSTANCE = new NodeIdComparator();

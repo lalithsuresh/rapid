@@ -30,6 +30,7 @@ message RapidRequest
         Phase1bMessage phase1bMessage = 7;
         Phase2aMessage phase2aMessage = 8;
         Phase2bMessage phase2bMessage = 9;
+        LeaveMessage leaveMessage = 10;
    }
 }
 
@@ -178,6 +179,12 @@ message Metadata
     map<string, bytes> metadata = 1;
 }
 
+// ******* Leave protocol *******
+
+message LeaveMessage
+{
+    Endpoint sender = 1;
+}
 
 // ******* Used by simple probing failure detector *******
 
