@@ -74,7 +74,7 @@ public final class MembershipService {
     private static final int BATCHING_WINDOW_IN_MS = 100;
     private static final int DEFAULT_FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 0;
     static final int DEFAULT_FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
-    private static final int LEAVE_MESSAGE_TIMEOUT = 1000;
+    private static final int LEAVE_MESSAGE_TIMEOUT = 1500;
     private final MembershipView membershipView;
     private final MultiNodeCutDetector cutDetection;
     private final Endpoint myAddr;
@@ -528,22 +528,20 @@ public final class MembershipService {
 
         try {
             final List<Endpoint> observers = membershipView.getObserversOf(myAddr);
-            final ListenableFuture<List<RapidResponse>> notificationResponses = Futures.allAsList(
-                observers.stream().map(endpoint -> {
-                    return messagingClient.sendMessageBestEffort(endpoint, leave);
-                }).collect(Collectors.toList())
-            );
-            notificationResponses.get(LEAVE_MESSAGE_TIMEOUT, TimeUnit.MILLISECONDS);
-
+            final ListenableFuture<List<RapidResponse>> leaveResponses = Futures.successfulAsList(observers.stream()
+                    .map(endpoint -> messagingClient.sendMessageBestEffort(endpoint, leave))
+                    .collect(Collectors.toList()));
+            try {
+                leaveResponses.get(LEAVE_MESSAGE_TIMEOUT, TimeUnit.MILLISECONDS);
+            } catch (final InterruptedException | ExecutionException e) {
+                LOG.trace("Exception while leaving", e);
+            } catch (final TimeoutException e) {
+                LOG.trace("Timeout while leaving", e);
+            }
         } catch (final MembershipView.NodeNotInRingException e) {
             // we already were removed, so that's fine
             LOG.trace("Node was already removed prior to leaving", e);
-        } catch (final InterruptedException | ExecutionException e) {
-            LOG.trace("Exception while leaving", e);
-        } catch (final TimeoutException e) {
-            LOG.trace("Timeout while leaving", e);
         }
-
     }
 
     /**

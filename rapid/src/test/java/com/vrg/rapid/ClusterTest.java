@@ -308,7 +308,7 @@ public class ClusterTest {
         final Set<Endpoint> failingNodes = getRandomHosts(numFailingNodes);
         staticFds.values().forEach(e -> e.addFailedNodes(failingNodes));
         failingNodes.forEach(h -> instances.remove(h).shutdown());
-        waitAndVerifyAgreement(numNodes - failingNodes.size(), 20, 1000);
+        waitAndVerifyAgreement(numNodes - failingNodes.size(), 20, 1500);
         // Nodes do not actually shutdown(), but are detected faulty. The faulty nodes have active
         // cluster instances and identify themselves as kicked out.
         verifyNumClusterInstances(numNodes - failingNodes.size());
@@ -467,7 +467,6 @@ public class ClusterTest {
      */
     @Test(timeout = 30000)
     public void testRejoinMultipleNodes() throws IOException, InterruptedException {
-        useFastFailureDetectionTimeouts();
         final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", basePort);
         final int numNodes = 30;
         final int failNodes = 5;
@@ -485,9 +484,9 @@ public class ClusterTest {
                         final Cluster cluster = instances.remove(leavingEndpoint);
                         try {
                             cluster.shutdown();
-                            waitAndVerifyAgreement(numNodes - failNodes, 20, 500);
+                            waitAndVerifyAgreement(numNodes - failNodes, 20, 1000);
                             extendCluster(leavingEndpoint, seedEndpoint);
-                            waitAndVerifyAgreement(numNodes, 20, 500);
+                            waitAndVerifyAgreement(numNodes, 20, 1000);
                         } catch (final InterruptedException e) {
                             fail();
                         }
@@ -498,7 +497,7 @@ public class ClusterTest {
             });
         }
         latch.await();
-        waitAndVerifyAgreement(numNodes, 10, 250);
+        waitAndVerifyAgreement(numNodes, 20, 1000);
         executor.shutdownNow();
     }
 
