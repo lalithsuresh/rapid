@@ -514,7 +514,6 @@ public final class MembershipService {
             alertBatcherJob.cancel(true);
             failureDetectorJobs.forEach(k -> k.cancel(true));
             messagingClient.shutdown();
-            membershipView.reset();
         }
     }
 
