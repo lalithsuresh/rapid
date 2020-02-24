@@ -467,6 +467,7 @@ public class ClusterTest {
      */
     @Test(timeout = 30000)
     public void testRejoinMultipleNodes() throws IOException, InterruptedException {
+        useFastFailureDetectionTimeouts();
         final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", basePort);
         final int numNodes = 30;
         final int failNodes = 5;
@@ -484,9 +485,9 @@ public class ClusterTest {
                         final Cluster cluster = instances.remove(leavingEndpoint);
                         try {
                             cluster.shutdown();
-                            waitAndVerifyAgreement(numNodes - failNodes, 20, 1000);
+                            waitAndVerifyAgreement(numNodes - failNodes, 20, 500);
                             extendCluster(leavingEndpoint, seedEndpoint);
-                            waitAndVerifyAgreement(numNodes, 20, 1000);
+                            waitAndVerifyAgreement(numNodes, 20, 500);
                         } catch (final InterruptedException e) {
                             fail();
                         }
@@ -497,7 +498,7 @@ public class ClusterTest {
             });
         }
         latch.await();
-        waitAndVerifyAgreement(numNodes, 20, 1000);
+        waitAndVerifyAgreement(numNodes, 10, 250);
         executor.shutdownNow();
     }
 
@@ -514,6 +515,7 @@ public class ClusterTest {
             extendCluster(1, seedEndpoint);
             waitAndVerifyAgreement(i + 2, 5, 1000);
         }
+        instances.get(seedEndpoint).leave();
         instances.get(seedEndpoint).shutdown();
         instances.remove(seedEndpoint);
         waitAndVerifyAgreement(numNodes, 2, 1000);

@@ -140,7 +140,14 @@ public final class Cluster {
     }
 
     /**
-     * Shutdown the RpcServer
+     * Gracefully leaves the cluster by informing observers of the intent.
+     */
+    public void leave() {
+        membershipService.leave();
+    }
+
+    /**
+     * Shuts down the entire system
      */
     public void shutdown() {
         LOG.debug("Shutting down RpcServer and MembershipService");

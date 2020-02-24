@@ -508,13 +508,9 @@ public final class MembershipService {
      * Shuts down all the executors.
      */
     void shutdown() {
-        try {
-            leave();
-        } finally {
-            alertBatcherJob.cancel(true);
-            failureDetectorJobs.forEach(k -> k.cancel(true));
-            messagingClient.shutdown();
-        }
+        alertBatcherJob.cancel(true);
+        failureDetectorJobs.forEach(k -> k.cancel(true));
+        messagingClient.shutdown();
     }
 
     /**
