@@ -61,7 +61,6 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 
-
 /**
  * Membership server class that implements the Rapid protocol.
  *
@@ -509,11 +508,14 @@ public final class MembershipService {
      * Shuts down all the executors.
      */
     void shutdown() {
-        leave();
-        alertBatcherJob.cancel(true);
-        failureDetectorJobs.forEach(k -> k.cancel(true));
-        messagingClient.shutdown();
-        membershipView.reset();
+        try {
+            leave();
+        } finally {
+            alertBatcherJob.cancel(true);
+            failureDetectorJobs.forEach(k -> k.cancel(true));
+            messagingClient.shutdown();
+            membershipView.reset();
+        }
     }
 
     /**
@@ -523,22 +525,25 @@ public final class MembershipService {
     void leave() {
         final LeaveMessage leaveMessage = LeaveMessage.newBuilder().setSender(myAddr).build();
         final RapidRequest leave = RapidRequest.newBuilder().setLeaveMessage(leaveMessage).build();
+
         try {
-            membershipView.getObserversOf(myAddr).forEach(endpoint -> {
-                try {
-                    messagingClient
-                            .sendMessageBestEffort(endpoint, leave)
-                            .get(LEAVE_MESSAGE_TIMEOUT, TimeUnit.MILLISECONDS);
-                } catch (final InterruptedException | ExecutionException e) {
-                    LOG.trace("Exception while leaving", e);
-                } catch (final TimeoutException e) {
-                    LOG.trace("Timeout while leaving", e);
-                }
-            });
+            final List<Endpoint> observers = membershipView.getObserversOf(myAddr);
+            final ListenableFuture<List<RapidResponse>> notificationResponses = Futures.allAsList(
+                observers.stream().map(endpoint -> {
+                    return messagingClient.sendMessageBestEffort(endpoint, leave);
+                }).collect(Collectors.toList())
+            );
+            notificationResponses.get(LEAVE_MESSAGE_TIMEOUT, TimeUnit.MILLISECONDS);
+
         } catch (final MembershipView.NodeNotInRingException e) {
             // we already were removed, so that's fine
             LOG.trace("Node was already removed prior to leaving", e);
+        } catch (final InterruptedException | ExecutionException e) {
+            LOG.trace("Exception while leaving", e);
+        } catch (final TimeoutException e) {
+            LOG.trace("Timeout while leaving", e);
         }
+
     }
 
     /**
