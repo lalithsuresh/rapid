@@ -515,8 +515,7 @@ public class ClusterTest {
             extendCluster(1, seedEndpoint);
             waitAndVerifyAgreement(i + 2, 5, 1000);
         }
-        instances.get(seedEndpoint).leave();
-        instances.get(seedEndpoint).shutdown();
+        instances.get(seedEndpoint).leaveGracefully();
         instances.remove(seedEndpoint);
         waitAndVerifyAgreement(numNodes, 2, 1000);
     }

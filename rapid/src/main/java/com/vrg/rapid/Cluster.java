@@ -140,10 +140,12 @@ public final class Cluster {
     }
 
     /**
-     * Gracefully leaves the cluster by informing observers of the intent.
+     * Gracefully leaves the cluster by informing observers of the intent and then shuts down the entire system
      */
-    public void leave() {
+    public void leaveGracefully() {
+        LOG.debug("Leaving the membership group and shutting down");
         membershipService.leave();
+        shutdown();
     }
 
     /**
