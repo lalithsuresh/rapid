@@ -77,6 +77,7 @@ public final class Cluster {
     private final IMessagingServer rpcServer;
     private final SharedResources sharedResources;
     private final Endpoint listenAddress;
+    private boolean hasShutdown = false;
 
     private Cluster(final IMessagingServer rpcServer,
                     final MembershipService membershipService,
@@ -92,8 +93,12 @@ public final class Cluster {
      * Returns the list of endpoints currently in the membership set.
      *
      * @return list of endpoints in the membership set
+     * @throws IllegalStateException when trying to get the memberlist after shutting down
      */
     public List<Endpoint> getMemberlist() {
+        if (hasShutdown) {
+            throw new IllegalStateException("Can't access the memberlist after having shut down");
+        }
         return membershipService.getMembershipView();
     }
 
@@ -101,8 +106,12 @@ public final class Cluster {
      * Returns the number of endpoints currently in the membership set.
      *
      * @return the number of endpoints in the membership set
+     * @throws IllegalStateException when trying to get the membership size after shutting down
      */
     public int getMembershipSize() {
+        if (hasShutdown) {
+            throw new IllegalStateException("Can't access the memberlist after having shut down");
+        }
         return membershipService.getMembershipSize();
     }
 
@@ -110,8 +119,12 @@ public final class Cluster {
      * Returns the list of endpoints currently in the membership set.
      *
      * @return list of endpoints in the membership set
+     * @throws IllegalStateException when trying to get the cluster metadata after shutting down
      */
     public Map<String, Metadata> getClusterMetadata() {
+        if (hasShutdown) {
+            throw new IllegalStateException("Can't access the memberlist after having shut down");
+        }
         return membershipService.getMetadata();
     }
 
@@ -127,13 +140,23 @@ public final class Cluster {
     }
 
     /**
-     * Shutdown the RpcServer
+     * Gracefully leaves the cluster by informing observers of the intent and then shuts down the entire system
+     */
+    public void leaveGracefully() {
+        LOG.debug("Leaving the membership group and shutting down");
+        membershipService.leave();
+        shutdown();
+    }
+
+    /**
+     * Shuts down the entire system
      */
     public void shutdown() {
         LOG.debug("Shutting down RpcServer and MembershipService");
         rpcServer.shutdown();
         membershipService.shutdown();
         sharedResources.shutdown();
+        this.hasShutdown = true;
     }
 
     public static class Builder {

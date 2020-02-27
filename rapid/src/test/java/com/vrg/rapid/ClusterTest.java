@@ -308,7 +308,7 @@ public class ClusterTest {
         final Set<Endpoint> failingNodes = getRandomHosts(numFailingNodes);
         staticFds.values().forEach(e -> e.addFailedNodes(failingNodes));
         failingNodes.forEach(h -> instances.remove(h).shutdown());
-        waitAndVerifyAgreement(numNodes - failingNodes.size(), 20, 1000);
+        waitAndVerifyAgreement(numNodes - failingNodes.size(), 20, 1500);
         // Nodes do not actually shutdown(), but are detected faulty. The faulty nodes have active
         // cluster instances and identify themselves as kicked out.
         verifyNumClusterInstances(numNodes - failingNodes.size());
@@ -500,6 +500,24 @@ public class ClusterTest {
         latch.await();
         waitAndVerifyAgreement(numNodes, 10, 250);
         executor.shutdownNow();
+    }
+
+    /**
+     * Test a node proactively leaving the cluster
+     */
+    @Test(timeout = 30000)
+    public void testLeaving() throws IOException, InterruptedException {
+        final int numNodes = 10;
+        final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", basePort);
+        createCluster(1, seedEndpoint); // Only bootstrap a seed.
+        verifyCluster(1);
+        for (int i = 0; i < numNodes; i++) {
+            extendCluster(1, seedEndpoint);
+            waitAndVerifyAgreement(i + 2, 5, 1000);
+        }
+        instances.get(seedEndpoint).leaveGracefully();
+        instances.remove(seedEndpoint);
+        waitAndVerifyAgreement(numNodes, 2, 1000);
     }
 
     /**
