@@ -268,7 +268,8 @@ public final class MembershipService {
                     // tell the sender that they're safe to join.
                     responseBuilder = responseBuilder.setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
                             .addAllEndpoints(configuration.endpoints)
-                            .addAllIdentifiers(configuration.nodeIds);
+                            .addAllIdentifiers(configuration.nodeIds)
+                            .putAllClusterMetadata(metadataManager.getAllMetadata());
                 } else {
                     responseBuilder = responseBuilder.setStatusCode(JoinStatusCode.CONFIG_CHANGED);
                     LOG.info("Returning CONFIG_CHANGED for {sender:{}, config:{}, size:{}}",
