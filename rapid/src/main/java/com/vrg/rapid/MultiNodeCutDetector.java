@@ -43,7 +43,7 @@ final class MultiNodeCutDetector {
     @GuardedBy("lock") private int proposalCount = 0;
     @GuardedBy("lock") private int updatesInProgress = 0;
     @GuardedBy("lock") private final Map<Endpoint, Map<Integer, Endpoint>> reportsPerHost;
-    @GuardedBy("lock") private final ArrayList<Endpoint> proposal = new ArrayList<>();
+    @GuardedBy("lock") private final Set<Endpoint> proposal = new HashSet<>();
     @GuardedBy("lock") private final Set<Endpoint> preProposal = new HashSet<>();
     @GuardedBy("lock") private boolean seenLinkDownEvents = false;
     private final Object lock = new Object();
@@ -159,7 +159,7 @@ final class MultiNodeCutDetector {
                 }
             }
 
-            return ImmutableList.copyOf(proposalsToReturn);
+            return Collections.unmodifiableList(proposalsToReturn);
         }
     }
 
