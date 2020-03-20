@@ -300,36 +300,38 @@ public final class MembershipService {
             // => we have initiated consensus and cannot go back on our proposal.
             if (announcedProposal) {
                 future.set(null);
-            }
-            final long currentConfigurationId = membershipView.getCurrentConfigurationId();
-            final int membershipSize = membershipView.getMembershipSize();
-            final Set<Endpoint> proposal = messageBatch.getMessagesList().stream()
-                    // First, we filter out invalid messages that violate membership invariants.
-                    .filter(msg -> filterAlertMessages(messageBatch, msg, membershipSize, currentConfigurationId))
-                    // We then apply all the valid messages into our condition detector to obtain a view change proposal
-                    .map(cutDetection::aggregateForProposal)
-                    .flatMap(List::stream)
-                    .collect(Collectors.toSet());
+            } else {
+                final long currentConfigurationId = membershipView.getCurrentConfigurationId();
+                final int membershipSize = membershipView.getMembershipSize();
+                final Set<Endpoint> proposal = messageBatch.getMessagesList().stream()
+                        // First, we filter out invalid messages that violate membership invariants.
+                        .filter(msg -> filterAlertMessages(messageBatch, msg, membershipSize, currentConfigurationId))
+                        // We then apply all the valid messages into our condition detector
+                        // to obtain a view change proposal
+                        .map(cutDetection::aggregateForProposal)
+                        .flatMap(List::stream)
+                        .collect(Collectors.toSet());
 
-            // Lastly, we apply implicit detections
-            proposal.addAll(cutDetection.invalidateFailingEdges(membershipView));
+                // Lastly, we apply implicit detections
+                proposal.addAll(cutDetection.invalidateFailingEdges(membershipView));
 
-            // If we have a proposal for this stage, start an instance of consensus on it.
-            if (!proposal.isEmpty()) {
-                LOG.info("Proposing membership change of size {}: {}", proposal.size(), Utils.loggable(proposal));
-                announcedProposal = true;
+                // If we have a proposal for this stage, start an instance of consensus on it.
+                if (!proposal.isEmpty()) {
+                    LOG.info("Proposing membership change of size {}", proposal.size());
+                    announcedProposal = true;
 
-                if (subscriptions.containsKey(ClusterEvents.VIEW_CHANGE_PROPOSAL)) {
-                    final List<NodeStatusChange> result = createNodeStatusChangeList(proposal);
-                    // Inform subscribers that a proposal has been announced.
-                    subscriptions.get(ClusterEvents.VIEW_CHANGE_PROPOSAL)
-                                 .forEach(cb -> cb.accept(currentConfigurationId, result));
+                    if (subscriptions.containsKey(ClusterEvents.VIEW_CHANGE_PROPOSAL)) {
+                        final List<NodeStatusChange> result = createNodeStatusChangeList(proposal);
+                        // Inform subscribers that a proposal has been announced.
+                        subscriptions.get(ClusterEvents.VIEW_CHANGE_PROPOSAL)
+                                .forEach(cb -> cb.accept(currentConfigurationId, result));
+                    }
+                    fastPaxosInstance.propose(new ArrayList<>(proposal.stream()
+                            .sorted(Utils.AddressComparator.getComparatorWithSeed(0))
+                            .collect(Collectors.toList())));
                 }
-                fastPaxosInstance.propose(new ArrayList<>(proposal.stream()
-                                                            .sorted(Utils.AddressComparator.getComparatorWithSeed(0))
-                                                            .collect(Collectors.toList())));
+                future.set(null);
             }
-            future.set(null);
         });
         return future;
     }
