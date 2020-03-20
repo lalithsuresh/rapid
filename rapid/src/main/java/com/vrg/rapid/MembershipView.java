@@ -50,6 +50,7 @@ final class MembershipView {
     @GuardedBy("rwLock") private final ArrayList<NavigableSet<Endpoint>> rings;
     @GuardedBy("rwLock") private final Set<NodeId> identifiersSeen = new TreeSet<>(NodeIdComparator.INSTANCE);
     @GuardedBy("rwLock") private final Map<Endpoint, List<Endpoint>> cachedObservers = new HashMap<>();
+    @GuardedBy("rwLock") private final Set<Endpoint> allNodes = new HashSet<>();
     @GuardedBy("rwLock") private long currentConfigurationId = -1;
     @GuardedBy("rwLock") private Configuration currentConfiguration;
     @GuardedBy("rwLock") private boolean shouldUpdateConfigurationId = true;
@@ -81,6 +82,7 @@ final class MembershipView {
             this.addressComparators.add(comparatorWithSeed);
             final TreeSet<Endpoint> set = new TreeSet<>(comparatorWithSeed);
             set.addAll(endpoints);
+            allNodes.addAll(endpoints);
             this.rings.add(set);
         }
         this.identifiersSeen.addAll(nodeIds);
@@ -99,7 +101,7 @@ final class MembershipView {
     JoinStatusCode isSafeToJoin(final Endpoint node, final NodeId uuid) {
         rwLock.readLock().lock();
         try {
-            if (rings.get(0).contains(node)) {
+            if (allNodes.contains(node)) {
                 return JoinStatusCode.HOSTNAME_ALREADY_IN_RING;
             }
 
@@ -144,6 +146,7 @@ final class MembershipView {
                     affectedSubjects.add(subject);
                 }
             }
+            allNodes.add(node);
 
             for (final Endpoint subject : affectedSubjects) {
                 cachedObservers.put(subject, computeObserversOf(subject));
@@ -186,6 +189,7 @@ final class MembershipView {
                 addressComparators.get(k).removeEndpoint(node);
                 cachedObservers.remove(node);
             }
+            allNodes.remove(node);
 
             for (final Endpoint subject : affectedSubjects) {
                 cachedObservers.put(subject, computeObserversOf(subject));
@@ -208,7 +212,7 @@ final class MembershipView {
         Objects.requireNonNull(node);
         rwLock.readLock().lock();
         try {
-            if (!rings.get(0).contains(node)) {
+            if (!allNodes.contains(node)) {
                 throw new NodeNotInRingException(node);
             }
             if (!cachedObservers.containsKey(node)) {
@@ -265,7 +269,7 @@ final class MembershipView {
         Objects.requireNonNull(node);
         rwLock.readLock().lock();
         try {
-            if (!rings.get(0).contains(node)) {
+            if (!allNodes.contains(node)) {
                 throw new NodeNotInRingException(node);
             }
 
@@ -327,7 +331,7 @@ final class MembershipView {
     boolean isHostPresent(final Endpoint address) {
         rwLock.readLock().lock();
         try {
-            return rings.get(0).contains(address);
+            return allNodes.contains(address);
         } finally {
             rwLock.readLock().unlock();
         }
