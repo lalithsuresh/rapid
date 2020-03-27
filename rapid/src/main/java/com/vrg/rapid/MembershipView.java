@@ -149,7 +149,7 @@ final class MembershipView {
             allNodes.add(node);
 
             for (final Endpoint subject : affectedSubjects) {
-                cachedObservers.put(subject, computeObserversOf(subject));
+                cachedObservers.remove(subject);
             }
 
             identifiersSeen.add(nodeId);
@@ -192,7 +192,7 @@ final class MembershipView {
             allNodes.remove(node);
 
             for (final Endpoint subject : affectedSubjects) {
-                cachedObservers.put(subject, computeObserversOf(subject));
+                cachedObservers.remove(subject);
             }
 
             shouldUpdateConfigurationId = true;
