@@ -190,7 +190,7 @@ final class Utils {
         private static final long serialVersionUID = -4891729390L;
         private static final Map<Integer, AddressComparator> INSTANCES = new HashMap<>();
         private final LongHashFunction hashFunction;
-        private final Map<ComparableEndpoint, Long> hashCache;
+        private final Map<Endpoint, Long> hashCache;
 
         AddressComparator(final int seed) {
             this.hashFunction = LongHashFunction.xx(seed);
@@ -199,11 +199,8 @@ final class Utils {
 
         @Override
         public final int compare(final Endpoint c1, final Endpoint c2) {
-            final ComparableEndpoint ce1 = new ComparableEndpoint(c1);
-            final ComparableEndpoint ce2 = new ComparableEndpoint(c2);
-
-            final long hash1 = hashCache.computeIfAbsent(ce1, this::computeHash);
-            final long hash2 = hashCache.computeIfAbsent(ce2, this::computeHash);
+            final long hash1 = hashCache.computeIfAbsent(c1, this::computeHash);
+            final long hash2 = hashCache.computeIfAbsent(c2, this::computeHash);
             return Long.compare(hash1, hash2);
         }
 
@@ -211,51 +208,12 @@ final class Utils {
             return INSTANCES.computeIfAbsent(seed, AddressComparator::new);
         }
 
-        private long computeHash(final ComparableEndpoint comparable) {
-            return hashFunction.hashBytes(comparable.getEndpoint().getHostnameBytes().asReadOnlyByteBuffer()) * 31
-                    + hashFunction.hashInt(comparable.getEndpoint().getPort());
+        private long computeHash(final Endpoint endpoint) {
+            return hashFunction.hashChars(endpoint.getHostname()) * 31 + hashFunction.hashInt(endpoint.getPort());
         }
 
         void removeEndpoint(final Endpoint endpoint) {
-            hashCache.remove(new ComparableEndpoint(endpoint));
+            hashCache.remove(endpoint);
         }
-    }
-
-    static final class ComparableEndpoint implements Serializable {
-        private static final long serialVersionUID = -1891759320L;
-
-        final Endpoint endpoint;
-
-        public ComparableEndpoint(final Endpoint endpoint) {
-            this.endpoint = endpoint;
-        }
-
-        @Override
-        public boolean equals(final Object obj) {
-            if (obj == this) {
-                return true;
-            }
-            if (!(obj instanceof ComparableEndpoint)) {
-                return super.equals(obj);
-            }
-            final ComparableEndpoint other = (ComparableEndpoint) obj;
-
-            return endpoint.getHostnameBytes().equals(other.getEndpoint().getHostnameBytes())
-                    && endpoint.getPort() == other.getEndpoint().getPort();
-        }
-
-        @Override
-        public int hashCode() {
-            int hash = 41;
-            hash = (17 * hash) + endpoint.getHostnameBytes().hashCode();
-            hash = (37 * hash) + endpoint.getPort();
-            return hash;
-        }
-
-        public Endpoint getEndpoint() {
-            return this.endpoint;
-        }
-
-
     }
 }
