@@ -71,7 +71,7 @@ import java.util.stream.Collectors;
 @NotThreadSafe
 public final class MembershipService {
     private static final Logger LOG = LoggerFactory.getLogger(MembershipService.class);
-    private static final int BATCHING_WINDOW_IN_MS = 100;
+    static final int BATCHING_WINDOW_IN_MS = 100;
     private static final int DEFAULT_FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 0;
     static final int DEFAULT_FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
     private static final int LEAVE_MESSAGE_TIMEOUT = 1500;
@@ -144,7 +144,7 @@ public final class MembershipService {
         // Schedule background jobs
         this.backgroundTasksExecutor = sharedResources.getScheduledTasksExecutor();
         alertBatcherJob = this.backgroundTasksExecutor.scheduleAtFixedRate(new AlertBatcher(),
-                0, BATCHING_WINDOW_IN_MS, TimeUnit.MILLISECONDS);
+                0, settings.getBatchingWindowInMs(), TimeUnit.MILLISECONDS);
 
         this.broadcaster.setMembership(membershipView.getRing(0));
         // this::edgeFailureNotification is invoked by the failure detector whenever an edge
@@ -300,36 +300,38 @@ public final class MembershipService {
             // => we have initiated consensus and cannot go back on our proposal.
             if (announcedProposal) {
                 future.set(null);
-            }
-            final long currentConfigurationId = membershipView.getCurrentConfigurationId();
-            final int membershipSize = membershipView.getMembershipSize();
-            final Set<Endpoint> proposal = messageBatch.getMessagesList().stream()
-                    // First, we filter out invalid messages that violate membership invariants.
-                    .filter(msg -> filterAlertMessages(messageBatch, msg, membershipSize, currentConfigurationId))
-                    // We then apply all the valid messages into our condition detector to obtain a view change proposal
-                    .map(cutDetection::aggregateForProposal)
-                    .flatMap(List::stream)
-                    .collect(Collectors.toSet());
+            } else {
+                final long currentConfigurationId = membershipView.getCurrentConfigurationId();
+                final int membershipSize = membershipView.getMembershipSize();
+                final Set<Endpoint> proposal = messageBatch.getMessagesList().stream()
+                        // First, we filter out invalid messages that violate membership invariants.
+                        .filter(msg -> filterAlertMessages(messageBatch, msg, membershipSize, currentConfigurationId))
+                        // We then apply all the valid messages into our condition detector
+                        // to obtain a view change proposal
+                        .map(cutDetection::aggregateForProposal)
+                        .flatMap(List::stream)
+                        .collect(Collectors.toSet());
 
-            // Lastly, we apply implicit detections
-            proposal.addAll(cutDetection.invalidateFailingEdges(membershipView));
+                // Lastly, we apply implicit detections
+                proposal.addAll(cutDetection.invalidateFailingEdges(membershipView));
 
-            // If we have a proposal for this stage, start an instance of consensus on it.
-            if (!proposal.isEmpty()) {
-                LOG.info("Proposing membership change of size {}: {}", proposal.size(), Utils.loggable(proposal));
-                announcedProposal = true;
+                // If we have a proposal for this stage, start an instance of consensus on it.
+                if (!proposal.isEmpty()) {
+                    LOG.info("Proposing membership change of size {}", proposal.size());
+                    announcedProposal = true;
 
-                if (subscriptions.containsKey(ClusterEvents.VIEW_CHANGE_PROPOSAL)) {
-                    final List<NodeStatusChange> result = createNodeStatusChangeList(proposal);
-                    // Inform subscribers that a proposal has been announced.
-                    subscriptions.get(ClusterEvents.VIEW_CHANGE_PROPOSAL)
-                                 .forEach(cb -> cb.accept(currentConfigurationId, result));
+                    if (subscriptions.containsKey(ClusterEvents.VIEW_CHANGE_PROPOSAL)) {
+                        final List<NodeStatusChange> result = createNodeStatusChangeList(proposal);
+                        // Inform subscribers that a proposal has been announced.
+                        subscriptions.get(ClusterEvents.VIEW_CHANGE_PROPOSAL)
+                                .forEach(cb -> cb.accept(currentConfigurationId, result));
+                    }
+                    fastPaxosInstance.propose(new ArrayList<>(proposal.stream()
+                            .sorted(Utils.AddressComparator.getComparatorWithSeed(0))
+                            .collect(Collectors.toList())));
                 }
-                fastPaxosInstance.propose(new ArrayList<>(proposal.stream()
-                                                            .sorted(Utils.AddressComparator.getComparatorWithSeed(0))
-                                                            .collect(Collectors.toList())));
+                future.set(null);
             }
-            future.set(null);
         });
         return future;
     }
@@ -587,15 +589,14 @@ public final class MembershipService {
      * Batches outgoing AlertMessages into a single BatchAlertMessage.
      */
     private class AlertBatcher implements Runnable {
-        private static final int BATCH_WINDOW_IN_MS = 100;
 
         @Override
         public void run() {
             batchSchedulerLock.lock();
             try {
-                // Wait one BATCH_WINDOW_IN_MS since last add before sending out
+                // Wait one BATCHING_WINDOW_IN_MS since last add before sending out
                 if (!sendQueue.isEmpty() && lastEnqueueTimestamp > 0
-                        && (System.currentTimeMillis() - lastEnqueueTimestamp) > BATCH_WINDOW_IN_MS) {
+                        && (System.currentTimeMillis() - lastEnqueueTimestamp) > settings.getBatchingWindowInMs()) {
                     LOG.trace("Scheduler is sending out {} messages", sendQueue.size());
                     final ArrayList<AlertMessage> messages = new ArrayList<>(sendQueue.size());
                     final int numDrained = sendQueue.drainTo(messages);
@@ -716,5 +717,7 @@ public final class MembershipService {
 
     interface ISettings {
         int getFailureDetectorIntervalInMs();
+
+        int getBatchingWindowInMs();
     }
 }

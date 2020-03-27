@@ -25,6 +25,7 @@ public final class Settings implements GrpcClient.ISettings, MembershipService.I
     private int grpcJoinTimeoutMs = GrpcClient.DEFAULT_GRPC_JOIN_TIMEOUT;
     private int grpcProbeTimeoutMs = GrpcClient.DEFAULT_GRPC_PROBE_TIMEOUT;
     private int failureDetectorIntervalInMs = MembershipService.DEFAULT_FAILURE_DETECTOR_INTERVAL_IN_MS;
+    private int batchingWindowInMs = MembershipService.BATCHING_WINDOW_IN_MS;
 
     /*
      * Settings from GrpcClient.ISettings
@@ -85,5 +86,14 @@ public final class Settings implements GrpcClient.ISettings, MembershipService.I
 
     public void setFailureDetectorIntervalInMs(final int failureDetectorIntervalInMs) {
         this.failureDetectorIntervalInMs = failureDetectorIntervalInMs;
+    }
+
+    @Override
+    public int getBatchingWindowInMs() {
+        return this.batchingWindowInMs;
+    }
+
+    public void setBatchingWindowInMs(final int batchingWindowInMs) {
+        this.batchingWindowInMs = batchingWindowInMs;
     }
 }
