@@ -269,7 +269,8 @@ public final class MembershipService {
                     responseBuilder = responseBuilder.setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
                             .addAllEndpoints(configuration.endpoints)
                             .addAllIdentifiers(configuration.nodeIds)
-                            .putAllClusterMetadata(metadataManager.getAllMetadata());
+                            .addAllMetadataKeys(metadataManager.getAllMetadata().keySet())
+                            .addAllMetadataValues(metadataManager.getAllMetadata().values());
                 } else {
                     responseBuilder = responseBuilder.setStatusCode(JoinStatusCode.CONFIG_CHANGED);
                     LOG.info("Returning CONFIG_CHANGED for {sender:{}, config:{}, size:{}}",
@@ -501,7 +502,7 @@ public final class MembershipService {
      *
      * @return list of endpoints in the membership view
      */
-    Map<String, Metadata> getMetadata() {
+    Map<Endpoint, Metadata> getMetadata() {
         synchronized (membershipUpdateLock) {
             return metadataManager.getAllMetadata();
         }
@@ -701,7 +702,8 @@ public final class MembershipService {
                 .setConfigurationId(configuration.getConfigurationId())
                 .addAllEndpoints(configuration.endpoints)
                 .addAllIdentifiers(configuration.nodeIds)
-                .putAllClusterMetadata(metadataManager.getAllMetadata())
+                .addAllMetadataKeys(metadataManager.getAllMetadata().keySet())
+                .addAllMetadataValues(metadataManager.getAllMetadata().values())
                 .build();
 
         // Send out responses to all the nodes waiting to join.

@@ -48,6 +48,6 @@ public class NodeStatusChange {
 
     @Override
     public String toString() {
-        return endpoint.getHostname() + ":" + endpoint.getPort() + ":" + status + ":" + metadata;
+        return endpoint.getHostname().toStringUtf8() + ":" + endpoint.getPort() + ":" + status + ":" + metadata;
     }
 }

@@ -14,6 +14,7 @@
 package com.vrg.standalone;
 
 import com.google.common.net.HostAndPort;
+import com.google.protobuf.ByteString;
 import com.vrg.rapid.Cluster;
 import com.vrg.rapid.messaging.impl.NettyClientServer;
 import com.vrg.rapid.pb.Endpoint;
@@ -45,7 +46,7 @@ public class AgentWithNettyMessaging extends StandaloneAgent {
     @Override
     public void startCluster() throws IOException, InterruptedException {
         final Endpoint endpoint = Endpoint.newBuilder()
-                                          .setHostname(listenAddress.getHost())
+                                          .setHostname(ByteString.copyFromUtf8(listenAddress.getHost()))
                                           .setPort(listenAddress.getPort()).build();
 
         // To use your own messaging implementation with Rapid, supply an instance each of IMessagingClient

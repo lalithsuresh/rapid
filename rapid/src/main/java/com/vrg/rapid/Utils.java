@@ -14,6 +14,7 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
+import com.google.protobuf.ByteString;
 import com.google.protobuf.GeneratedMessageV3;
 import com.google.protobuf.TextFormat;
 import com.vrg.rapid.pb.BatchedAlertMessage;
@@ -62,9 +63,9 @@ final class Utils {
      */
     static Endpoint hostFromString(final String hostString) {
         final HostAndPort hostAndPort = HostAndPort.fromString(hostString);    // Validates input
-        return Endpoint.newBuilder().setHostname(hostAndPort.getHost())
-                                           .setPort(hostAndPort.getPort())
-                                           .build();
+        return Endpoint.newBuilder().setHostname(ByteString.copyFromUtf8(hostAndPort.getHost()))
+                                    .setPort(hostAndPort.getPort())
+                                    .build();
     }
 
     /**
@@ -72,7 +73,8 @@ final class Utils {
      */
     static Endpoint hostFromParts(final String hostname, final int port) {
         final HostAndPort hostAndPort = HostAndPort.fromParts(hostname, port); // Validates input
-        return Endpoint.newBuilder().setHostname(hostAndPort.getHost())
+        return Endpoint.newBuilder()
+                .setHostname(ByteString.copyFromUtf8(hostAndPort.getHost()))
                 .setPort(hostAndPort.getPort())
                 .build();
     }
@@ -91,7 +93,8 @@ final class Utils {
         @Override
         public String toString() {
             if (protobufObject instanceof Endpoint) {
-                return ((Endpoint) protobufObject).getHostname() + ":" + ((Endpoint) protobufObject).getPort();
+                return ((Endpoint) protobufObject).getHostname().toStringUtf8()
+                        + ":" + ((Endpoint) protobufObject).getPort();
             }
             else {
                 return TextFormat.shortDebugString(protobufObject);
@@ -222,7 +225,8 @@ final class Utils {
         }
 
         private long computeHash(final Endpoint endpoint) {
-            return hashFunction.hashChars(endpoint.getHostname()) * 31 + hashFunction.hashInt(endpoint.getPort());
+            return hashFunction.hashBytes(endpoint.getHostname().asReadOnlyByteBuffer()) * 31
+                    + hashFunction.hashInt(endpoint.getPort());
         }
 
         void removeEndpoint(final Endpoint endpoint) {

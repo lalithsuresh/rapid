@@ -15,6 +15,7 @@ package com.vrg.rapid;
 
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
+import com.google.protobuf.ByteString;
 import com.vrg.rapid.messaging.impl.NettyClientServer;
 import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.ProbeMessage;
@@ -40,7 +41,7 @@ public class NettyClientServerTest {
         Cluster serverInstance = null;
         try {
             final int numClients = 100;
-            final Endpoint server = Endpoint.newBuilder().setHostname("127.0.0.1")
+            final Endpoint server = Endpoint.newBuilder().setHostname(ByteString.copyFromUtf8("127.0.0.1"))
                     .setPort(9000).build();
             final SharedResources resources = new SharedResources(server);
             final NettyClientServer serverMessaging = new NettyClientServer(server, resources);
@@ -52,7 +53,7 @@ public class NettyClientServerTest {
             final List<NettyClientServer> ncs = new ArrayList<>();
             for (int i = 0; i < numClients; i++) {
                 final Endpoint clientEp = Endpoint.newBuilder()
-                        .setHostname("127.0.0.1")
+                        .setHostname(ByteString.copyFromUtf8("127.0.0.1"))
                         .setPort(9002 + i).build();
                 ncs.add(new NettyClientServer(clientEp, shared));
             }
@@ -86,7 +87,7 @@ public class NettyClientServerTest {
             final SharedResources resources = new SharedResources(Endpoint.getDefaultInstance());
 
             for (int i = 0; i < numServers; i++) {
-                final Endpoint server = Endpoint.newBuilder().setHostname("127.0.0.1")
+                final Endpoint server = Endpoint.newBuilder().setHostname(ByteString.copyFromUtf8("127.0.0.1"))
                         .setPort(9001 + i).build();
                 final NettyClientServer serverMessaging = new NettyClientServer(server, resources);
                 final Cluster cluster = new Cluster.Builder(server)
@@ -96,11 +97,11 @@ public class NettyClientServerTest {
             }
             final SharedResources resources2 = new SharedResources(Endpoint.getDefaultInstance());
 
-            final Endpoint clientEp = Endpoint.newBuilder().setHostname("127.0.0.1")
+            final Endpoint clientEp = Endpoint.newBuilder().setHostname(ByteString.copyFromUtf8("127.0.0.1"))
                     .setPort(9000).build();
             final NettyClientServer clientMessaging = new NettyClientServer(clientEp, resources2);
             for (int i = 0; i < numServers; i++) {
-                final Endpoint server = Endpoint.newBuilder().setHostname("127.0.0.1")
+                final Endpoint server = Endpoint.newBuilder().setHostname(ByteString.copyFromUtf8("127.0.0.1"))
                         .setPort(9001 + i).build();
                 final RapidRequest msg = RapidRequest.newBuilder().setProbeMessage(ProbeMessage.getDefaultInstance())
                         .build();
