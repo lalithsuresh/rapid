@@ -21,16 +21,15 @@ message Endpoint
 message RapidRequest
 {
    oneof content {
-        PreJoinMessage preJoinMessage = 1;
-        JoinMessage joinMessage = 2;
-        BatchedAlertMessage batchedAlertMessage = 3;
-        ProbeMessage probeMessage = 4;
-        FastRoundPhase2bMessage fastRoundPhase2bMessage = 5;
-        Phase1aMessage phase1aMessage = 6;
-        Phase1bMessage phase1bMessage = 7;
-        Phase2aMessage phase2aMessage = 8;
-        Phase2bMessage phase2bMessage = 9;
-        LeaveMessage leaveMessage = 10;
+        JoinMessage joinMessage = 1;
+        BatchedAlertMessage batchedAlertMessage = 2;
+        ProbeMessage probeMessage = 3;
+        FastRoundPhase2bMessage fastRoundPhase2bMessage = 4;
+        Phase1aMessage phase1aMessage = 5;
+        Phase1bMessage phase1bMessage = 6;
+        Phase2aMessage phase2aMessage = 7;
+        Phase2bMessage phase2bMessage = 8;
+        LeaveMessage leaveMessage = 9;
    }
 }
 
@@ -53,22 +52,11 @@ message NodeId
    int64 low = 2;
 }
 
-// TODO: JoinMessage and JoinResponse are overloaded because they are being used for phase 1 and 2 of the bootstrap.
-message PreJoinMessage
-{
-   Endpoint sender = 1;
-   NodeId nodeId = 2;
-   repeated int32 ringNumber = 3;
-   int64 configurationId = 4;
-}
-
 message JoinMessage
 {
    Endpoint sender = 1;
    NodeId nodeId = 2;
-   repeated int32 ringNumber = 3;
-   int64 configurationId = 4;
-   Metadata metadata = 5;
+   Metadata metadata = 3;
 }
 
 message JoinResponse
@@ -85,9 +73,8 @@ message JoinResponse
 enum JoinStatusCode {
     HOSTNAME_ALREADY_IN_RING = 0;
     UUID_ALREADY_IN_RING = 1;
-    SAFE_TO_JOIN = 2;
-    CONFIG_CHANGED = 3;
-    MEMBERSHIP_REJECTED = 4;
+    SAME_NODE_ALREADY_IN_RING = 2;
+    SAFE_TO_JOIN = 3;
 };
 
 // ******* Alert messages *******

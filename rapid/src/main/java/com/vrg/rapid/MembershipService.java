@@ -28,7 +28,6 @@ import com.vrg.rapid.pb.EdgeStatus;
 import com.vrg.rapid.pb.AlertMessage;
 import com.vrg.rapid.pb.Metadata;
 import com.vrg.rapid.pb.NodeId;
-import com.vrg.rapid.pb.PreJoinMessage;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
 import com.vrg.rapid.pb.RapidRequest;
@@ -170,8 +169,6 @@ public final class MembershipService {
      */
     public ListenableFuture<RapidResponse> handleMessage(final RapidRequest msg) {
         switch (msg.getContentCase()) {
-            case PREJOINMESSAGE:
-                return handleMessage(msg.getPreJoinMessage());
             case JOINMESSAGE:
                 return handleMessage(msg.getJoinMessage());
             case BATCHEDALERTMESSAGE:
@@ -193,34 +190,6 @@ public final class MembershipService {
     }
 
     /**
-     * This is invoked by a new node joining the network at a seed node.
-     * The seed responds with the current configuration ID and a list of observers
-     * for the joiner, who then moves on to phase 2 of the protocol with its observers.
-     */
-    private ListenableFuture<RapidResponse> handleMessage(final PreJoinMessage msg) {
-        final SettableFuture<RapidResponse> future = SettableFuture.create();
-
-        sharedResources.getProtocolExecutor().execute(() -> {
-            final Endpoint joiningEndpoint = msg.getSender();
-            final JoinStatusCode statusCode = membershipView.isSafeToJoin(joiningEndpoint, msg.getNodeId());
-            final JoinResponse.Builder builder = JoinResponse.newBuilder()
-                    .setSender(myAddr)
-                    .setConfigurationId(membershipView.getCurrentConfigurationId())
-                    .setStatusCode(statusCode);
-            LOG.info("Join at seed for {seed:{}, sender:{}, config:{}, size:{}}",
-                    Utils.loggable(myAddr), Utils.loggable(msg.getSender()),
-                    membershipView.getCurrentConfigurationId(), membershipView.getMembershipSize());
-            if (statusCode.equals(JoinStatusCode.SAFE_TO_JOIN)
-                    || statusCode.equals(JoinStatusCode.HOSTNAME_ALREADY_IN_RING)) {
-                // Return a list of observers for the joiner to contact for phase 2 of the protocol
-                builder.addAllEndpoints(membershipView.getExpectedObserversOf(joiningEndpoint));
-            }
-            future.set(Utils.toRapidResponse(builder.build()));
-        });
-        return future;
-    }
-
-    /**
      * Invoked by gatekeepers of a joining node. They perform any failure checking
      * required before propagating a AlertMessage with the status UP. After the cut detection
      * and full agreement succeeds, the observer informs the joiner about the new configuration it
@@ -230,56 +199,55 @@ public final class MembershipService {
         final SettableFuture<RapidResponse> future = SettableFuture.create();
 
         sharedResources.getProtocolExecutor().execute(() -> {
-            final long currentConfiguration = membershipView.getCurrentConfigurationId();
-            if (currentConfiguration == joinMessage.getConfigurationId()) {
+            final MembershipView.Configuration configuration = membershipView.getConfiguration();
+
+            final JoinStatusCode statusCode = membershipView
+                    .isSafeToJoin(joinMessage.getSender(), joinMessage.getNodeId());
+
+            if (statusCode == JoinStatusCode.SAME_NODE_ALREADY_IN_RING) {
+                // this can happen if a join attempt times out at the joining node
+                // yet the response was about to be sent
+                // simply reply that they're welcome
+                final JoinResponse response = JoinResponse.newBuilder()
+                        .setSender(myAddr)
+                        .setConfigurationId(configuration.getConfigurationId())
+                        .setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
+                        .addAllEndpoints(configuration.endpoints)
+                        .addAllIdentifiers(configuration.nodeIds)
+                        .addAllMetadataKeys(metadataManager.getAllMetadata().keySet())
+                        .addAllMetadataValues(metadataManager.getAllMetadata().values())
+                        .build();
+                future.set(Utils.toRapidResponse(response));
+            } else if (statusCode == JoinStatusCode.SAFE_TO_JOIN) {
                 LOG.trace("Enqueuing SAFE_TO_JOIN for {sender:{}, config:{}, size:{}}",
-                        Utils.loggable(joinMessage.getSender()), currentConfiguration,
+                        Utils.loggable(joinMessage.getSender()), configuration.getConfigurationId(),
                         membershipView.getMembershipSize());
 
                 joinersToRespondTo.computeIfAbsent(joinMessage.getSender(),
                         k -> new LinkedBlockingDeque<>()).add(future);
 
-                final AlertMessage msg = AlertMessage.newBuilder()
-                        .setEdgeSrc(myAddr)
-                        .setEdgeDst(joinMessage.getSender())
-                        .setEdgeStatus(EdgeStatus.UP)
-                        .setConfigurationId(currentConfiguration)
-                        .setNodeId(joinMessage.getNodeId())
-                        .addAllRingNumber(joinMessage.getRingNumberList())
-                        .setMetadata(joinMessage.getMetadata())
-                        .build();
-                enqueueAlertMessage(msg);
-            } else {
-                // This handles the corner case where the configuration changed between phase 1 and phase 2
-                // of the joining node's bootstrap. It should attempt to rejoin the network.
-                final MembershipView.Configuration configuration = membershipView.getConfiguration();
-                LOG.info("Wrong configuration for {sender:{}, config:{}, myConfig:{}, size:{}}",
-                        Utils.loggable(joinMessage.getSender()), joinMessage.getConfigurationId(),
-                        currentConfiguration, membershipView.getMembershipSize());
-                JoinResponse.Builder responseBuilder = JoinResponse.newBuilder()
-                        .setSender(myAddr)
-                        .setConfigurationId(configuration.getConfigurationId());
-                if (membershipView.isHostPresent(joinMessage.getSender())
-                        && membershipView.isIdentifierPresent(joinMessage.getNodeId())) {
-                    LOG.info("Joining host already present : {sender:{}, config:{}, myConfig:{}, size:{}}",
-                            Utils.loggable(joinMessage.getSender()), joinMessage.getConfigurationId(),
-                            currentConfiguration, membershipView.getMembershipSize());
-                    // Race condition where a observer already crossed H messages for the joiner and changed
-                    // the configuration, but the JoinPhase2 messages show up at the observer
-                    // after it has already added the joiner. In this case, we simply
-                    // tell the sender that they're safe to join.
-                    responseBuilder = responseBuilder.setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
-                            .addAllEndpoints(configuration.endpoints)
-                            .addAllIdentifiers(configuration.nodeIds)
-                            .addAllMetadataKeys(metadataManager.getAllMetadata().keySet())
-                            .addAllMetadataValues(metadataManager.getAllMetadata().values());
-                } else {
-                    responseBuilder = responseBuilder.setStatusCode(JoinStatusCode.CONFIG_CHANGED);
-                    LOG.info("Returning CONFIG_CHANGED for {sender:{}, config:{}, size:{}}",
-                            Utils.loggable(joinMessage.getSender()), configuration.getConfigurationId(),
-                            configuration.endpoints.size());
+                // simulate K alerts, one for each of the expected observers
+
+                final List<Endpoint> observers = membershipView.getExpectedObserversOf(joinMessage.getSender());
+                for (int i = 0; i < observers.size(); i++) {
+                    final AlertMessage msg = AlertMessage.newBuilder()
+                            .setEdgeSrc(observers.get(i))
+                            .setEdgeDst(joinMessage.getSender())
+                            .setEdgeStatus(EdgeStatus.UP)
+                            .setConfigurationId(configuration.getConfigurationId())
+                            .setNodeId(joinMessage.getNodeId())
+                            .addRingNumber(i)
+                            .setMetadata(joinMessage.getMetadata())
+                            .build();
+                    enqueueAlertMessage(msg);
                 }
-                future.set(Utils.toRapidResponse(responseBuilder.build())); // new configuration
+            } else {
+                // no.
+                final JoinResponse response = JoinResponse.newBuilder()
+                        .setSender(myAddr)
+                        .setStatusCode(statusCode)
+                        .build();
+                future.set(Utils.toRapidResponse(response));
             }
         });
         return future;

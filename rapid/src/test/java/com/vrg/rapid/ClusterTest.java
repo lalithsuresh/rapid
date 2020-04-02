@@ -263,7 +263,7 @@ public class ClusterTest {
         for (int i = 0; i < phaseTwojoiners; i++) {
             extendCluster(1, seedEndpoint);
         }
-        waitAndVerifyAgreement(numNodes + phaseOneJoiners + phaseTwojoiners, 20, 1000);
+        waitAndVerifyAgreement(numNodes + phaseOneJoiners + phaseTwojoiners, 20, 1500);
         verifyNumClusterInstances(numNodes + phaseOneJoiners + phaseTwojoiners);
     }
 
