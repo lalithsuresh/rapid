@@ -29,6 +29,7 @@ import com.vrg.rapid.pb.Phase1bMessage;
 import com.vrg.rapid.pb.Phase2aMessage;
 import com.vrg.rapid.pb.Phase2bMessage;
 import com.vrg.rapid.pb.ProbeMessage;
+import com.vrg.rapid.pb.BroadcastingMessage;
 import com.vrg.rapid.pb.ProbeResponse;
 import com.vrg.rapid.pb.RapidRequest;
 import com.vrg.rapid.pb.RapidResponse;
@@ -181,6 +182,10 @@ final class Utils {
         return RapidRequest.newBuilder().setPhase2BMessage(msg).build();
     }
 
+    static RapidRequest toRapidRequest(final BroadcastingMessage msg) {
+        return RapidRequest.newBuilder().setBroadcastingMessage(msg).build();
+    }
+
     static RapidResponse toRapidResponse(final JoinResponse msg) {
         return RapidResponse.newBuilder().setJoinResponse(msg).build();
     }
@@ -192,7 +197,6 @@ final class Utils {
     static RapidResponse toRapidResponse(final ProbeResponse msg) {
         return RapidResponse.newBuilder().setProbeResponse(msg).build();
     }
-
 
     /**
      * Used to order endpoints in the different rings.

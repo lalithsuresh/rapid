@@ -15,6 +15,7 @@ package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
 import com.google.protobuf.ByteString;
+import com.vrg.rapid.messaging.IBroadcaster;
 import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.messaging.IMessagingServer;
 import com.vrg.rapid.messaging.impl.GrpcClient;
@@ -41,6 +42,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.function.BiConsumer;
@@ -68,6 +70,7 @@ public final class Cluster {
     private static final int H = 9;
     private static final int L = 4;
     private static final int RETRIES = 5;
+    static final String BROADCASTER_METADATA_KEY = "_BROADCASTER_";
     private final MembershipService membershipService;
     private final IMessagingServer rpcServer;
     private final SharedResources sharedResources;
@@ -156,6 +159,8 @@ public final class Cluster {
 
     public static class Builder {
         private final Endpoint listenAddress;
+        private boolean useConsistentHashBroadcasting = false;
+        private boolean isBroadcaster = false;
         @Nullable private IEdgeFailureDetectorFactory edgeFailureDetector = null;
         private Metadata metadata = Metadata.getDefaultInstance();
         private Settings settings = new Settings();
@@ -244,6 +249,20 @@ public final class Cluster {
         }
 
         /**
+         * Use a broadcasting topology where broadcaster nodes arranged in a consistent hash ring take care of
+         * transmitting messages on behalf of the other nodes.
+         *
+         * Broadcaster nodes should be started first if enabled or else there will be a fallback to
+         * establishing unicast-based broadcasting.
+         */
+        public Builder withConsistentHashBroadcasting(final boolean useConsistentHashBroadcasting,
+                                                      final boolean thisNodeIsBroadcaster) {
+            this.useConsistentHashBroadcasting = useConsistentHashBroadcasting;
+            this.isBroadcaster = thisNodeIsBroadcaster;
+            return this;
+        }
+
+        /**
          * Start a cluster without joining. Required to bootstrap a seed node.
          *
          * @throws IOException Thrown if we cannot successfully start a server
@@ -267,9 +286,19 @@ public final class Cluster {
             final Map<Endpoint, Metadata> metadataMap = metadata.getMetadataCount() > 0
                                                     ? Collections.singletonMap(listenAddress, metadata)
                                                     : Collections.emptyMap();
+
+            if (isBroadcaster) {
+                metadata = metadata.toBuilder().putMetadata(BROADCASTER_METADATA_KEY, ByteString.EMPTY).build();
+            }
+
+            final IBroadcaster broadcaster = useConsistentHashBroadcasting
+                    ? new ConsistentHashBroadcaster(messagingClient, membershipView, listenAddress,
+                    Optional.of(metadata), sharedResources, settings.getConsensusBatchingWindowInMs())
+                    : new UnicastToAllBroadcaster(messagingClient);
+
             final MembershipService membershipService = new MembershipService(listenAddress,
-                    cutDetector, membershipView, sharedResources, settings,
-                                            messagingClient, edgeFailureDetector, metadataMap, subscriptions);
+                    cutDetector, membershipView, sharedResources, settings, messagingClient, broadcaster,
+                    edgeFailureDetector, metadataMap, subscriptions);
             messagingServer.setMembershipService(membershipService);
             messagingServer.start();
             return new Cluster(messagingServer, membershipService, sharedResources, listenAddress);
@@ -311,6 +340,10 @@ public final class Cluster {
                     ? messagingClient
                     : new GrpcClient(listenAddress, sharedResources, settings);
             messagingServer.start();
+
+            if (isBroadcaster) {
+                metadata = metadata.toBuilder().putMetadata(BROADCASTER_METADATA_KEY, ByteString.EMPTY).build();
+            }
 
             for (int attempt = 0; attempt < RETRIES; attempt++) {
                 try {
@@ -395,9 +428,15 @@ public final class Cluster {
             final MultiNodeCutDetector cutDetector = new MultiNodeCutDetector(K, H, L);
             edgeFailureDetector = edgeFailureDetector != null ? edgeFailureDetector
                                                   : new PingPongFailureDetector.Factory(listenAddress, messagingClient);
+
+            final IBroadcaster broadcaster = useConsistentHashBroadcasting
+                    ? new ConsistentHashBroadcaster(messagingClient, membershipViewFinal, listenAddress,
+                    Optional.of(metadata), sharedResources, settings.getConsensusBatchingWindowInMs())
+                    : new UnicastToAllBroadcaster(messagingClient);
+
             final MembershipService membershipService =
-                    new MembershipService(listenAddress, cutDetector, membershipViewFinal,
-                           sharedResources, settings, messagingClient, edgeFailureDetector, allMetadata, subscriptions);
+                    new MembershipService(listenAddress, cutDetector, membershipViewFinal, sharedResources, settings,
+                            messagingClient, broadcaster, edgeFailureDetector, allMetadata, subscriptions);
             messagingServer.setMembershipService(membershipService);
             if (LOG.isTraceEnabled()) {
                 LOG.trace("{} has observers {}", listenAddress,

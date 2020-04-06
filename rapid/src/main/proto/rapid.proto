@@ -30,7 +30,8 @@ message RapidRequest
         Phase2aMessage phase2aMessage = 7;
         Phase2bMessage phase2bMessage = 8;
         LeaveMessage leaveMessage = 9;
-        SynchronizationMessage synchronizationMessage = 10;
+        BroadcastingMessage broadcastingMessage = 10;
+        SynchronizationMessage synchronizationMessage = 11;
 
    }
 }
@@ -114,9 +115,13 @@ message Response
 
 message FastRoundPhase2bMessage
 {
-    Endpoint sender = 1;
-    int64 configurationId = 2;
-    repeated Endpoint endpoints = 3;
+    repeated Proposal proposals = 1;
+}
+
+message Proposal {
+    int64 configurationId = 1;
+    repeated Endpoint endpoints = 2;
+    bytes votes = 3;
 }
 
 
@@ -177,6 +182,25 @@ message LeaveMessage
 {
     Endpoint sender = 1;
 }
+
+// ******* Broadcasting protocol *******
+
+message BroadcastingMessage
+{
+    RapidRequest message = 1;
+    int64 configurationId = 2;
+    bool shouldDeliver = 3;
+}
+
+message BroadcastingResponse {
+    BroadcastingStatus status = 1;
+}
+
+enum BroadcastingStatus {
+    ACCEPTED = 0;
+    CONFIGURATION_CHANGED = 1;
+}
+
 
 // ******* Used by simple probing failure detector *******
 

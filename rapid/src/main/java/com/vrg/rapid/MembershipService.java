@@ -52,6 +52,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -78,6 +79,7 @@ import java.util.stream.Stream;
 public final class MembershipService {
     private static final Logger LOG = LoggerFactory.getLogger(MembershipService.class);
     static final int BATCHING_WINDOW_IN_MS = 100;
+    static final int CONSENSUS_BATCHING_WINDOW_IN_MS = 500;
     private static final int DEFAULT_FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 0;
     static final int DEFAULT_FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
     static final int MEMBERSHIP_VIEW_TIMEOUT_IN_MS = 60000;
@@ -126,15 +128,15 @@ public final class MembershipService {
 
     MembershipService(final Endpoint myAddr, final MultiNodeCutDetector cutDetection,
                       final MembershipView membershipView, final SharedResources sharedResources,
-                      final Settings settings, final IMessagingClient messagingClient,
+                      final Settings settings, final IMessagingClient messagingClient, final IBroadcaster broadcaster,
                       final IEdgeFailureDetectorFactory edgeFailureDetector) {
-        this(myAddr, cutDetection, membershipView, sharedResources, settings, messagingClient,
+        this(myAddr, cutDetection, membershipView, sharedResources, settings, messagingClient, broadcaster,
              edgeFailureDetector, Collections.emptyMap(), new EnumMap<>(ClusterEvents.class));
     }
 
     MembershipService(final Endpoint myAddr, final MultiNodeCutDetector cutDetection,
                       final MembershipView membershipView, final SharedResources sharedResources,
-                      final Settings settings, final IMessagingClient messagingClient,
+                      final Settings settings, final IMessagingClient messagingClient, final IBroadcaster broadcaster,
                       final IEdgeFailureDetectorFactory edgeFailureDetector, final Map<Endpoint, Metadata> metadataMap,
                       final Map<ClusterEvents, List<BiConsumer<Long, List<NodeStatusChange>>>> subscriptions) {
         this.myAddr = myAddr;
@@ -145,7 +147,7 @@ public final class MembershipService {
         this.metadataManager = new MetadataManager();
         this.metadataManager.addMetadata(metadataMap);
         this.messagingClient = messagingClient;
-        this.broadcaster = new UnicastToAllBroadcaster(messagingClient);
+        this.broadcaster = broadcaster;
         this.subscriptions = subscriptions;
         this.fdFactory = edgeFailureDetector;
 
@@ -153,19 +155,22 @@ public final class MembershipService {
         Arrays.stream(ClusterEvents.values()).forEach(event ->
                 this.subscriptions.computeIfAbsent(event, k -> new ArrayList<>(0)));
 
+        membershipView.getRing(0).forEach(node -> {
+            this.broadcaster.onNodeAdded(node, Optional.ofNullable(metadataMap.get(node)));
+        });
+
         // Schedule background jobs
         this.backgroundTasksExecutor = sharedResources.getScheduledTasksExecutor();
         alertBatcherJob = this.backgroundTasksExecutor.scheduleAtFixedRate(new AlertBatcher(),
                 0, settings.getBatchingWindowInMs(), TimeUnit.MILLISECONDS);
 
-        this.broadcaster.setMembership(membershipView.getRing(0));
         // this::edgeFailureNotification is invoked by the failure detector whenever an edge
         // to an observer is marked faulty.
         this.failureDetectorJobs = new ArrayList<>();
 
         // Prepare consensus instance
         this.fastPaxosInstance = new FastPaxos(myAddr, membershipView.getCurrentConfigurationId(),
-                                               membershipView.getMembershipSize(), this.messagingClient,
+                                               membershipView.getRing(0), this.messagingClient,
                                                this.broadcaster, this.backgroundTasksExecutor, this::decideViewChange,
                 this.settings);
         createFailureDetectorsForCurrentConfiguration();
@@ -195,6 +200,8 @@ public final class MembershipService {
                 return handleConsensusMessages(msg);
             case LEAVEMESSAGE:
                 return handleLeaveMessage(msg);
+            case BROADCASTINGMESSAGE:
+                return handleBroadcastingMessage(msg);
             case SYNCHRONIZATIONMESSAGE:
                 return handleMessage(msg.getSynchronizationMessage());
             case CONTENT_NOT_SET:
@@ -398,6 +405,11 @@ public final class MembershipService {
         return future;
     }
 
+    private ListenableFuture<RapidResponse> handleBroadcastingMessage(final RapidRequest request) {
+        assert broadcaster instanceof ConsistentHashBroadcaster;
+        return ((ConsistentHashBroadcaster)broadcaster).handleBroadcastingMessage(request.getBroadcastingMessage());
+    }
+
     /**
      * This is invoked by FastPaxos modules when they arrive at a decision.
      *
@@ -422,6 +434,7 @@ public final class MembershipService {
                     membershipView.ringDelete(node);
                     statusChanges.add(new NodeStatusChange(node, EdgeStatus.DOWN, metadataManager.get(node)));
                     metadataManager.removeNode(node);
+                    broadcaster.onNodeRemoved(node);
                 }
                 else {
                     assert joinerUuid.containsKey(node);
@@ -432,6 +445,11 @@ public final class MembershipService {
                     if (metadata.getMetadataCount() > 0) {
                         affectedMetadata.put(node, metadata);
                         metadataManager.addMetadata(Collections.singletonMap(node, metadata));
+                    }
+                    if (metadata.getMetadataCount() > 0) {
+                        broadcaster.onNodeAdded(node, Optional.of(metadata));
+                    } else {
+                        broadcaster.onNodeAdded(node, Optional.empty());
                     }
                     statusChanges.add(new NodeStatusChange(node, EdgeStatus.UP, metadata));
                 }
@@ -456,10 +474,9 @@ public final class MembershipService {
         // Clear data structures for the next round.
         cutDetection.clear();
         announcedProposal.set(false);
-        fastPaxosInstance = new FastPaxos(myAddr, currentConfigurationId, membershipView.getMembershipSize(),
+        fastPaxosInstance = new FastPaxos(myAddr, currentConfigurationId, membershipView.getRing(0),
                                           messagingClient, broadcaster, backgroundTasksExecutor,
                                           this::decideViewChange, settings);
-        broadcaster.setMembership(membershipView.getRing(0));
 
         // Inform EdgeFailureDetector about membership change
         if (membershipView.isHostPresent(myAddr)) {
@@ -549,8 +566,10 @@ public final class MembershipService {
             }
             if (LOG.isDebugEnabled()) {
                 final int size = membershipView.getMembershipSize();
-                LOG.debug("Announcing EdgeFail event {subject:{}, observer:{}, config:{}, size:{}}",
-                        Utils.loggable(subject), Utils.loggable(myAddr), configurationId, size);
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("Announcing EdgeFail event {subject:{}, observer:{}, config:{}, size:{}}",
+                            Utils.loggable(subject), Utils.loggable(myAddr), configurationId, size);
+                }
             }
             // Note: setUuid is deliberately missing here because it does not affect leaves.
             final AlertMessage msg = AlertMessage.newBuilder()
@@ -689,26 +708,30 @@ public final class MembershipService {
 
         @Override
         public void run() {
+            final ArrayList<AlertMessage> messages = new ArrayList<>(sendQueue.size());
             batchSchedulerLock.lock();
             try {
                 // Wait one BATCHING_WINDOW_IN_MS since last add before sending out
                 if (!sendQueue.isEmpty() && lastEnqueueTimestamp > 0
                         && (System.currentTimeMillis() - lastEnqueueTimestamp) > settings.getBatchingWindowInMs()) {
-                    LOG.trace("Scheduler is sending out {} messages", sendQueue.size());
-                    final ArrayList<AlertMessage> messages = new ArrayList<>(sendQueue.size());
+                    if (LOG.isTraceEnabled()) {
+                        LOG.trace("Scheduler is sending out {} messages", sendQueue.size());
+                    }
                     final int numDrained = sendQueue.drainTo(messages);
                     assert numDrained > 0;
-                    final BatchedAlertMessage batched = BatchedAlertMessage.newBuilder()
+                }
+            } finally {
+                batchSchedulerLock.unlock();
+            }
+            if (!messages.isEmpty()) {
+                final BatchedAlertMessage batched = BatchedAlertMessage.newBuilder()
                             .setSender(myAddr)
                             .addAllMessages(messages)
                             .build();
-                    broadcaster.broadcast(Utils.toRapidRequest(batched));
-                }
-            }
-            finally {
-                batchSchedulerLock.unlock();
+                broadcaster.broadcast(Utils.toRapidRequest(batched), membershipView.getCurrentConfigurationId());
             }
         }
+
     }
 
     /**
@@ -721,13 +744,17 @@ public final class MembershipService {
                                         final int membershipSize,
                                         final long currentConfigurationId) {
         final Endpoint destination = alertMessage.getEdgeDst();
-        LOG.trace("AlertMessage received {sender:{}, config:{}, size:{}, status:{}}",
-                Utils.loggable(batchedAlertMessage.getSender()), alertMessage.getConfigurationId(),
-                membershipSize, alertMessage.getEdgeStatus());
+        if (LOG.isTraceEnabled()) {
+            LOG.trace("AlertMessage received {sender:{}, config:{}, size:{}, status:{}}",
+                    Utils.loggable(batchedAlertMessage.getSender()), alertMessage.getConfigurationId(),
+                    membershipSize, alertMessage.getEdgeStatus());
+        }
 
         if (currentConfigurationId != alertMessage.getConfigurationId()) {
-            LOG.trace("AlertMessage for configuration {} received during configuration {}",
-                    alertMessage.getConfigurationId(), currentConfigurationId);
+            if (LOG.isTraceEnabled()) {
+                LOG.trace("AlertMessage for configuration {} received during configuration {}",
+                        alertMessage.getConfigurationId(), currentConfigurationId);
+            }
             return false;
         }
 
@@ -735,20 +762,24 @@ public final class MembershipService {
         // membership set once and leave it once.
         if (alertMessage.getEdgeStatus().equals(EdgeStatus.UP)
                 && membershipView.isHostPresent(destination)) {
-            LOG.trace("AlertMessage with status UP received for node {} already in configuration {} ",
-                    Utils.loggable(alertMessage.getEdgeDst()), currentConfigurationId);
+            if (LOG.isTraceEnabled()) {
+                LOG.trace("AlertMessage with status UP received for node {} already in configuration {} ",
+                        Utils.loggable(alertMessage.getEdgeDst()), currentConfigurationId);
+            }
             return false;
         }
         if (alertMessage.getEdgeStatus().equals(EdgeStatus.DOWN)
                 && !membershipView.isHostPresent(destination)) {
-            LOG.trace("AlertMessage with status DOWN received for node {} already in configuration {} ",
-                    Utils.loggable(alertMessage.getEdgeDst()), currentConfigurationId);
+            if (LOG.isTraceEnabled()) {
+                LOG.trace("AlertMessage with status DOWN received for node {} already in configuration {} ",
+                        Utils.loggable(alertMessage.getEdgeDst()), currentConfigurationId);
+            }
             return false;
         }
 
         return true;
     }
-    
+
     private AlertMessage extractJoinerUuidAndMetadata(final AlertMessage alertMessage) {
         if (alertMessage.getEdgeStatus() == EdgeStatus.UP) {
             // Both the UUID and Metadata are saved only after the node is done being added.

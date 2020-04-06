@@ -21,6 +21,7 @@ import com.vrg.rapid.messaging.IBroadcaster;
 import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.pb.ConsensusResponse;
 import com.vrg.rapid.pb.Endpoint;
+import com.vrg.rapid.pb.Metadata;
 import com.vrg.rapid.pb.Phase1bMessage;
 import com.vrg.rapid.pb.Rank;
 import com.vrg.rapid.pb.RapidRequest;
@@ -39,6 +40,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -408,10 +410,14 @@ public class PaxosTests {
         final DirectBroadcaster directBroadcaster = new DirectBroadcaster(instances, messagingClient);
         final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(numNodes);
         final FastPaxos.ISettings settings = new Settings();
+        final List<Endpoint> memberList = new ArrayList<>();
+        for (int i = 0; i < numNodes; i++) {
+            memberList.add(Utils.hostFromParts("127.0.0.1", 1234 + i));
+        }
         for (int i = 0; i < numNodes; i++) {
             final Endpoint addr = Utils.hostFromParts("127.0.0.1", 1234 + i);
             executorServiceMap.put(addr, Executors.newSingleThreadExecutor());
-            final FastPaxos paxos = new FastPaxos(addr, 1, numNodes, messagingClient, directBroadcaster,
+            final FastPaxos paxos = new FastPaxos(addr, 1, memberList, messagingClient, directBroadcaster,
                                                   scheduler, onDecide, settings);
             instances.put(addr, paxos);
         }
@@ -432,7 +438,8 @@ public class PaxosTests {
         }
 
         @Override
-        public List<ListenableFuture<RapidResponse>> broadcast(final RapidRequest rapidRequest) {
+        public List<ListenableFuture<RapidResponse>> broadcast(final RapidRequest rapidRequest,
+                                                               final long configurationId) {
             if (!messageTypeToDrop.contains(rapidRequest.getContentCase())) {
                 paxosInstances.forEach((k, v) -> messagingClient.sendMessage(k, rapidRequest));
             }
@@ -440,7 +447,12 @@ public class PaxosTests {
         }
 
         @Override
-        public void setMembership(final List<Endpoint> recipients) {
+        public void onNodeAdded(final Endpoint node, final Optional<Metadata> metadata) {
+
+        }
+
+        @Override
+        public void onNodeRemoved(final Endpoint node) {
             throw new UnsupportedOperationException();
         }
     }
@@ -493,12 +505,17 @@ public class PaxosTests {
 
     private static class NoOpBroadcaster implements IBroadcaster {
         @Override
-        public List<ListenableFuture<RapidResponse>> broadcast(final RapidRequest rapidRequest) {
+        public List<ListenableFuture<RapidResponse>> broadcast(final RapidRequest rapidRequest,
+                                                               final long configurationId) {
             return Collections.singletonList(Futures.immediateFuture(null));
         }
 
         @Override
-        public void setMembership(final List<Endpoint> recipients) {
+        public void onNodeAdded(final Endpoint node, final Optional<Metadata> metadata) {
+        }
+
+        @Override
+        public void onNodeRemoved(final Endpoint node) {
         }
     }
 

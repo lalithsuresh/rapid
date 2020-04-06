@@ -105,8 +105,10 @@ class Paxos {
                                        .setSender(myAddr)
                                        .setRank(crnd).build();
         final RapidRequest request = Utils.toRapidRequest(prepare);
-        LOG.trace("Broadcasting startPhase1a message: {}", Utils.loggable(request));
-        broadcaster.broadcast(request);
+        if (LOG.isTraceEnabled()) {
+            LOG.trace("Broadcasting startPhase1a message: {}", Utils.loggable(request));
+        }
+        broadcaster.broadcast(request, configurationId);
     }
 
     /**
@@ -161,7 +163,9 @@ class Paxos {
             return;
         }
 
-        LOG.trace("Handling PrepareResponse: {}", Utils.loggable(phase1bMessage));
+        if (LOG.isTraceEnabled()) {
+            LOG.trace("Handling PrepareResponse: {}", Utils.loggable(phase1bMessage));
+        }
 
         phase1bMessages.add(phase1bMessage);
 
@@ -180,7 +184,7 @@ class Paxos {
                                                    .addAllVval(chosenProposal)
                                                    .build();
                 final RapidRequest request = Utils.toRapidRequest(phase2aMessage);
-                broadcaster.broadcast(request);
+                broadcaster.broadcast(request, configurationId);
             }
         }
     }
@@ -195,13 +199,17 @@ class Paxos {
             return;
         }
 
-        LOG.trace("At acceptor received phase2aMessage: {}", Utils.loggable(phase2aMessage));
+        if (LOG.isTraceEnabled()) {
+            LOG.trace("At acceptor received phase2aMessage: {}", Utils.loggable(phase2aMessage));
+        }
         if (compareRanks(rnd, phase2aMessage.getRnd()) <= 0 && !vrnd.equals(phase2aMessage.getRnd())) {
             rnd = phase2aMessage.getRnd();
             vrnd = phase2aMessage.getRnd();
             vval = phase2aMessage.getVvalList();
-            LOG.trace("{} accepted value in vrnd: {}, vval: {}", Utils.loggable(myAddr),
-                    Utils.loggable(vrnd), Utils.loggable(vval));
+            if (LOG.isTraceEnabled()) {
+                LOG.trace("{} accepted value in vrnd: {}, vval: {}", Utils.loggable(myAddr),
+                        Utils.loggable(vrnd), Utils.loggable(vval));
+            }
             final Phase2bMessage response = Phase2bMessage.newBuilder()
                                                           .setConfigurationId(configurationId)
                                                           .setRnd(phase2aMessage.getRnd())
@@ -209,7 +217,7 @@ class Paxos {
                                                           .addAllEndpoints(vval)
                                                           .build();
             final RapidRequest request = Utils.toRapidRequest(response);
-            broadcaster.broadcast(request);
+            broadcaster.broadcast(request, configurationId);
         }
     }
 
@@ -222,14 +230,18 @@ class Paxos {
         if (phase2bMessage.getConfigurationId() != configurationId) {
             return;
         }
-        LOG.trace("Received phase2bMessage: {}", Utils.loggable(phase2bMessage.getSender()));
+        if (LOG.isTraceEnabled()) {
+            LOG.trace("Received phase2bMessage: {}", Utils.loggable(phase2bMessage.getSender()));
+        }
         final Map<Endpoint, Phase2bMessage> phase2bMessagesInRnd =
                 acceptResponses.computeIfAbsent(phase2bMessage.getRnd(), (k) -> new HashMap<>());
         phase2bMessagesInRnd.put(phase2bMessage.getSender(), phase2bMessage);
         if (phase2bMessagesInRnd.size() > (N / 2) && !decided) {
             final List<Endpoint> decision = phase2bMessage.getEndpointsList();
-            LOG.debug("{} decided on: {} for rnd {} {}", Utils.loggable(myAddr), Utils.loggable(decision),
-                      Utils.loggable(phase2bMessage.getRnd()), phase2bMessagesInRnd.size());
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("{} decided on: {} for rnd {} {}", Utils.loggable(myAddr), Utils.loggable(decision),
+                        Utils.loggable(phase2bMessage.getRnd()), phase2bMessagesInRnd.size());
+            }
             onDecide.accept(decision);
             decided = true;
         }
@@ -254,7 +266,9 @@ class Paxos {
         rnd = rnd.toBuilder().setRound(1).setNodeIndex(1).build();
         vrnd = rnd;
         vval = vote;
-        LOG.trace("Voted in fast round for proposal: {}", Utils.loggable(vote));
+        if (LOG.isTraceEnabled()) {
+            LOG.trace("Voted in fast round for proposal: {}", Utils.loggable(vote));
+        }
     }
 
     /**
@@ -319,8 +333,10 @@ class Paxos {
                                             .filter(r -> r.getVvalCount() > 0)
                                             .map(Phase1bMessage::getVvalList)
                                             .findFirst().orElse(Collections.emptyList());
-            LOG.trace("Proposing new value -- chosen:{}, list:{}, vrnd:{}", Utils.loggable(chosenProposal),
-                      collectedVvals, Utils.loggable(maxVrndSoFar));
+            if (LOG.isTraceEnabled()) {
+                LOG.trace("Proposing new value -- chosen:{}, list:{}, vrnd:{}", Utils.loggable(chosenProposal),
+                        collectedVvals, Utils.loggable(maxVrndSoFar));
+            }
         }
         return chosenProposal;
     }
