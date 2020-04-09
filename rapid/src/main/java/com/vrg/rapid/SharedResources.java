@@ -119,7 +119,7 @@ public class SharedResources {
      * use Netty's DefaultThreadFactory.
      */
     private DefaultThreadFactory newFastLocalThreadFactory(final String poolName, final Endpoint address) {
-        return new DefaultThreadFactory(poolName + "-" + address.getHostname() + ":"
+        return new DefaultThreadFactory(poolName + "-" + address.getHostname().toStringUtf8() + ":"
                 + address.getPort(), true);
     }
 
@@ -127,7 +127,7 @@ public class SharedResources {
      * Standard threads with an exception handler.
      */
     private ThreadFactory newNamedThreadFactory(final String poolName, final Endpoint address) {
-        final String namePrefix = poolName + "-" + address.getHostname() + ":" + address.getPort();
+        final String namePrefix = poolName + "-" + address.getHostname().toStringUtf8() + ":" + address.getPort();
         return new ThreadFactoryBuilder()
                 .setNameFormat(namePrefix + "-%d")
                 .setDaemon(true)

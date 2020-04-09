@@ -137,7 +137,9 @@ public class GrpcServer extends MembershipServiceGrpc.MembershipServiceImplBase 
                     .build()
                     .start();
         } else {
-            server = NettyServerBuilder.forAddress(new InetSocketAddress(address.getHostname(), address.getPort()))
+            server = NettyServerBuilder.forAddress(
+                        new InetSocketAddress(address.getHostname().toStringUtf8(), address.getPort())
+                    )
                     .workerEventLoopGroup(eventLoopGroup)
                     .addService(this)
                     .executor(grpcExecutor)

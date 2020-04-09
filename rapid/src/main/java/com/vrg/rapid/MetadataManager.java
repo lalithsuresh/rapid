@@ -14,7 +14,6 @@
 
 package com.vrg.rapid;
 
-import com.google.common.collect.ImmutableMap;
 import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.Metadata;
 import io.grpc.ExperimentalApi;
@@ -65,11 +64,7 @@ final class MetadataManager {
     /**
      * Get the list of all node tags. This is shared with joining nodes when they bootstrap.
      */
-    Map<String, Metadata> getAllMetadata() {
-        // XXX: Not happy with the back and forth conversion here. We should not require conversions
-        // between Endpoint and strings when crossing over from protobufs to rapid and vice-versa.
-        final ImmutableMap.Builder<String, Metadata> stringMap = ImmutableMap.builder();
-        roleMap.forEach((k, v) -> stringMap.put(k.getHostname() + ":" + k.getPort(), v));
-        return stringMap.build();
+    Map<Endpoint, Metadata> getAllMetadata() {
+        return roleMap;
     }
 }

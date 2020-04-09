@@ -446,6 +446,7 @@ public class ClusterTest {
         Cluster cluster = null;
         try {
             cluster = instances.remove(rejoiningEndpoint);
+            assertEquals(9, instances.size());
             cluster.shutdown();
             try {
                 buildCluster(rejoiningEndpoint).join(seedEndpoint);

@@ -12,7 +12,7 @@ service MembershipService {
 
 message Endpoint
 {
-    string hostname = 1;
+    bytes hostname = 1;
     int32 port = 2;
 }
 
@@ -78,7 +78,8 @@ message JoinResponse
    int64 configurationId = 3;
    repeated Endpoint endpoints = 4;
    repeated NodeId identifiers = 5;
-   map<string, Metadata> clusterMetadata = 6;
+   repeated Endpoint metadataKeys = 6;
+   repeated Metadata metadataValues = 7;
 }
 
 enum JoinStatusCode {

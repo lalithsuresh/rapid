@@ -540,7 +540,7 @@ final class MembershipView {
                 hash = hash * 37 + HASH_FUNCTION.hashLong(id.getLow());
             }
             for (final Endpoint endpoint : endpoints) {
-                hash = hash * 37 + HASH_FUNCTION.hashChars(endpoint.getHostname());
+                hash = hash * 37 + HASH_FUNCTION.hashBytes(endpoint.getHostname().asReadOnlyByteBuffer());
                 hash = hash * 37 + HASH_FUNCTION.hashInt(endpoint.getPort());
             }
             return hash;

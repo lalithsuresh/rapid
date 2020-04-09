@@ -171,7 +171,7 @@ public class GrpcClient implements IMessagingClient {
                     .build();
         } else {
             channel = NettyChannelBuilder
-                    .forAddress(remote.getHostname(), remote.getPort())
+                    .forAddress(remote.getHostname().toStringUtf8(), remote.getPort())
                     .executor(grpcExecutor)
                     .eventLoopGroup(eventLoopGroup)
                     .usePlaintext(true)

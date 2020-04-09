@@ -151,7 +151,8 @@ public class NettyClientServer implements IMessagingClient, IMessagingServer {
                 .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .childHandler(new ServerChannelInitializer(serverHandler));
         try {
-            serverChannel = serverBootstrap.bind(listenAddress.getHostname(), listenAddress.getPort()).sync();
+            serverChannel = serverBootstrap.bind(listenAddress.getHostname().toStringUtf8(),
+                    listenAddress.getPort()).sync();
         } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
             LOG.error("Could not start server {}", e);
@@ -318,7 +319,7 @@ public class NettyClientServer implements IMessagingClient, IMessagingServer {
         @Override
         public ChannelFuture load(@Nonnull final Endpoint endpoint) throws Exception {
             // Connect to remote endpoint
-            return clientBootstrap.connect(endpoint.getHostname(), endpoint.getPort()).sync();
+            return clientBootstrap.connect(endpoint.getHostname().toStringUtf8(), endpoint.getPort()).sync();
         }
     }
 

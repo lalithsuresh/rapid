@@ -121,7 +121,7 @@ public final class Cluster {
      * @return list of endpoints in the membership set
      * @throws IllegalStateException when trying to get the cluster metadata after shutting down
      */
-    public Map<String, Metadata> getClusterMetadata() {
+    public Map<Endpoint, Metadata> getClusterMetadata() {
         if (hasShutdown) {
             throw new IllegalStateException("Can't access the memberlist after having shut down");
         }
@@ -178,7 +178,8 @@ public final class Cluster {
          * @param listenAddress The listen address of the node being instantiated
          */
         public Builder(final HostAndPort listenAddress) {
-            this.listenAddress = Endpoint.newBuilder().setHostname(listenAddress.getHost())
+            this.listenAddress = Endpoint.newBuilder()
+                    .setHostname(ByteString.copyFromUtf8(listenAddress.getHost()))
                     .setPort(listenAddress.getPort())
                     .build();
         }
@@ -286,7 +287,8 @@ public final class Cluster {
          * @throws IOException Thrown if we cannot successfully start a server
          */
         public Cluster join(final HostAndPort seedHostAndPort) throws IOException, InterruptedException {
-            final Endpoint seedAddress = Endpoint.newBuilder().setHostname(seedHostAndPort.getHost())
+            final Endpoint seedAddress = Endpoint.newBuilder()
+                    .setHostname(ByteString.copyFromUtf8(seedHostAndPort.getHost()))
                     .setPort(seedHostAndPort.getPort())
                     .build();
             return join(seedAddress);
@@ -444,8 +446,10 @@ public final class Cluster {
             final List<Endpoint> allEndpoints = response.getEndpointsList();
             final List<NodeId> identifiersSeen = response.getIdentifiersList();
             final Map<Endpoint, Metadata> allMetadata = new HashMap<>();
-            for (final Map.Entry<String, Metadata> entry: response.getClusterMetadataMap().entrySet()) {
-                allMetadata.put(Utils.hostFromString(entry.getKey()), entry.getValue());
+            for (int i = 0; i < response.getMetadataKeysCount(); i++) {
+                final Endpoint key = response.getMetadataKeys(i);
+                final Metadata value = response.getMetadataValues(i);
+                allMetadata.put(key, value);
             }
 
             assert !identifiersSeen.isEmpty();
@@ -473,7 +477,7 @@ public final class Cluster {
 
     @Override
     public String toString() {
-        return "Cluster:" + listenAddress.getHostname() + ":" + listenAddress.getPort();
+        return "Cluster:" + listenAddress.getHostname().toStringUtf8() + ":" + listenAddress.getPort();
     }
 
     public static final class JoinException extends RuntimeException {

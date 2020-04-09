@@ -14,6 +14,7 @@
 package com.vrg.rapid;
 
 import com.google.common.collect.ImmutableList;
+import com.google.protobuf.ByteString;
 import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.Phase1bMessage;
 import com.vrg.rapid.pb.Rank;
@@ -44,8 +45,10 @@ public class LoggableTests {
     private Phase1bMessage getMessage() {
         final Rank rank = Rank.newBuilder().setRound(1).setNodeIndex(2).build();
         final List<Endpoint> endpoints =
-                ImmutableList.of(Endpoint.newBuilder().setHostname("127.0.0.1").setPort(50).build(),
-                        Endpoint.newBuilder().setHostname("127.0.0.2").setPort(51).build());
+                ImmutableList.of(Endpoint.newBuilder().setHostname(ByteString.copyFromUtf8("127.0.0.1"))
+                                .setPort(50).build(),
+                        Endpoint.newBuilder().setHostname(ByteString.copyFromUtf8("127.0.0.2"))
+                                .setPort(51).build());
         return Phase1bMessage.newBuilder()
                 .setRnd(rank)
                 .addAllVval(endpoints)
