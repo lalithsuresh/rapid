@@ -18,7 +18,7 @@ import com.vrg.rapid.messaging.impl.GrpcClient;
 /**
  * Holds configuration parameters for different components of a Rapid instance.
  */
-public final class Settings implements GrpcClient.ISettings, MembershipService.ISettings {
+public final class Settings implements GrpcClient.ISettings, MembershipService.ISettings, FastPaxos.ISettings {
     private boolean useInProcessTransport = GrpcClient.DEFAULT_GRPC_USE_IN_PROCESS_TRANSPORT;
     private int grpcTimeoutMs = GrpcClient.DEFAULT_GRPC_TIMEOUT_MS;
     private int grpcDefaultRetries = GrpcClient.DEFAULT_GRPC_DEFAULT_RETRIES;
@@ -26,6 +26,7 @@ public final class Settings implements GrpcClient.ISettings, MembershipService.I
     private int grpcProbeTimeoutMs = GrpcClient.DEFAULT_GRPC_PROBE_TIMEOUT;
     private int failureDetectorIntervalInMs = MembershipService.DEFAULT_FAILURE_DETECTOR_INTERVAL_IN_MS;
     private int batchingWindowInMs = MembershipService.BATCHING_WINDOW_IN_MS;
+    private long consensusFallbackTimeoutBaseDelayInMs = FastPaxos.BASE_DELAY;
 
     /*
      * Settings from GrpcClient.ISettings
@@ -95,5 +96,17 @@ public final class Settings implements GrpcClient.ISettings, MembershipService.I
 
     public void setBatchingWindowInMs(final int batchingWindowInMs) {
         this.batchingWindowInMs = batchingWindowInMs;
+    }
+
+    /*
+     * Settings from FastPaxos.ISettings
+     */
+    @Override
+    public long getConsensusFallbackTimeoutBaseDelayInMs() {
+        return this.consensusFallbackTimeoutBaseDelayInMs;
+    }
+
+    public void setConsensusFallbackTimeoutBaseDelayInMs(final long consensusFallbackTimeoutBaseDelayInMs) {
+            this.consensusFallbackTimeoutBaseDelayInMs = consensusFallbackTimeoutBaseDelayInMs;
     }
 }

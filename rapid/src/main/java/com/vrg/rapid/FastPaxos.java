@@ -43,7 +43,7 @@ import java.util.function.Consumer;
  */
 class FastPaxos {
     private static final Logger LOG = LoggerFactory.getLogger(FastPaxos.class);
-    private static final long BASE_DELAY = 1000;
+    static final long BASE_DELAY = 1000;
     private final double jitterRate;
     private final Endpoint myAddr;
     private final long configurationId;
@@ -57,14 +57,17 @@ class FastPaxos {
     private final Object paxosLock = new Object();
     private final AtomicBoolean decided = new AtomicBoolean(false);
     @Nullable private ScheduledFuture<?> scheduledClassicRoundTask = null;
+    private final ISettings settings;
 
     FastPaxos(final Endpoint myAddr, final long configurationId, final int membershipSize,
               final IMessagingClient client, final IBroadcaster broadcaster,
-              final ScheduledExecutorService scheduledExecutorService, final Consumer<List<Endpoint>> onDecide) {
+              final ScheduledExecutorService scheduledExecutorService, final Consumer<List<Endpoint>> onDecide,
+              final ISettings settings) {
         this.myAddr = myAddr;
         this.configurationId = configurationId;
         this.membershipSize = membershipSize;
         this.broadcaster = broadcaster;
+        this.settings = settings;
 
         // The rate of a random expovariate variable, used to determine a jitter over a base delay to start classic
         // rounds. This determines how many classic rounds we want to start per second on average. Does not
@@ -196,6 +199,10 @@ class FastPaxos {
      */
     private long getRandomDelayMs() {
         final long jitter = (long) (-1000 * Math.log(1 - ThreadLocalRandom.current().nextDouble()) / jitterRate);
-        return jitter + BASE_DELAY;
+        return jitter + settings.getConsensusFallbackTimeoutBaseDelayInMs();
+    }
+
+    interface ISettings {
+        long getConsensusFallbackTimeoutBaseDelayInMs();
     }
 }

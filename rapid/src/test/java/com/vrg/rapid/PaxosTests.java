@@ -407,11 +407,12 @@ public class PaxosTests {
         final DirectMessagingClient messagingClient = new DirectMessagingClient(instances, executorServiceMap);
         final DirectBroadcaster directBroadcaster = new DirectBroadcaster(instances, messagingClient);
         final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(numNodes);
+        final FastPaxos.ISettings settings = new Settings();
         for (int i = 0; i < numNodes; i++) {
             final Endpoint addr = Utils.hostFromParts("127.0.0.1", 1234 + i);
             executorServiceMap.put(addr, Executors.newSingleThreadExecutor());
             final FastPaxos paxos = new FastPaxos(addr, 1, numNodes, messagingClient, directBroadcaster,
-                                                  scheduler, onDecide);
+                                                  scheduler, onDecide, settings);
             instances.put(addr, paxos);
         }
         return instances;
