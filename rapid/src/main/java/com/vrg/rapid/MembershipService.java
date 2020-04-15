@@ -60,6 +60,7 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Membership server class that implements the Rapid protocol.
@@ -298,21 +299,28 @@ public final class MembershipService {
         final SettableFuture<RapidResponse> future = SettableFuture.create();
 
         sharedResources.getProtocolExecutor().execute(() -> {
+            // first, retain all valid alerts
+            // this includes adding the UUIDs and metadata of joining nodes
+            final long currentConfigurationId = membershipView.getCurrentConfigurationId();
+            final int membershipSize = membershipView.getMembershipSize();
+            final Stream<AlertMessage> validAlerts = messageBatch.getMessagesList().stream()
+                // First, we filter out invalid messages that violate membership invariants.
+                .filter(msg -> filterAlertMessagesAndAddJoinerDetails(messageBatch, msg, membershipSize,
+                        currentConfigurationId));
+
+
             // We already have a proposal for this round
             // => we have initiated consensus and cannot go back on our proposal.
             if (announcedProposal) {
                 future.set(null);
             } else {
-                final long currentConfigurationId = membershipView.getCurrentConfigurationId();
-                final int membershipSize = membershipView.getMembershipSize();
-                final Set<Endpoint> proposal = messageBatch.getMessagesList().stream()
-                        // First, we filter out invalid messages that violate membership invariants.
-                        .filter(msg -> filterAlertMessages(messageBatch, msg, membershipSize, currentConfigurationId))
-                        // We then apply all the valid messages into our condition detector
-                        // to obtain a view change proposal
-                        .map(cutDetection::aggregateForProposal)
-                        .flatMap(List::stream)
-                        .collect(Collectors.toSet());
+                // We now apply all the valid messages into our condition detector
+                // to obtain a view change proposal
+                final Set<Endpoint> proposal =
+                        validAlerts
+                                .map(cutDetection::aggregateForProposal)
+                                .flatMap(List::stream)
+                                .collect(Collectors.toSet());
 
                 // Lastly, we apply implicit detections
                 proposal.addAll(cutDetection.invalidateFailingEdges(membershipView));
@@ -621,10 +629,10 @@ public final class MembershipService {
      * configuration that the current node is not a part of, and messages that violate the semantics
      * of a node being a part of a configuration.
      */
-    private boolean filterAlertMessages(final BatchedAlertMessage batchedAlertMessage,
-                                             final AlertMessage alertMessage,
-                                             final int membershipSize,
-                                             final long currentConfigurationId) {
+    private boolean filterAlertMessagesAndAddJoinerDetails(final BatchedAlertMessage batchedAlertMessage,
+                                                           final AlertMessage alertMessage,
+                                                           final int membershipSize,
+                                                           final long currentConfigurationId) {
         final Endpoint destination = alertMessage.getEdgeDst();
         LOG.trace("AlertMessage received {sender:{}, config:{}, size:{}, status:{}}",
                 Utils.loggable(batchedAlertMessage.getSender()), alertMessage.getConfigurationId(),
