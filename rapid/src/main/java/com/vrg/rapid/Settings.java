@@ -27,6 +27,7 @@ public final class Settings implements GrpcClient.ISettings, MembershipService.I
     private int failureDetectorIntervalInMs = MembershipService.DEFAULT_FAILURE_DETECTOR_INTERVAL_IN_MS;
     private int batchingWindowInMs = MembershipService.BATCHING_WINDOW_IN_MS;
     private long consensusFallbackTimeoutBaseDelayInMs = FastPaxos.BASE_DELAY;
+    private int membershipViewTimeoutInMs = MembershipService.MEMBERSHIP_VIEW_TIMEOUT_IN_MS;
 
     /*
      * Settings from GrpcClient.ISettings
@@ -96,6 +97,16 @@ public final class Settings implements GrpcClient.ISettings, MembershipService.I
 
     public void setBatchingWindowInMs(final int batchingWindowInMs) {
         this.batchingWindowInMs = batchingWindowInMs;
+    }
+
+
+    @Override
+    public int getMembershipViewUpdateTimeoutInMs() {
+        return this.membershipViewTimeoutInMs;
+    }
+
+    public void setMembershipViewUpdateTimeoutInMs(final int membershipViewTimeoutInMs) {
+        this.membershipViewTimeoutInMs = membershipViewTimeoutInMs;
     }
 
     /*

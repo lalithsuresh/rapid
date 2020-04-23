@@ -54,6 +54,7 @@ final class MembershipView {
     @GuardedBy("rwLock") private long currentConfigurationId = -1;
     @GuardedBy("rwLock") private Configuration currentConfiguration;
     @GuardedBy("rwLock") private boolean shouldUpdateConfigurationId = true;
+    @GuardedBy("rwLock") private Set<Long> knownConfigurationIds = new HashSet<>();
 
     MembershipView(final int K) {
         assert K > 0;
@@ -439,6 +440,7 @@ final class MembershipView {
     private void updateCurrentConfigurationId() {
         currentConfiguration = new Configuration(identifiersSeen, rings.get(0));
         currentConfigurationId = currentConfiguration.getConfigurationId();
+        knownConfigurationIds.add(currentConfigurationId);
     }
 
     /**
@@ -460,6 +462,19 @@ final class MembershipView {
         finally {
             rwLock.readLock().unlock();
         }
+    }
+
+    /**
+     * Checks whether the provided configurationId is known
+     */
+    boolean isKnownConfigurationId(final long configurationId) {
+        rwLock.readLock().lock();
+        try {
+            return knownConfigurationIds.contains(configurationId);
+        } finally {
+            rwLock.readLock().unlock();
+        }
+
     }
 
     private static final class NodeIdComparator implements Comparator<NodeId>, Serializable {

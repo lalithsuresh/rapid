@@ -74,6 +74,7 @@ public final class MembershipService {
     static final int BATCHING_WINDOW_IN_MS = 100;
     private static final int DEFAULT_FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 0;
     static final int DEFAULT_FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
+    static final int MEMBERSHIP_VIEW_TIMEOUT_IN_MS = 60000;
     private static final int LEAVE_MESSAGE_TIMEOUT = 1500;
     private final MembershipView membershipView;
     private final MultiNodeCutDetector cutDetection;
@@ -109,6 +110,9 @@ public final class MembershipService {
     // Fields used by consensus protocol
     private boolean announcedProposal = false;
     private final Object membershipUpdateLock = new Object();
+
+    private boolean isLeaving = false;
+
     private final Settings settings;
 
 
@@ -426,8 +430,23 @@ public final class MembershipService {
     /**
      * Invoked by observers of a node for failure detection.
      */
+    @SuppressWarnings("FutureReturnValueIgnored")
     private ListenableFuture<RapidResponse> handleMessage(final ProbeMessage probeMessage) {
         LOG.trace("handleProbeMessage from {}", Utils.loggable(probeMessage.getSender()));
+        final long observerConfigurationId = probeMessage.getObserverConfigurationId();
+        if (!membershipView.isKnownConfigurationId(observerConfigurationId)) {
+            backgroundTasksExecutor.schedule(() -> {
+                if (!membershipView.isKnownConfigurationId(observerConfigurationId)) {
+                   // we still have not synchronized our worldview after the configured timeout
+                   // in order to avoid having a stale node as part of the membership ring, leave
+                    subscriptions.get(ClusterEvents.KICKED).forEach(cb ->
+                            cb.accept(membershipView.getCurrentConfigurationId(), Collections.emptyList())
+                    );
+                    leave();
+                    shutdown();
+                }
+            }, settings.getMembershipViewUpdateTimeoutInMs(), TimeUnit.MILLISECONDS);
+        }
         return Futures.immediateFuture(Utils.toRapidResponse(ProbeResponse.getDefaultInstance()));
     }
 
@@ -523,24 +542,29 @@ public final class MembershipService {
      * This operation is blocking, as we need to wait to send the alert messages before shutting down the rest
      */
     void leave() {
-        final LeaveMessage leaveMessage = LeaveMessage.newBuilder().setSender(myAddr).build();
-        final RapidRequest leave = RapidRequest.newBuilder().setLeaveMessage(leaveMessage).build();
+        if (!isLeaving) {
+            final LeaveMessage leaveMessage = LeaveMessage.newBuilder().setSender(myAddr).build();
+            final RapidRequest leave = RapidRequest.newBuilder().setLeaveMessage(leaveMessage).build();
 
-        try {
-            final List<Endpoint> observers = membershipView.getObserversOf(myAddr);
-            final ListenableFuture<List<RapidResponse>> leaveResponses = Futures.successfulAsList(observers.stream()
-                    .map(endpoint -> messagingClient.sendMessageBestEffort(endpoint, leave))
-                    .collect(Collectors.toList()));
+            cancelFailureDetectorJobs();
+
             try {
-                leaveResponses.get(LEAVE_MESSAGE_TIMEOUT, TimeUnit.MILLISECONDS);
-            } catch (final InterruptedException | ExecutionException e) {
-                LOG.trace("Exception while leaving", e);
-            } catch (final TimeoutException e) {
-                LOG.trace("Timeout while leaving", e);
+                final List<Endpoint> observers = membershipView.getObserversOf(myAddr);
+                final ListenableFuture<List<RapidResponse>> leaveResponses = Futures.successfulAsList(observers.stream()
+                        .map(endpoint -> messagingClient.sendMessageBestEffort(endpoint, leave))
+                        .collect(Collectors.toList()));
+                isLeaving = true;
+                try {
+                    leaveResponses.get(LEAVE_MESSAGE_TIMEOUT, TimeUnit.MILLISECONDS);
+                } catch (final InterruptedException | ExecutionException e) {
+                    LOG.trace("Exception while leaving", e);
+                } catch (final TimeoutException e) {
+                    LOG.trace("Timeout while leaving", e);
+                }
+            } catch (final MembershipView.NodeNotInRingException e) {
+                // we already were removed, so that's fine
+                LOG.trace("Node was already removed prior to leaving", e);
             }
-        } catch (final MembershipView.NodeNotInRingException e) {
-            // we already were removed, so that's fine
-            LOG.trace("Node was already removed prior to leaving", e);
         }
     }
 
@@ -673,6 +697,7 @@ public final class MembershipService {
         final List<ScheduledFuture<?>> jobs = membershipView.getSubjectsOf(myAddr)
                 .stream().map(subject -> backgroundTasksExecutor
                          .scheduleAtFixedRate(fdFactory.createInstance(subject,
+                                membershipView.getCurrentConfigurationId(),
                                 createNotifierForSubject(subject)), // Runnable
                                 DEFAULT_FAILURE_DETECTOR_INITIAL_DELAY_IN_MS,
                                 settings.getFailureDetectorIntervalInMs(),
@@ -722,5 +747,7 @@ public final class MembershipService {
         int getFailureDetectorIntervalInMs();
 
         int getBatchingWindowInMs();
+
+        int getMembershipViewUpdateTimeoutInMs();
     }
 }

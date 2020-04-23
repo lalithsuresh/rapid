@@ -53,7 +53,7 @@ public class PingPongFailureDetector implements Runnable {
     // A cache for probe messages. Avoids creating an unnecessary copy of a probe message each time.
     private final RapidRequest probeMessage;
 
-    private PingPongFailureDetector(final Endpoint address, final Endpoint subject,
+    private PingPongFailureDetector(final Endpoint address, final Endpoint subject, final long configurationId,
                                     final IMessagingClient rpcClient, final Runnable notifier) {
         this.address = address;
         this.subject = subject;
@@ -62,7 +62,11 @@ public class PingPongFailureDetector implements Runnable {
         this.failureCount = new AtomicInteger(0);
         this.bootstrapResponseCount = new AtomicInteger(0);
         this.probeMessage = RapidRequest.newBuilder().setProbeMessage(
-                ProbeMessage.newBuilder().setSender(address).build()).build();
+                ProbeMessage.newBuilder()
+                        .setSender(address)
+                        .setObserverConfigurationId(configurationId)
+                        .build()
+        ).build();
     }
 
     // Executed at observer
@@ -134,8 +138,8 @@ public class PingPongFailureDetector implements Runnable {
         }
 
         @Override
-        public Runnable createInstance(final Endpoint subject, final Runnable notifier) {
-            return new PingPongFailureDetector(address, subject, messagingClient, notifier);
+        public Runnable createInstance(final Endpoint subject, final long configurationId, final Runnable notifier) {
+            return new PingPongFailureDetector(address, subject, configurationId, messagingClient, notifier);
         }
     }
 }
