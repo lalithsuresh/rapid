@@ -114,7 +114,7 @@ public final class MembershipService {
 
     MembershipService(final Endpoint myAddr, final MultiNodeCutDetector cutDetection,
                       final MembershipView membershipView, final SharedResources sharedResources,
-                      final ISettings settings, final IMessagingClient messagingClient,
+                      final Settings settings, final IMessagingClient messagingClient,
                       final IEdgeFailureDetectorFactory edgeFailureDetector) {
         this(myAddr, cutDetection, membershipView, sharedResources, settings, messagingClient,
              edgeFailureDetector, Collections.emptyMap(), new EnumMap<>(ClusterEvents.class));
