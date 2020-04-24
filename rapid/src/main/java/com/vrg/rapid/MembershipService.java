@@ -305,9 +305,10 @@ public final class MembershipService {
             final int membershipSize = membershipView.getMembershipSize();
             final Stream<AlertMessage> validAlerts = messageBatch.getMessagesList().stream()
                 // First, we filter out invalid messages that violate membership invariants.
-                .filter(msg -> filterAlertMessagesAndAddJoinerDetails(messageBatch, msg, membershipSize,
-                        currentConfigurationId));
-
+                .filter(msg -> filterAlertMessages(messageBatch, msg, membershipSize, currentConfigurationId))
+                // For valid UP alerts, extract the joiner details (UUID and metadata) which is going to be needed
+                // when the node is added to the rings
+                .map(this::extractJoinerUuidAndMetadata);
 
             // We already have a proposal for this round
             // => we have initiated consensus and cannot go back on our proposal.
@@ -629,10 +630,10 @@ public final class MembershipService {
      * configuration that the current node is not a part of, and messages that violate the semantics
      * of a node being a part of a configuration.
      */
-    private boolean filterAlertMessagesAndAddJoinerDetails(final BatchedAlertMessage batchedAlertMessage,
-                                                           final AlertMessage alertMessage,
-                                                           final int membershipSize,
-                                                           final long currentConfigurationId) {
+    private boolean filterAlertMessages(final BatchedAlertMessage batchedAlertMessage,
+                                        final AlertMessage alertMessage,
+                                        final int membershipSize,
+                                        final long currentConfigurationId) {
         final Endpoint destination = alertMessage.getEdgeDst();
         LOG.trace("AlertMessage received {sender:{}, config:{}, size:{}, status:{}}",
                 Utils.loggable(batchedAlertMessage.getSender()), alertMessage.getConfigurationId(),
@@ -659,12 +660,17 @@ public final class MembershipService {
             return false;
         }
 
+        return true;
+    }
+    
+    private AlertMessage extractJoinerUuidAndMetadata(final AlertMessage alertMessage) {
         if (alertMessage.getEdgeStatus() == EdgeStatus.UP) {
             // Both the UUID and Metadata are saved only after the node is done being added.
+            final Endpoint destination = alertMessage.getEdgeDst();
             joinerUuid.put(destination, alertMessage.getNodeId());
             joinerMetadata.put(destination, alertMessage.getMetadata());
         }
-        return true;
+        return alertMessage;
     }
 
     /**
