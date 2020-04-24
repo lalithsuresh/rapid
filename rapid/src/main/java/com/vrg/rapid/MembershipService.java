@@ -241,8 +241,9 @@ public final class MembershipService {
                             .build();
                     enqueueAlertMessage(msg);
                 }
-            } else {
-                // no.
+            } else if (statusCode == JoinStatusCode.HOSTNAME_ALREADY_IN_RING) {
+                // Do not let the node join. It will have to wait until failure detection kicks in and
+                // a new membership view is agreed upon in order to be able to join again.
                 final JoinResponse response = JoinResponse.newBuilder()
                         .setSender(myAddr)
                         .setStatusCode(statusCode)
