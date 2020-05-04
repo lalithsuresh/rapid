@@ -360,10 +360,10 @@ public class ClusterTest {
     }
 
     /**
-     * Check the anti-entropy mechanism that nudges members that have missed a consensus round to proactively leave
+     * Check the anti-entropy mechanism that catches up members that have missed a consensus round
      */
-    @Test(timeout = 40000)
-    public void missConsensusMessages() throws IOException, InterruptedException {
+    @Test(timeout = 50000)
+    public void missConsensusMessagesAndSync() throws IOException, InterruptedException {
         useFastFailureDetectionTimeouts();
         final int membershipViewUpdateTimeoutInMs = 5000;
         settings.setMembershipViewUpdateTimeoutInMs(membershipViewUpdateTimeoutInMs);
@@ -381,8 +381,14 @@ public class ClusterTest {
 
         extendCluster(numNodesPhase2, seedEndpoint);
 
+
         final Map<Endpoint, Cluster> instancesToCheck = new HashMap<>(instances);
         instancesToCheck.remove(staleNode);
+
+        final AtomicBoolean hasSynchronized = new AtomicBoolean(false);
+        instances.get(staleNode).registerSubscription(ClusterEvents.VIEW_CHANGE, (configurationId, statusChanges) -> {
+            hasSynchronized.set(true);
+        });
 
         // the other nodes will see all nodes
         waitAndVerifyAgreement(numNodesPhase1 + numNodesPhase2 + 1, 10, 2000, instancesToCheck);
@@ -391,6 +397,41 @@ public class ClusterTest {
         // the stale node will be out of date
         assertEquals(numNodesPhase1 + 1, instances.get(staleNode).getMemberlist().size());
 
+        Thread.sleep(membershipViewUpdateTimeoutInMs);
+        assertTrue(hasSynchronized.get());
+
+        // all nodes should be in agreement
+        waitAndVerifyAgreement(numNodesPhase1 + numNodesPhase2 + 1, 5, 1000);
+    }
+
+
+    /**
+     * Check the anti-entropy mechanism that nudges members that have missed a consensus round to proactively leave
+     */
+    @Test(timeout = 40000)
+    public void missConsensusMessagesAndLeave() throws IOException, InterruptedException {
+        settings.setGrpcProbeTimeoutMs(300);
+        settings.setFailureDetectorIntervalInMs(50);
+        final int membershipViewUpdateTimeoutInMs = 5000;
+        settings.setMembershipViewUpdateTimeoutInMs(membershipViewUpdateTimeoutInMs);
+        settings.setLeaveOnMembershipViewTimeout(true);
+        final int numNodesPhase1 = 40;
+        final int numNodesPhase2 = 5;
+        final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", basePort);
+        createCluster(numNodesPhase1, seedEndpoint);
+        verifyCluster(numNodesPhase1);
+
+        // node that will miss consensus messages joins. needs to join now because of the way drop helpers work
+        final Endpoint staleNode = Utils.hostFromParts("127.0.0.1", portCounter.incrementAndGet());
+        dropFirstNAtServer(staleNode, 1000, RapidRequest.ContentCase.FASTROUNDPHASE2BMESSAGE);
+        extendCluster(staleNode, seedEndpoint);
+        waitAndVerifyAgreement(numNodesPhase1 + 1, 10, 2000);
+
+        extendCluster(numNodesPhase2, seedEndpoint);
+
+        final Map<Endpoint, Cluster> instancesToCheck = new HashMap<>(instances);
+        instancesToCheck.remove(staleNode);
+
         final AtomicBoolean hasLeft = new AtomicBoolean(false);
         instances.get(staleNode).registerSubscription(ClusterEvents.KICKED, (configurationId, statusChanges) -> {
             hasLeft.set(true);
@@ -398,12 +439,18 @@ public class ClusterTest {
             instances.remove(staleNode);
         });
 
+        // the other nodes will see all nodes
+        waitAndVerifyAgreement(numNodesPhase1 + numNodesPhase2 + 1, 10, 2000, instancesToCheck);
+        assertTrue(instances.get(seedEndpoint).getMemberlist().contains(staleNode));
+
+        // the stale node will be out of date
+        assertEquals(numNodesPhase1 + 1, instances.get(staleNode).getMemberlist().size());
+
         Thread.sleep(membershipViewUpdateTimeoutInMs);
         assertTrue(hasLeft.get());
 
-
         // the stale node having left proactively, it should no longer be part of the membership on the other nodes
-        waitAndVerifyAgreement(numNodesPhase1 + numNodesPhase2, 20, 2000);
+        waitAndVerifyAgreement(numNodesPhase1 + numNodesPhase2, 20, 1000);
     }
 
     /**

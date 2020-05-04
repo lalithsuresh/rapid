@@ -31,6 +31,7 @@ message RapidRequest
         Phase2aMessage phase2aMessage = 8;
         Phase2bMessage phase2bMessage = 9;
         LeaveMessage leaveMessage = 10;
+        SynchronizationMessage synchronizationMessage = 11;
    }
 }
 
@@ -41,6 +42,7 @@ message RapidResponse
         Response response = 2;
         ConsensusResponse consensusResponse = 3;
         ProbeResponse probeResponse = 4;
+        SynchronizationResponse synchronizationResponse = 5;
    }
 }
 
@@ -204,3 +206,27 @@ enum NodeStatus {
     OK = 0;             // this is the default value
     BOOTSTRAPPING = 1;
 };
+
+// ******* Used by the anti-entropy mechanism *******
+
+message SynchronizationMessage
+{
+    Endpoint sender = 1;
+    int64 configurationId = 2;
+}
+
+message SynchronizationResponse
+{
+    Endpoint sender = 1;
+    repeated ViewChange changes = 2;
+}
+
+message ViewChange
+{
+    int64 configurationId = 1;
+    repeated Endpoint endpoints = 2;
+    repeated Endpoint nodeIdKeys = 3;
+    repeated NodeId nodeIdValues = 4;
+    repeated Endpoint metadataKeys = 5;
+    repeated Metadata metadataValues = 6;
+}
