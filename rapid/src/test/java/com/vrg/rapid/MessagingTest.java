@@ -20,6 +20,9 @@ import com.vrg.rapid.messaging.IMessagingServer;
 import com.vrg.rapid.messaging.impl.GrpcClient;
 import com.vrg.rapid.messaging.impl.GrpcServer;
 import com.vrg.rapid.monitoring.impl.PingPongFailureDetector;
+import com.vrg.rapid.pb.AlertMessage;
+import com.vrg.rapid.pb.BatchedAlertMessage;
+import com.vrg.rapid.pb.EdgeStatus;
 import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.FastRoundPhase2bMessage;
 import com.vrg.rapid.pb.JoinMessage;
@@ -40,7 +43,10 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import static junit.framework.TestCase.assertTrue;
 import static org.junit.Assert.assertEquals;
@@ -137,6 +143,84 @@ public class MessagingTest {
         assertEquals(JoinStatusCode.UUID_ALREADY_IN_RING, result2.getStatusCode());
         assertEquals(0, result2.getEndpointsCount());
         assertEquals(0, result2.getIdentifiersCount());
+    }
+
+    /**
+     * A node joins while the seed node is undergoing a view change. It should be told to retry
+     */
+    @Test
+    public void joinDuringViewChange() throws InterruptedException, IOException, ExecutionException {
+        final int serverPort = 1234;
+        final int client1Port = 1235;
+        final int client2Port = 1236;
+        final int otherNodePort = 1240;
+
+        final NodeId nodeIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
+        final Endpoint serverAddr = Utils.hostFromParts(LOCALHOST_IP, serverPort);
+        final TestMembershipView membershipView = new TestMembershipView(K);
+        membershipView.ringAdd(serverAddr, nodeIdentifier);
+        createAndStartMembershipService(serverAddr, membershipView);
+
+        final Endpoint otherEndpoint = Utils.hostFromParts(LOCALHOST_IP, otherNodePort);
+        final Endpoint client1Endpoint = Utils.hostFromParts(LOCALHOST_IP, client1Port);
+
+        final ExecutorService executor = Executors.newWorkStealingPool(2);
+        final CountDownLatch startLatch = new CountDownLatch(1);
+        final CountDownLatch testLatch = new CountDownLatch(2);
+
+        membershipView.toggleWait();
+
+        try {
+            executor.execute(() -> {
+                try {
+                    // simulate alert that leads to view change
+                    final BatchedAlertMessage.Builder batchedAlertMessage = BatchedAlertMessage
+                            .newBuilder()
+                            .setSender(otherEndpoint);
+
+                    final List<Endpoint> observers = membershipView.getExpectedObserversOf(client1Endpoint);
+                    for (int i = 0; i < observers.size(); i++) {
+                        final AlertMessage msg = AlertMessage.newBuilder()
+                                .setEdgeSrc(observers.get(i))
+                                .setEdgeDst(client1Endpoint)
+                                .setEdgeStatus(EdgeStatus.UP)
+                                .setConfigurationId(membershipView.getCurrentConfigurationId())
+                                .setNodeId(Utils.nodeIdFromUUID(UUID.randomUUID()))
+                                .addRingNumber(i)
+                                .build();
+                        batchedAlertMessage.addMessages(msg);
+                    }
+
+                    startLatch.countDown();
+                    final GrpcClient client = new GrpcClient(otherEndpoint);
+                    client.sendMessage(serverAddr, Utils.toRapidRequest(batchedAlertMessage.build()));
+                } finally {
+                    testLatch.countDown();
+                }
+            });
+            executor.execute(() -> {
+                try {
+                    // client attempts joins
+                    final Endpoint clientAddr = Utils.hostFromParts(LOCALHOST_IP, client2Port);
+                    final GrpcClient client = new GrpcClient(clientAddr);
+                    startLatch.await();
+                    final JoinResponse result = sendJoinMessage(client, serverAddr, clientAddr,
+                            Utils.nodeIdFromUUID(UUID.randomUUID()));
+                    assertNotNull(result);
+                    assertEquals(JoinStatusCode.VIEW_CHANGE_IN_PROGRESS, result.getStatusCode());
+                    membershipView.toggleWait();
+                } catch (final InterruptedException | ExecutionException e) {
+                    e.printStackTrace();
+                    fail();
+                } finally {
+                    testLatch.countDown();
+                }
+            });
+            testLatch.await();
+        } finally {
+            executor.shutdown();
+        }
+
     }
 
     /**

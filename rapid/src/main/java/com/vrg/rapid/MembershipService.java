@@ -108,7 +108,7 @@ public final class MembershipService {
     private final IEdgeFailureDetectorFactory fdFactory;
 
     // Fields used by consensus protocol
-    private boolean announcedProposal = false;
+    private AtomicBoolean announcedProposal = new AtomicBoolean(false);
     private final Object membershipUpdateLock = new Object();
     private final Settings settings;
 
@@ -202,8 +202,15 @@ public final class MembershipService {
         sharedResources.getProtocolExecutor().execute(() -> {
             final MembershipView.Configuration configuration = membershipView.getConfiguration();
 
-            final JoinStatusCode statusCode = membershipView
-                    .isSafeToJoin(joinMessage.getSender(), joinMessage.getNodeId());
+            if (announcedProposal.get()) {
+                final JoinResponse response = JoinResponse.newBuilder()
+                        .setSender(myAddr)
+                        .setStatusCode(JoinStatusCode.VIEW_CHANGE_IN_PROGRESS)
+                        .build();
+                future.set(Utils.toRapidResponse(response));
+            } else {
+                final JoinStatusCode statusCode = membershipView
+                        .isSafeToJoin(joinMessage.getSender(), joinMessage.getNodeId());
 
             if (statusCode == JoinStatusCode.SAME_NODE_ALREADY_IN_RING) {
                 // this can happen if a join attempt times out at the joining node
@@ -224,40 +231,42 @@ public final class MembershipService {
                         Utils.loggable(joinMessage.getSender()), configuration.getConfigurationId(),
                         membershipView.getMembershipSize());
 
-                joinersToRespondTo.computeIfAbsent(joinMessage.getSender(),
-                        k -> new LinkedBlockingDeque<>()).add(future);
+                    joinersToRespondTo.computeIfAbsent(joinMessage.getSender(),
+                            k -> new LinkedBlockingDeque<>()).add(future);
 
-                // simulate K alerts, one for each of the expected observers
+                    // simulate K alerts, one for each of the expected observers
 
-                final List<Endpoint> observers = membershipView.getExpectedObserversOf(joinMessage.getSender());
-                for (int i = 0; i < observers.size(); i++) {
-                    final AlertMessage msg = AlertMessage.newBuilder()
-                            .setEdgeSrc(observers.get(i))
-                            .setEdgeDst(joinMessage.getSender())
-                            .setEdgeStatus(EdgeStatus.UP)
-                            .setConfigurationId(configuration.getConfigurationId())
-                            .setNodeId(joinMessage.getNodeId())
-                            .addRingNumber(i)
-                            .setMetadata(joinMessage.getMetadata())
+                    final List<Endpoint> observers = membershipView.getExpectedObserversOf(joinMessage.getSender());
+                    for (int i = 0; i < observers.size(); i++) {
+                        final AlertMessage msg = AlertMessage.newBuilder()
+                                .setEdgeSrc(observers.get(i))
+                                .setEdgeDst(joinMessage.getSender())
+                                .setEdgeStatus(EdgeStatus.UP)
+                                .setConfigurationId(configuration.getConfigurationId())
+                                .setNodeId(joinMessage.getNodeId())
+                                .addRingNumber(i)
+                                .setMetadata(joinMessage.getMetadata())
+                                .build();
+                        enqueueAlertMessage(msg);
+                    }
+                } else if (statusCode == JoinStatusCode.HOSTNAME_ALREADY_IN_RING) {
+                    // Do not let the node join. It will have to wait until failure detection kicks in and
+                    // a new membership view is agreed upon in order to be able to join again.
+                    final JoinResponse response = JoinResponse.newBuilder()
+                            .setSender(myAddr)
+                            .setStatusCode(statusCode)
                             .build();
-                    enqueueAlertMessage(msg);
+                    future.set(Utils.toRapidResponse(response));
+                } else {
+                    // in these cases, the client should retry joining
+                    final JoinResponse response = JoinResponse.newBuilder()
+                            .setSender(myAddr)
+                            .setStatusCode(statusCode)
+                            .build();
+                    future.set(Utils.toRapidResponse(response));
                 }
-            } else if (statusCode == JoinStatusCode.UUID_ALREADY_IN_RING) {
-                // do not let the node join. the client should re-attempt with another UUID
-                final JoinResponse response = JoinResponse.newBuilder()
-                        .setSender(myAddr)
-                        .setStatusCode(statusCode)
-                        .build();
-                future.set(Utils.toRapidResponse(response));
-            } else if (statusCode == JoinStatusCode.HOSTNAME_ALREADY_IN_RING) {
-                // Do not let the node join. It will have to wait until failure detection kicks in and
-                // a new membership view is agreed upon in order to be able to join again.
-                final JoinResponse response = JoinResponse.newBuilder()
-                        .setSender(myAddr)
-                        .setStatusCode(statusCode)
-                        .build();
-                future.set(Utils.toRapidResponse(response));
             }
+
         });
         return future;
     }
@@ -289,7 +298,7 @@ public final class MembershipService {
 
             // We already have a proposal for this round
             // => we have initiated consensus and cannot go back on our proposal.
-            if (announcedProposal) {
+            if (announcedProposal.get()) {
                 future.set(null);
             } else {
                 // We now apply all the valid messages into our condition detector
@@ -306,7 +315,7 @@ public final class MembershipService {
                 // If we have a proposal for this stage, start an instance of consensus on it.
                 if (!proposal.isEmpty()) {
                     LOG.info("Proposing membership change of size {}", proposal.size());
-                    announcedProposal = true;
+                    announcedProposal.set(true);
 
                     if (subscriptions.containsKey(ClusterEvents.VIEW_CHANGE_PROPOSAL)) {
                         final List<NodeStatusChange> result = createNodeStatusChangeList(proposal);
@@ -388,7 +397,7 @@ public final class MembershipService {
 
         // Clear data structures for the next round.
         cutDetection.clear();
-        announcedProposal = false;
+        announcedProposal.set(false);
         fastPaxosInstance = new FastPaxos(myAddr, currentConfigurationId, membershipView.getMembershipSize(),
                                           messagingClient, broadcaster, backgroundTasksExecutor,
                                           this::decideViewChange, settings);

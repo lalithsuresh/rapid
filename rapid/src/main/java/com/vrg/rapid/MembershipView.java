@@ -42,7 +42,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * every node (an observer) observers its successor (a subject) on each ring.
  */
 @ThreadSafe
-final class MembershipView {
+class MembershipView {
     private final int K;
     private static final LongHashFunction HASH_FUNCTION = LongHashFunction.xx(0);
     private final ReadWriteLock rwLock = new ReentrantReadWriteLock();

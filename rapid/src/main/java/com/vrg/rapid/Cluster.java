@@ -331,6 +331,10 @@ public final class Cluster {
                         case HOSTNAME_ALREADY_IN_RING:
                             LOG.error("Membership rejected by {}. Retrying.", Utils.loggable(result.getSender()));
                             break;
+                        case VIEW_CHANGE_IN_PROGRESS:
+                            LOG.info("Seed node {} is executing a view change. Retrying.",
+                                    Utils.loggable(result.getSender()));
+                            break;
                         default:
                             this.seedAddress = null;
                             throw new JoinException("Unrecognized status code");

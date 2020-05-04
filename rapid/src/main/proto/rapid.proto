@@ -75,6 +75,7 @@ enum JoinStatusCode {
     UUID_ALREADY_IN_RING = 1;
     SAME_NODE_ALREADY_IN_RING = 2;
     SAFE_TO_JOIN = 3;
+    VIEW_CHANGE_IN_PROGRESS = 4;
 };
 
 // ******* Alert messages *******
