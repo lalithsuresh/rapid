@@ -68,7 +68,6 @@ public final class Cluster {
     private static final int H = 9;
     private static final int L = 4;
     private static final int RETRIES = 5;
-    private static final int INITIAL_BACKOFF_MILLIS = 200;
     private final MembershipService membershipService;
     private final IMessagingServer rpcServer;
     private final SharedResources sharedResources;
@@ -167,6 +166,7 @@ public final class Cluster {
         @Nullable private IMessagingClient messagingClient = null;
         @Nullable private IMessagingServer messagingServer = null;
         @Nullable private SharedResources sharedResources = null;
+        @Nullable private Endpoint seedAddress = null;
 
         /**
          * Instantiates a builder for a Rapid Cluster node that will listen on the given {@code listenAddress}
@@ -297,6 +297,11 @@ public final class Cluster {
          * @throws IOException Thrown if we cannot successfully start a server
          */
         Cluster join(final Endpoint seedAddress) throws IOException, InterruptedException {
+            if (this.seedAddress != null && !this.seedAddress.equals(seedAddress)) {
+                throw new JoinException("Cannot join another seed node while an attempt is in progress");
+            }
+            this.seedAddress = seedAddress;
+
             NodeId currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
             sharedResources = new SharedResources(listenAddress);
             messagingServer = messagingServer != null
@@ -327,6 +332,7 @@ public final class Cluster {
                             LOG.error("Membership rejected by {}. Retrying.", Utils.loggable(result.getSender()));
                             break;
                         default:
+                            this.seedAddress = null;
                             throw new JoinException("Unrecognized status code");
                     }
                 }
@@ -334,6 +340,7 @@ public final class Cluster {
             messagingServer.shutdown();
             messagingClient.shutdown();
             sharedResources.shutdown();
+            this.seedAddress = null;
             throw new JoinException("Join attempt unsuccessful " + Utils.loggable(listenAddress));
         }
 

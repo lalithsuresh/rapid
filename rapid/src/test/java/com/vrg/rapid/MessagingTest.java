@@ -56,6 +56,7 @@ public class MessagingTest {
     private static final int L = 3;
 
     private static final int SERVER_PORT_BASE = 1134;
+    private static final String LOCALHOST = "localhost";
     private static final String LOCALHOST_IP = "127.0.0.1";
     private final List<IMessagingServer> rpcServers = new ArrayList<>();
     private final List<MembershipService> services = new ArrayList<>();
@@ -127,7 +128,9 @@ public class MessagingTest {
         // Try again with a different port, this should fail because we're using the same
         // uuid as the server.
         final int clientPort2 = 1235;
-        final Endpoint clientAddr2 = Utils.hostFromParts(LOCALHOST_IP, clientPort2);
+        // we need another address than 127.0.0.1 or else we'll get a valid response from the SAME_NODE_ALREADY_IN_RING
+        // mechanism
+        final Endpoint clientAddr2 = Utils.hostFromParts(LOCALHOST, clientPort2);
         final GrpcClient client2 = new GrpcClient(clientAddr2);
         final JoinResponse result2 = sendJoinMessage(client2, serverAddr, clientAddr2, nodeIdentifier);
         assertNotNull(result2);
@@ -405,4 +408,5 @@ public class MessagingTest {
                                                             .setNodeId(identifier).build());
         return client.sendMessage(serverAddr, joinMessage).get().getJoinResponse();
     }
+
 }

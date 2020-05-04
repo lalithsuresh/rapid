@@ -55,6 +55,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiConsumer;
@@ -207,7 +208,7 @@ public final class MembershipService {
             if (statusCode == JoinStatusCode.SAME_NODE_ALREADY_IN_RING) {
                 // this can happen if a join attempt times out at the joining node
                 // yet the response was about to be sent
-                // simply reply that they're welcome
+                // simply reply that they're welcome to join so they can get the membership list
                 final JoinResponse response = JoinResponse.newBuilder()
                         .setSender(myAddr)
                         .setConfigurationId(configuration.getConfigurationId())
@@ -241,6 +242,13 @@ public final class MembershipService {
                             .build();
                     enqueueAlertMessage(msg);
                 }
+            } else if (statusCode == JoinStatusCode.UUID_ALREADY_IN_RING) {
+                // do not let the node join. the client should re-attempt with another UUID
+                final JoinResponse response = JoinResponse.newBuilder()
+                        .setSender(myAddr)
+                        .setStatusCode(statusCode)
+                        .build();
+                future.set(Utils.toRapidResponse(response));
             } else if (statusCode == JoinStatusCode.HOSTNAME_ALREADY_IN_RING) {
                 // Do not let the node join. It will have to wait until failure detection kicks in and
                 // a new membership view is agreed upon in order to be able to join again.
