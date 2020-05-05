@@ -52,7 +52,8 @@ class StaticFailureDetector implements Runnable {
         }
 
         @Override
-        public Runnable createInstance(final Endpoint observer, final Runnable notification) {
+        public Runnable createInstance(final Endpoint observer, final long configurationId,
+                                       final Runnable notification) {
             return new StaticFailureDetector(observer, notification, blackList);
         }
 
