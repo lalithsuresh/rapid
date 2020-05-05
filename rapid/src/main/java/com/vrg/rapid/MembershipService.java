@@ -41,7 +41,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nonnull;
-import javax.annotation.concurrent.GuardedBy;
 import javax.annotation.concurrent.NotThreadSafe;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -55,15 +54,12 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.LinkedBlockingDeque;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -100,17 +96,11 @@ public final class MembershipService {
     // Event subscriptions
     private final Map<ClusterEvents, List<BiConsumer<Long, List<NodeStatusChange>>>> subscriptions;
 
-    //
     private FastPaxos fastPaxosInstance;
 
-    // Fields used by batching logic.
-    @GuardedBy("batchSchedulerLock")
-    private long lastEnqueueTimestamp = -1;    // Timestamp
-    @GuardedBy("batchSchedulerLock")
-    private final LinkedBlockingQueue<AlertMessage> sendQueue = new LinkedBlockingQueue<>();
-    private final Lock batchSchedulerLock = new ReentrantLock();
+    private final AlertMessageBatcher alertMessageBatcher;
+
     private final ScheduledExecutorService backgroundTasksExecutor;
-    private final ScheduledFuture<?> alertBatcherJob;
     private final List<ScheduledFuture<?>> failureDetectorJobs;
     private final SharedResources sharedResources;
 
@@ -161,8 +151,10 @@ public final class MembershipService {
 
         // Schedule background jobs
         this.backgroundTasksExecutor = sharedResources.getScheduledTasksExecutor();
-        alertBatcherJob = this.backgroundTasksExecutor.scheduleAtFixedRate(new AlertBatcher(),
-                0, settings.getBatchingWindowInMs(), TimeUnit.MILLISECONDS);
+
+        // setup alert message batching
+        this.alertMessageBatcher = new AlertMessageBatcher(sharedResources, settings.getBatchingWindowInMs());
+        alertMessageBatcher.start();
 
         // this::edgeFailureNotification is invoked by the failure detector whenever an edge
         // to an observer is marked faulty.
@@ -267,7 +259,7 @@ public final class MembershipService {
                                 .addRingNumber(i)
                                 .setMetadata(joinMessage.getMetadata())
                                 .build();
-                        enqueueAlertMessage(msg);
+                        alertMessageBatcher.enqueueMessage(msg);
                     }
                 } else if (statusCode == JoinStatusCode.HOSTNAME_ALREADY_IN_RING) {
                     // Do not let the node join. It will have to wait until failure detection kicks in and
@@ -579,7 +571,7 @@ public final class MembershipService {
                     .addAllRingNumber(membershipView.getRingNumbers(myAddr, subject))
                     .setConfigurationId(configurationId)
                     .build();
-            enqueueAlertMessage(msg);
+            alertMessageBatcher.enqueueMessage(msg);
         });
     }
 
@@ -622,7 +614,7 @@ public final class MembershipService {
      * Shuts down all the executors.
      */
     void shutdown() {
-        alertBatcherJob.cancel(true);
+        alertMessageBatcher.stop();
         failureDetectorJobs.forEach(k -> k.cancel(true));
         messagingClient.shutdown();
     }
@@ -659,22 +651,6 @@ public final class MembershipService {
     }
 
     /**
-     * Queues a AlertMessage to be broadcasted after potentially being batched.
-     *
-     * @param msg the AlertMessage to be broadcasted
-     */
-    private void enqueueAlertMessage(final AlertMessage msg) {
-        batchSchedulerLock.lock();
-        try {
-            lastEnqueueTimestamp = System.currentTimeMillis();
-            sendQueue.add(msg);
-        }
-        finally {
-            batchSchedulerLock.unlock();
-        }
-    }
-
-    /**
      * Formats a proposal or a view change for application subscriptions.
      */
     private List<NodeStatusChange> createNodeStatusChangeList(final Collection<Endpoint> proposal) {
@@ -704,34 +680,19 @@ public final class MembershipService {
     /**
      * Batches outgoing AlertMessages into a single BatchAlertMessage.
      */
-    private class AlertBatcher implements Runnable {
-
-        @Override
-        public void run() {
-            final ArrayList<AlertMessage> messages = new ArrayList<>(sendQueue.size());
-            batchSchedulerLock.lock();
-            try {
-                // Wait one BATCHING_WINDOW_IN_MS since last add before sending out
-                if (!sendQueue.isEmpty() && lastEnqueueTimestamp > 0
-                        && (System.currentTimeMillis() - lastEnqueueTimestamp) > settings.getBatchingWindowInMs()) {
-                    if (LOG.isTraceEnabled()) {
-                        LOG.trace("Scheduler is sending out {} messages", sendQueue.size());
-                    }
-                    final int numDrained = sendQueue.drainTo(messages);
-                    assert numDrained > 0;
-                }
-            } finally {
-                batchSchedulerLock.unlock();
-            }
-            if (!messages.isEmpty()) {
-                final BatchedAlertMessage batched = BatchedAlertMessage.newBuilder()
-                            .setSender(myAddr)
-                            .addAllMessages(messages)
-                            .build();
-                broadcaster.broadcast(Utils.toRapidRequest(batched), membershipView.getCurrentConfigurationId());
-            }
+    private class AlertMessageBatcher extends MessageBatcher<AlertMessage> {
+        public AlertMessageBatcher(final SharedResources sharedResources, final int batchingWindowInMs) {
+            super(sharedResources, batchingWindowInMs);
         }
 
+        @Override
+        public void sendMessages(final List<AlertMessage> messages) {
+            final BatchedAlertMessage batched = BatchedAlertMessage.newBuilder()
+                    .setSender(myAddr)
+                    .addAllMessages(messages)
+                    .build();
+            broadcaster.broadcast(Utils.toRapidRequest(batched), membershipView.getCurrentConfigurationId());
+        }
     }
 
     /**
