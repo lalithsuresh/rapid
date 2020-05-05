@@ -13,6 +13,7 @@
 
 package com.vrg.rapid;
 
+import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
@@ -28,16 +29,18 @@ import com.vrg.rapid.pb.EdgeStatus;
 import com.vrg.rapid.pb.AlertMessage;
 import com.vrg.rapid.pb.Metadata;
 import com.vrg.rapid.pb.NodeId;
-import com.vrg.rapid.pb.PreJoinMessage;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
 import com.vrg.rapid.pb.RapidRequest;
 import com.vrg.rapid.pb.RapidResponse;
 import com.vrg.rapid.pb.LeaveMessage;
+import com.vrg.rapid.pb.SynchronizationMessage;
+import com.vrg.rapid.pb.SynchronizationResponse;
+import com.vrg.rapid.pb.ViewChange;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.annotation.concurrent.GuardedBy;
+import javax.annotation.Nonnull;
 import javax.annotation.concurrent.NotThreadSafe;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -48,16 +51,15 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.LinkedBlockingDeque;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -73,8 +75,11 @@ import java.util.stream.Stream;
 public final class MembershipService {
     private static final Logger LOG = LoggerFactory.getLogger(MembershipService.class);
     static final int BATCHING_WINDOW_IN_MS = 100;
+    static final int CONSENSUS_BATCHING_WINDOW_IN_MS = 500;
     private static final int DEFAULT_FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 0;
     static final int DEFAULT_FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
+    static final int MEMBERSHIP_VIEW_TIMEOUT_IN_MS = 60000;
+    static final boolean LEAVE_ON_MEMBERSHIP_VIEW_TIMEOUT = false;
     private static final int LEAVE_MESSAGE_TIMEOUT = 1500;
     private final MembershipView membershipView;
     private final MultiNodeCutDetector cutDetection;
@@ -86,21 +91,16 @@ public final class MembershipService {
     private final Map<Endpoint, Metadata> joinerMetadata = new HashMap<>();
     private final IMessagingClient messagingClient;
     private final MetadataManager metadataManager;
+    private final List<ViewChange> membershipHistory = Collections.synchronizedList(new ArrayList<>());
 
     // Event subscriptions
     private final Map<ClusterEvents, List<BiConsumer<Long, List<NodeStatusChange>>>> subscriptions;
 
-    //
     private FastPaxos fastPaxosInstance;
 
-    // Fields used by batching logic.
-    @GuardedBy("batchSchedulerLock")
-    private long lastEnqueueTimestamp = -1;    // Timestamp
-    @GuardedBy("batchSchedulerLock")
-    private final LinkedBlockingQueue<AlertMessage> sendQueue = new LinkedBlockingQueue<>();
-    private final Lock batchSchedulerLock = new ReentrantLock();
+    private final AlertMessageBatcher alertMessageBatcher;
+
     private final ScheduledExecutorService backgroundTasksExecutor;
-    private final ScheduledFuture<?> alertBatcherJob;
     private final List<ScheduledFuture<?>> failureDetectorJobs;
     private final SharedResources sharedResources;
 
@@ -108,22 +108,25 @@ public final class MembershipService {
     private final IEdgeFailureDetectorFactory fdFactory;
 
     // Fields used by consensus protocol
-    private boolean announcedProposal = false;
+    private AtomicBoolean announcedProposal = new AtomicBoolean(false);
     private final Object membershipUpdateLock = new Object();
+
+    private boolean isLeaving = false;
+
     private final Settings settings;
 
 
     MembershipService(final Endpoint myAddr, final MultiNodeCutDetector cutDetection,
                       final MembershipView membershipView, final SharedResources sharedResources,
-                      final Settings settings, final IMessagingClient messagingClient,
+                      final Settings settings, final IMessagingClient messagingClient, final IBroadcaster broadcaster,
                       final IEdgeFailureDetectorFactory edgeFailureDetector) {
-        this(myAddr, cutDetection, membershipView, sharedResources, settings, messagingClient,
+        this(myAddr, cutDetection, membershipView, sharedResources, settings, messagingClient, broadcaster,
              edgeFailureDetector, Collections.emptyMap(), new EnumMap<>(ClusterEvents.class));
     }
 
     MembershipService(final Endpoint myAddr, final MultiNodeCutDetector cutDetection,
                       final MembershipView membershipView, final SharedResources sharedResources,
-                      final Settings settings, final IMessagingClient messagingClient,
+                      final Settings settings, final IMessagingClient messagingClient, final IBroadcaster broadcaster,
                       final IEdgeFailureDetectorFactory edgeFailureDetector, final Map<Endpoint, Metadata> metadataMap,
                       final Map<ClusterEvents, List<BiConsumer<Long, List<NodeStatusChange>>>> subscriptions) {
         this.myAddr = myAddr;
@@ -134,7 +137,7 @@ public final class MembershipService {
         this.metadataManager = new MetadataManager();
         this.metadataManager.addMetadata(metadataMap);
         this.messagingClient = messagingClient;
-        this.broadcaster = new UnicastToAllBroadcaster(messagingClient);
+        this.broadcaster = broadcaster;
         this.subscriptions = subscriptions;
         this.fdFactory = edgeFailureDetector;
 
@@ -142,19 +145,24 @@ public final class MembershipService {
         Arrays.stream(ClusterEvents.values()).forEach(event ->
                 this.subscriptions.computeIfAbsent(event, k -> new ArrayList<>(0)));
 
+        membershipView.getRing(0).forEach(node -> {
+            this.broadcaster.onNodeAdded(node, Optional.ofNullable(metadataMap.get(node)));
+        });
+
         // Schedule background jobs
         this.backgroundTasksExecutor = sharedResources.getScheduledTasksExecutor();
-        alertBatcherJob = this.backgroundTasksExecutor.scheduleAtFixedRate(new AlertBatcher(),
-                0, settings.getBatchingWindowInMs(), TimeUnit.MILLISECONDS);
 
-        this.broadcaster.setMembership(membershipView.getRing(0));
+        // setup alert message batching
+        this.alertMessageBatcher = new AlertMessageBatcher(sharedResources, settings.getBatchingWindowInMs());
+        alertMessageBatcher.start();
+
         // this::edgeFailureNotification is invoked by the failure detector whenever an edge
         // to an observer is marked faulty.
         this.failureDetectorJobs = new ArrayList<>();
 
         // Prepare consensus instance
         this.fastPaxosInstance = new FastPaxos(myAddr, membershipView.getCurrentConfigurationId(),
-                                               membershipView.getMembershipSize(), this.messagingClient,
+                                               membershipView.getRing(0), this.messagingClient,
                                                this.broadcaster, this.backgroundTasksExecutor, this::decideViewChange,
                 this.settings);
         createFailureDetectorsForCurrentConfiguration();
@@ -170,8 +178,6 @@ public final class MembershipService {
      */
     public ListenableFuture<RapidResponse> handleMessage(final RapidRequest msg) {
         switch (msg.getContentCase()) {
-            case PREJOINMESSAGE:
-                return handleMessage(msg.getPreJoinMessage());
             case JOINMESSAGE:
                 return handleMessage(msg.getJoinMessage());
             case BATCHEDALERTMESSAGE:
@@ -186,38 +192,14 @@ public final class MembershipService {
                 return handleConsensusMessages(msg);
             case LEAVEMESSAGE:
                 return handleLeaveMessage(msg);
+            case BROADCASTINGMESSAGE:
+                return handleBroadcastingMessage(msg);
+            case SYNCHRONIZATIONMESSAGE:
+                return handleMessage(msg.getSynchronizationMessage());
             case CONTENT_NOT_SET:
             default:
                 throw new IllegalArgumentException("Unidentified RapidRequest type " + msg.getContentCase());
         }
-    }
-
-    /**
-     * This is invoked by a new node joining the network at a seed node.
-     * The seed responds with the current configuration ID and a list of observers
-     * for the joiner, who then moves on to phase 2 of the protocol with its observers.
-     */
-    private ListenableFuture<RapidResponse> handleMessage(final PreJoinMessage msg) {
-        final SettableFuture<RapidResponse> future = SettableFuture.create();
-
-        sharedResources.getProtocolExecutor().execute(() -> {
-            final Endpoint joiningEndpoint = msg.getSender();
-            final JoinStatusCode statusCode = membershipView.isSafeToJoin(joiningEndpoint, msg.getNodeId());
-            final JoinResponse.Builder builder = JoinResponse.newBuilder()
-                    .setSender(myAddr)
-                    .setConfigurationId(membershipView.getCurrentConfigurationId())
-                    .setStatusCode(statusCode);
-            LOG.info("Join at seed for {seed:{}, sender:{}, config:{}, size:{}}",
-                    Utils.loggable(myAddr), Utils.loggable(msg.getSender()),
-                    membershipView.getCurrentConfigurationId(), membershipView.getMembershipSize());
-            if (statusCode.equals(JoinStatusCode.SAFE_TO_JOIN)
-                    || statusCode.equals(JoinStatusCode.HOSTNAME_ALREADY_IN_RING)) {
-                // Return a list of observers for the joiner to contact for phase 2 of the protocol
-                builder.addAllEndpoints(membershipView.getExpectedObserversOf(joiningEndpoint));
-            }
-            future.set(Utils.toRapidResponse(builder.build()));
-        });
-        return future;
     }
 
     /**
@@ -230,57 +212,73 @@ public final class MembershipService {
         final SettableFuture<RapidResponse> future = SettableFuture.create();
 
         sharedResources.getProtocolExecutor().execute(() -> {
-            final long currentConfiguration = membershipView.getCurrentConfigurationId();
-            if (currentConfiguration == joinMessage.getConfigurationId()) {
+            final MembershipView.Configuration configuration = membershipView.getConfiguration();
+
+            if (announcedProposal.get()) {
+                final JoinResponse response = JoinResponse.newBuilder()
+                        .setSender(myAddr)
+                        .setStatusCode(JoinStatusCode.VIEW_CHANGE_IN_PROGRESS)
+                        .build();
+                future.set(Utils.toRapidResponse(response));
+            } else {
+                final JoinStatusCode statusCode = membershipView
+                        .isSafeToJoin(joinMessage.getSender(), joinMessage.getNodeId());
+
+            if (statusCode == JoinStatusCode.SAME_NODE_ALREADY_IN_RING) {
+                // this can happen if a join attempt times out at the joining node
+                // yet the response was about to be sent
+                // simply reply that they're welcome to join so they can get the membership list
+                final JoinResponse response = JoinResponse.newBuilder()
+                        .setSender(myAddr)
+                        .setConfigurationId(configuration.getConfigurationId())
+                        .setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
+                        .addAllEndpoints(configuration.endpoints)
+                        .addAllIdentifiers(configuration.nodeIds)
+                        .addAllMetadataKeys(metadataManager.getAllMetadata().keySet())
+                        .addAllMetadataValues(metadataManager.getAllMetadata().values())
+                        .build();
+                future.set(Utils.toRapidResponse(response));
+            } else if (statusCode == JoinStatusCode.SAFE_TO_JOIN) {
                 LOG.trace("Enqueuing SAFE_TO_JOIN for {sender:{}, config:{}, size:{}}",
-                        Utils.loggable(joinMessage.getSender()), currentConfiguration,
+                        Utils.loggable(joinMessage.getSender()), configuration.getConfigurationId(),
                         membershipView.getMembershipSize());
 
-                joinersToRespondTo.computeIfAbsent(joinMessage.getSender(),
-                        k -> new LinkedBlockingDeque<>()).add(future);
+                    joinersToRespondTo.computeIfAbsent(joinMessage.getSender(),
+                            k -> new LinkedBlockingDeque<>()).add(future);
 
-                final AlertMessage msg = AlertMessage.newBuilder()
-                        .setEdgeSrc(myAddr)
-                        .setEdgeDst(joinMessage.getSender())
-                        .setEdgeStatus(EdgeStatus.UP)
-                        .setConfigurationId(currentConfiguration)
-                        .setNodeId(joinMessage.getNodeId())
-                        .addAllRingNumber(joinMessage.getRingNumberList())
-                        .setMetadata(joinMessage.getMetadata())
-                        .build();
-                enqueueAlertMessage(msg);
-            } else {
-                // This handles the corner case where the configuration changed between phase 1 and phase 2
-                // of the joining node's bootstrap. It should attempt to rejoin the network.
-                final MembershipView.Configuration configuration = membershipView.getConfiguration();
-                LOG.info("Wrong configuration for {sender:{}, config:{}, myConfig:{}, size:{}}",
-                        Utils.loggable(joinMessage.getSender()), joinMessage.getConfigurationId(),
-                        currentConfiguration, membershipView.getMembershipSize());
-                JoinResponse.Builder responseBuilder = JoinResponse.newBuilder()
-                        .setSender(myAddr)
-                        .setConfigurationId(configuration.getConfigurationId());
-                if (membershipView.isHostPresent(joinMessage.getSender())
-                        && membershipView.isIdentifierPresent(joinMessage.getNodeId())) {
-                    LOG.info("Joining host already present : {sender:{}, config:{}, myConfig:{}, size:{}}",
-                            Utils.loggable(joinMessage.getSender()), joinMessage.getConfigurationId(),
-                            currentConfiguration, membershipView.getMembershipSize());
-                    // Race condition where a observer already crossed H messages for the joiner and changed
-                    // the configuration, but the JoinPhase2 messages show up at the observer
-                    // after it has already added the joiner. In this case, we simply
-                    // tell the sender that they're safe to join.
-                    responseBuilder = responseBuilder.setStatusCode(JoinStatusCode.SAFE_TO_JOIN)
-                            .addAllEndpoints(configuration.endpoints)
-                            .addAllIdentifiers(configuration.nodeIds)
-                            .addAllMetadataKeys(metadataManager.getAllMetadata().keySet())
-                            .addAllMetadataValues(metadataManager.getAllMetadata().values());
+                    // simulate K alerts, one for each of the expected observers
+
+                    final List<Endpoint> observers = membershipView.getExpectedObserversOf(joinMessage.getSender());
+                    for (int i = 0; i < observers.size(); i++) {
+                        final AlertMessage msg = AlertMessage.newBuilder()
+                                .setEdgeSrc(observers.get(i))
+                                .setEdgeDst(joinMessage.getSender())
+                                .setEdgeStatus(EdgeStatus.UP)
+                                .setConfigurationId(configuration.getConfigurationId())
+                                .setNodeId(joinMessage.getNodeId())
+                                .addRingNumber(i)
+                                .setMetadata(joinMessage.getMetadata())
+                                .build();
+                        alertMessageBatcher.enqueueMessage(msg);
+                    }
+                } else if (statusCode == JoinStatusCode.HOSTNAME_ALREADY_IN_RING) {
+                    // Do not let the node join. It will have to wait until failure detection kicks in and
+                    // a new membership view is agreed upon in order to be able to join again.
+                    final JoinResponse response = JoinResponse.newBuilder()
+                            .setSender(myAddr)
+                            .setStatusCode(statusCode)
+                            .build();
+                    future.set(Utils.toRapidResponse(response));
                 } else {
-                    responseBuilder = responseBuilder.setStatusCode(JoinStatusCode.CONFIG_CHANGED);
-                    LOG.info("Returning CONFIG_CHANGED for {sender:{}, config:{}, size:{}}",
-                            Utils.loggable(joinMessage.getSender()), configuration.getConfigurationId(),
-                            configuration.endpoints.size());
+                    // in these cases, the client should retry joining
+                    final JoinResponse response = JoinResponse.newBuilder()
+                            .setSender(myAddr)
+                            .setStatusCode(statusCode)
+                            .build();
+                    future.set(Utils.toRapidResponse(response));
                 }
-                future.set(Utils.toRapidResponse(responseBuilder.build())); // new configuration
             }
+
         });
         return future;
     }
@@ -312,7 +310,7 @@ public final class MembershipService {
 
             // We already have a proposal for this round
             // => we have initiated consensus and cannot go back on our proposal.
-            if (announcedProposal) {
+            if (announcedProposal.get()) {
                 future.set(null);
             } else {
                 // We now apply all the valid messages into our condition detector
@@ -329,7 +327,7 @@ public final class MembershipService {
                 // If we have a proposal for this stage, start an instance of consensus on it.
                 if (!proposal.isEmpty()) {
                     LOG.info("Proposing membership change of size {}", proposal.size());
-                    announcedProposal = true;
+                    announcedProposal.set(true);
 
                     if (subscriptions.containsKey(ClusterEvents.VIEW_CHANGE_PROPOSAL)) {
                         final List<NodeStatusChange> result = createNodeStatusChangeList(proposal);
@@ -347,6 +345,35 @@ public final class MembershipService {
         return future;
     }
 
+    /**
+     * Compiles a list of view changes that occured since the requesting node last saw a change
+     */
+    private ListenableFuture<RapidResponse> handleMessage(final SynchronizationMessage request) {
+        final SettableFuture<RapidResponse> future = SettableFuture.create();
+
+        // retrieve all the configuration changes after the one of the request
+        final List<ViewChange> changeList = new ArrayList<>();
+
+        boolean configurationIdReached = false;
+        for (final ViewChange viewChange : membershipHistory) {
+            if (configurationIdReached) {
+                changeList.add(viewChange);
+            }
+            if (viewChange.getConfigurationId() == request.getConfigurationId()) {
+                configurationIdReached = true;
+            }
+        }
+
+        final RapidResponse response = RapidResponse.newBuilder().setSynchronizationResponse(
+                SynchronizationResponse.newBuilder()
+                        .setSender(myAddr)
+                        .addAllChanges(changeList)
+                        .build())
+                .build();
+
+        future.set(response);
+        return future;
+    }
 
     /**
      * Receives proposal for the one-step consensus (essentially phase 2 of Fast Paxos).
@@ -370,6 +397,11 @@ public final class MembershipService {
         return future;
     }
 
+    private ListenableFuture<RapidResponse> handleBroadcastingMessage(final RapidRequest request) {
+        assert broadcaster instanceof ConsistentHashBroadcaster;
+        return ((ConsistentHashBroadcaster)broadcaster).handleBroadcastingMessage(request.getBroadcastingMessage());
+    }
+
     /**
      * This is invoked by FastPaxos modules when they arrive at a decision.
      *
@@ -379,6 +411,9 @@ public final class MembershipService {
     private void decideViewChange(final List<Endpoint> proposal) {
         // The first step is to disable our failure detectors in anticipation of new ones to be created.
         cancelFailureDetectorJobs();
+
+        final Map<Endpoint, NodeId> affectedNodeIds = new HashMap();
+        final Map<Endpoint, Metadata> affectedMetadata = new HashMap<>();
 
         final List<NodeStatusChange> statusChanges = new ArrayList<>(proposal.size());
         synchronized (membershipUpdateLock) {
@@ -391,14 +426,22 @@ public final class MembershipService {
                     membershipView.ringDelete(node);
                     statusChanges.add(new NodeStatusChange(node, EdgeStatus.DOWN, metadataManager.get(node)));
                     metadataManager.removeNode(node);
+                    broadcaster.onNodeRemoved(node);
                 }
                 else {
                     assert joinerUuid.containsKey(node);
                     final NodeId nodeId = joinerUuid.remove(node);
+                    affectedNodeIds.put(node, nodeId);
                     membershipView.ringAdd(node, nodeId);
                     final Metadata metadata = joinerMetadata.remove(node);
                     if (metadata.getMetadataCount() > 0) {
+                        affectedMetadata.put(node, metadata);
                         metadataManager.addMetadata(Collections.singletonMap(node, metadata));
+                    }
+                    if (metadata.getMetadataCount() > 0) {
+                        broadcaster.onNodeAdded(node, Optional.of(metadata));
+                    } else {
+                        broadcaster.onNodeAdded(node, Optional.empty());
                     }
                     statusChanges.add(new NodeStatusChange(node, EdgeStatus.UP, metadata));
                 }
@@ -406,16 +449,26 @@ public final class MembershipService {
         }
 
         final long currentConfigurationId = membershipView.getCurrentConfigurationId();
+
         // Publish an event to the listeners.
         subscriptions.get(ClusterEvents.VIEW_CHANGE).forEach(cb -> cb.accept(currentConfigurationId, statusChanges));
 
+        // Update the membership history
+        membershipHistory.add(ViewChange.newBuilder()
+                .setConfigurationId(currentConfigurationId)
+                .addAllEndpoints(proposal)
+                .addAllNodeIdKeys(affectedNodeIds.keySet())
+                .addAllNodeIdValues(affectedNodeIds.values())
+                .addAllMetadataKeys(affectedMetadata.keySet())
+                .addAllMetadataValues(affectedMetadata.values())
+                .build());
+
         // Clear data structures for the next round.
         cutDetection.clear();
-        announcedProposal = false;
-        fastPaxosInstance = new FastPaxos(myAddr, currentConfigurationId, membershipView.getMembershipSize(),
+        announcedProposal.set(false);
+        fastPaxosInstance = new FastPaxos(myAddr, currentConfigurationId, membershipView.getRing(0),
                                           messagingClient, broadcaster, backgroundTasksExecutor,
                                           this::decideViewChange, settings);
-        broadcaster.setMembership(membershipView.getRing(0));
 
         // Inform EdgeFailureDetector about membership change
         if (membershipView.isHostPresent(myAddr)) {
@@ -435,9 +488,46 @@ public final class MembershipService {
     /**
      * Invoked by observers of a node for failure detection.
      */
+    @SuppressWarnings("FutureReturnValueIgnored")
     private ListenableFuture<RapidResponse> handleMessage(final ProbeMessage probeMessage) {
         LOG.trace("handleProbeMessage from {}", Utils.loggable(probeMessage.getSender()));
+        final long observerConfigurationId = probeMessage.getObserverConfigurationId();
+
+        if (!membershipHistory.stream().anyMatch(change -> change.getConfigurationId() == observerConfigurationId)) {
+            backgroundTasksExecutor.schedule(() -> {
+                if (!membershipHistory
+                        .stream().anyMatch(change -> change.getConfigurationId() == observerConfigurationId)) {
+
+                    // we still have not synchronized our worldview after the configured timeout
+                    if (settings.leaveOnMembershipViewUpdateTimeout()) {
+                        // proactively leave the cluster
+                        subscriptions.get(ClusterEvents.KICKED).forEach(cb ->
+                                cb.accept(membershipView.getCurrentConfigurationId(), Collections.emptyList())
+                        );
+                        leave();
+                        shutdown();
+                    } else {
+                        synchronizeView(probeMessage.getSender());
+                    }
+                }
+            }, settings.getMembershipViewUpdateTimeoutInMs(), TimeUnit.MILLISECONDS);
+        }
         return Futures.immediateFuture(Utils.toRapidResponse(ProbeResponse.getDefaultInstance()));
+    }
+
+    private void synchronizeView(final Endpoint observer) {
+        // attempt to retrieve the current member list from the observer
+        final RapidRequest syncRequest = RapidRequest.newBuilder()
+                .setSynchronizationMessage(SynchronizationMessage
+                        .newBuilder()
+                        .setSender(myAddr)
+                        .setConfigurationId(membershipView.getCurrentConfigurationId())
+                        .build())
+                .build();
+        Futures.addCallback(
+                messagingClient.sendMessageBestEffort(observer, syncRequest),
+                new SynchronizationCallback());
+
     }
 
 
@@ -468,8 +558,10 @@ public final class MembershipService {
             }
             if (LOG.isDebugEnabled()) {
                 final int size = membershipView.getMembershipSize();
-                LOG.debug("Announcing EdgeFail event {subject:{}, observer:{}, config:{}, size:{}}",
-                        Utils.loggable(subject), Utils.loggable(myAddr), configurationId, size);
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("Announcing EdgeFail event {subject:{}, observer:{}, config:{}, size:{}}",
+                            Utils.loggable(subject), Utils.loggable(myAddr), configurationId, size);
+                }
             }
             // Note: setUuid is deliberately missing here because it does not affect leaves.
             final AlertMessage msg = AlertMessage.newBuilder()
@@ -479,7 +571,7 @@ public final class MembershipService {
                     .addAllRingNumber(membershipView.getRingNumbers(myAddr, subject))
                     .setConfigurationId(configurationId)
                     .build();
-            enqueueAlertMessage(msg);
+            alertMessageBatcher.enqueueMessage(msg);
         });
     }
 
@@ -522,7 +614,7 @@ public final class MembershipService {
      * Shuts down all the executors.
      */
     void shutdown() {
-        alertBatcherJob.cancel(true);
+        alertMessageBatcher.stop();
         failureDetectorJobs.forEach(k -> k.cancel(true));
         messagingClient.shutdown();
     }
@@ -532,40 +624,29 @@ public final class MembershipService {
      * This operation is blocking, as we need to wait to send the alert messages before shutting down the rest
      */
     void leave() {
-        final LeaveMessage leaveMessage = LeaveMessage.newBuilder().setSender(myAddr).build();
-        final RapidRequest leave = RapidRequest.newBuilder().setLeaveMessage(leaveMessage).build();
+        if (!isLeaving) {
+            final LeaveMessage leaveMessage = LeaveMessage.newBuilder().setSender(myAddr).build();
+            final RapidRequest leave = RapidRequest.newBuilder().setLeaveMessage(leaveMessage).build();
 
-        try {
-            final List<Endpoint> observers = membershipView.getObserversOf(myAddr);
-            final ListenableFuture<List<RapidResponse>> leaveResponses = Futures.successfulAsList(observers.stream()
-                    .map(endpoint -> messagingClient.sendMessageBestEffort(endpoint, leave))
-                    .collect(Collectors.toList()));
+            cancelFailureDetectorJobs();
+
             try {
-                leaveResponses.get(LEAVE_MESSAGE_TIMEOUT, TimeUnit.MILLISECONDS);
-            } catch (final InterruptedException | ExecutionException e) {
-                LOG.trace("Exception while leaving", e);
-            } catch (final TimeoutException e) {
-                LOG.trace("Timeout while leaving", e);
+                final List<Endpoint> observers = membershipView.getObserversOf(myAddr);
+                final ListenableFuture<List<RapidResponse>> leaveResponses = Futures.successfulAsList(observers.stream()
+                        .map(endpoint -> messagingClient.sendMessageBestEffort(endpoint, leave))
+                        .collect(Collectors.toList()));
+                isLeaving = true;
+                try {
+                    leaveResponses.get(LEAVE_MESSAGE_TIMEOUT, TimeUnit.MILLISECONDS);
+                } catch (final InterruptedException | ExecutionException e) {
+                    LOG.trace("Exception while leaving", e);
+                } catch (final TimeoutException e) {
+                    LOG.trace("Timeout while leaving", e);
+                }
+            } catch (final MembershipView.NodeNotInRingException e) {
+                // we already were removed, so that's fine
+                LOG.trace("Node was already removed prior to leaving", e);
             }
-        } catch (final MembershipView.NodeNotInRingException e) {
-            // we already were removed, so that's fine
-            LOG.trace("Node was already removed prior to leaving", e);
-        }
-    }
-
-    /**
-     * Queues a AlertMessage to be broadcasted after potentially being batched.
-     *
-     * @param msg the AlertMessage to be broadcasted
-     */
-    private void enqueueAlertMessage(final AlertMessage msg) {
-        batchSchedulerLock.lock();
-        try {
-            lastEnqueueTimestamp = System.currentTimeMillis();
-            sendQueue.add(msg);
-        }
-        finally {
-            batchSchedulerLock.unlock();
         }
     }
 
@@ -599,29 +680,18 @@ public final class MembershipService {
     /**
      * Batches outgoing AlertMessages into a single BatchAlertMessage.
      */
-    private class AlertBatcher implements Runnable {
+    private class AlertMessageBatcher extends MessageBatcher<AlertMessage> {
+        public AlertMessageBatcher(final SharedResources sharedResources, final int batchingWindowInMs) {
+            super(sharedResources, batchingWindowInMs);
+        }
 
         @Override
-        public void run() {
-            batchSchedulerLock.lock();
-            try {
-                // Wait one BATCHING_WINDOW_IN_MS since last add before sending out
-                if (!sendQueue.isEmpty() && lastEnqueueTimestamp > 0
-                        && (System.currentTimeMillis() - lastEnqueueTimestamp) > settings.getBatchingWindowInMs()) {
-                    LOG.trace("Scheduler is sending out {} messages", sendQueue.size());
-                    final ArrayList<AlertMessage> messages = new ArrayList<>(sendQueue.size());
-                    final int numDrained = sendQueue.drainTo(messages);
-                    assert numDrained > 0;
-                    final BatchedAlertMessage batched = BatchedAlertMessage.newBuilder()
-                            .setSender(myAddr)
-                            .addAllMessages(messages)
-                            .build();
-                    broadcaster.broadcast(Utils.toRapidRequest(batched));
-                }
-            }
-            finally {
-                batchSchedulerLock.unlock();
-            }
+        public void sendMessages(final List<AlertMessage> messages) {
+            final BatchedAlertMessage batched = BatchedAlertMessage.newBuilder()
+                    .setSender(myAddr)
+                    .addAllMessages(messages)
+                    .build();
+            broadcaster.broadcast(Utils.toRapidRequest(batched), membershipView.getCurrentConfigurationId());
         }
     }
 
@@ -635,13 +705,17 @@ public final class MembershipService {
                                         final int membershipSize,
                                         final long currentConfigurationId) {
         final Endpoint destination = alertMessage.getEdgeDst();
-        LOG.trace("AlertMessage received {sender:{}, config:{}, size:{}, status:{}}",
-                Utils.loggable(batchedAlertMessage.getSender()), alertMessage.getConfigurationId(),
-                membershipSize, alertMessage.getEdgeStatus());
+        if (LOG.isTraceEnabled()) {
+            LOG.trace("AlertMessage received {sender:{}, config:{}, size:{}, status:{}}",
+                    Utils.loggable(batchedAlertMessage.getSender()), alertMessage.getConfigurationId(),
+                    membershipSize, alertMessage.getEdgeStatus());
+        }
 
         if (currentConfigurationId != alertMessage.getConfigurationId()) {
-            LOG.trace("AlertMessage for configuration {} received during configuration {}",
-                    alertMessage.getConfigurationId(), currentConfigurationId);
+            if (LOG.isTraceEnabled()) {
+                LOG.trace("AlertMessage for configuration {} received during configuration {}",
+                        alertMessage.getConfigurationId(), currentConfigurationId);
+            }
             return false;
         }
 
@@ -649,20 +723,24 @@ public final class MembershipService {
         // membership set once and leave it once.
         if (alertMessage.getEdgeStatus().equals(EdgeStatus.UP)
                 && membershipView.isHostPresent(destination)) {
-            LOG.trace("AlertMessage with status UP received for node {} already in configuration {} ",
-                    Utils.loggable(alertMessage.getEdgeDst()), currentConfigurationId);
+            if (LOG.isTraceEnabled()) {
+                LOG.trace("AlertMessage with status UP received for node {} already in configuration {} ",
+                        Utils.loggable(alertMessage.getEdgeDst()), currentConfigurationId);
+            }
             return false;
         }
         if (alertMessage.getEdgeStatus().equals(EdgeStatus.DOWN)
                 && !membershipView.isHostPresent(destination)) {
-            LOG.trace("AlertMessage with status DOWN received for node {} already in configuration {} ",
-                    Utils.loggable(alertMessage.getEdgeDst()), currentConfigurationId);
+            if (LOG.isTraceEnabled()) {
+                LOG.trace("AlertMessage with status DOWN received for node {} already in configuration {} ",
+                        Utils.loggable(alertMessage.getEdgeDst()), currentConfigurationId);
+            }
             return false;
         }
 
         return true;
     }
-    
+
     private AlertMessage extractJoinerUuidAndMetadata(final AlertMessage alertMessage) {
         if (alertMessage.getEdgeStatus() == EdgeStatus.UP) {
             // Both the UUID and Metadata are saved only after the node is done being added.
@@ -687,6 +765,7 @@ public final class MembershipService {
         final List<ScheduledFuture<?>> jobs = membershipView.getSubjectsOf(myAddr)
                 .stream().map(subject -> backgroundTasksExecutor
                          .scheduleAtFixedRate(fdFactory.createInstance(subject,
+                                membershipView.getCurrentConfigurationId(),
                                 createNotifierForSubject(subject)), // Runnable
                                 DEFAULT_FAILURE_DETECTOR_INITIAL_DELAY_IN_MS,
                                 settings.getFailureDetectorIntervalInMs(),
@@ -732,9 +811,34 @@ public final class MembershipService {
         }
     }
 
+    class SynchronizationCallback implements FutureCallback<RapidResponse> {
+        @Override
+        public void onSuccess(@Nonnull final RapidResponse rapidResponse) {
+            for (final ViewChange change : rapidResponse.getSynchronizationResponse().getChangesList()) {
+                for (int i = 0; i < change.getNodeIdKeysCount(); i++) {
+                    joinerUuid.put(change.getNodeIdKeys(i), change.getNodeIdValues(i));
+                }
+                for (int i = 0; i < change.getMetadataKeysCount(); i++) {
+                    joinerMetadata.put(change.getMetadataKeys(i), change.getMetadataValues(i));
+                }
+                decideViewChange(change.getEndpointsList());
+            }
+        }
+
+        @Override
+        public void onFailure(final Throwable throwable) {
+            LOG.warn("Failed to synchronize view changes", throwable);
+
+        }
+    }
+
     interface ISettings {
         int getFailureDetectorIntervalInMs();
 
         int getBatchingWindowInMs();
+
+        int getMembershipViewUpdateTimeoutInMs();
+
+        boolean leaveOnMembershipViewUpdateTimeout();
     }
 }

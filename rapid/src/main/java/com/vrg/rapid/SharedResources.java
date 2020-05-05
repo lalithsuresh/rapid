@@ -43,6 +43,7 @@ public class SharedResources {
     private final ExecutorService clientChannelExecutor;
     private final ExecutorService protocolExecutor;
     private final ScheduledExecutorService scheduledTasksExecutor;
+    private final ScheduledExecutorService consensusSheduledTasksExecutor;
     private final Endpoint address;
 
     public SharedResources(final Endpoint address) {
@@ -53,6 +54,8 @@ public class SharedResources {
         this.protocolExecutor = Executors.newSingleThreadExecutor(newNamedThreadFactory("protocol", address));
         this.scheduledTasksExecutor = Executors.newSingleThreadScheduledExecutor(
                                                     newNamedThreadFactory("msbg", address));
+        this.consensusSheduledTasksExecutor = Executors.newSingleThreadScheduledExecutor(
+                                                    newNamedThreadFactory("cmsbg", address));
     }
 
     /**
@@ -99,6 +102,12 @@ public class SharedResources {
      */
     public ScheduledExecutorService getScheduledTasksExecutor() {
         return scheduledTasksExecutor;
+    }
+    /**
+     * Executes periodic background tasks in MembershipService.
+     */
+    public ScheduledExecutorService getConsensusScheduledTasksExecutor() {
+        return consensusSheduledTasksExecutor;
     }
 
     /**

@@ -42,7 +42,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * every node (an observer) observers its successor (a subject) on each ring.
  */
 @ThreadSafe
-final class MembershipView {
+class MembershipView {
     private final int K;
     private static final LongHashFunction HASH_FUNCTION = LongHashFunction.xx(0);
     private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
@@ -101,14 +101,15 @@ final class MembershipView {
     JoinStatusCode isSafeToJoin(final Endpoint node, final NodeId uuid) {
         rwLock.readLock().lock();
         try {
-            if (allNodes.contains(node)) {
-                return JoinStatusCode.HOSTNAME_ALREADY_IN_RING;
+            if (allNodes.contains(node) && identifiersSeen.contains(uuid)) {
+                return JoinStatusCode.SAME_NODE_ALREADY_IN_RING;
             }
-
             if (identifiersSeen.contains(uuid)) {
                 return JoinStatusCode.UUID_ALREADY_IN_RING;
             }
-
+            if (allNodes.contains(node)) {
+                return JoinStatusCode.HOSTNAME_ALREADY_IN_RING;
+            }
             return JoinStatusCode.SAFE_TO_JOIN;
         } finally {
             rwLock.readLock().unlock();

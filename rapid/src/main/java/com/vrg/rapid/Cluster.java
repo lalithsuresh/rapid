@@ -14,9 +14,8 @@
 package com.vrg.rapid;
 
 import com.google.common.net.HostAndPort;
-import com.google.common.util.concurrent.Futures;
-import com.google.common.util.concurrent.ListenableFuture;
 import com.google.protobuf.ByteString;
+import com.vrg.rapid.messaging.IBroadcaster;
 import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.messaging.IMessagingServer;
 import com.vrg.rapid.messaging.impl.GrpcClient;
@@ -29,9 +28,7 @@ import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
 import com.vrg.rapid.pb.Metadata;
 import com.vrg.rapid.pb.NodeId;
-import com.vrg.rapid.pb.PreJoinMessage;
 import com.vrg.rapid.pb.RapidRequest;
-import com.vrg.rapid.pb.RapidResponse;
 import io.grpc.ExperimentalApi;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -73,6 +70,7 @@ public final class Cluster {
     private static final int H = 9;
     private static final int L = 4;
     private static final int RETRIES = 5;
+    static final String BROADCASTER_METADATA_KEY = "_BROADCASTER_";
     private final MembershipService membershipService;
     private final IMessagingServer rpcServer;
     private final SharedResources sharedResources;
@@ -161,6 +159,8 @@ public final class Cluster {
 
     public static class Builder {
         private final Endpoint listenAddress;
+        private boolean useConsistentHashBroadcasting = false;
+        private boolean isBroadcaster = false;
         @Nullable private IEdgeFailureDetectorFactory edgeFailureDetector = null;
         private Metadata metadata = Metadata.getDefaultInstance();
         private Settings settings = new Settings();
@@ -171,6 +171,7 @@ public final class Cluster {
         @Nullable private IMessagingClient messagingClient = null;
         @Nullable private IMessagingServer messagingServer = null;
         @Nullable private SharedResources sharedResources = null;
+        @Nullable private Endpoint seedAddress = null;
 
         /**
          * Instantiates a builder for a Rapid Cluster node that will listen on the given {@code listenAddress}
@@ -248,6 +249,20 @@ public final class Cluster {
         }
 
         /**
+         * Use a broadcasting topology where broadcaster nodes arranged in a consistent hash ring take care of
+         * transmitting messages on behalf of the other nodes.
+         *
+         * Broadcaster nodes should be started first if enabled or else there will be a fallback to
+         * establishing unicast-based broadcasting.
+         */
+        public Builder withConsistentHashBroadcasting(final boolean useConsistentHashBroadcasting,
+                                                      final boolean thisNodeIsBroadcaster) {
+            this.useConsistentHashBroadcasting = useConsistentHashBroadcasting;
+            this.isBroadcaster = thisNodeIsBroadcaster;
+            return this;
+        }
+
+        /**
          * Start a cluster without joining. Required to bootstrap a seed node.
          *
          * @throws IOException Thrown if we cannot successfully start a server
@@ -271,9 +286,19 @@ public final class Cluster {
             final Map<Endpoint, Metadata> metadataMap = metadata.getMetadataCount() > 0
                                                     ? Collections.singletonMap(listenAddress, metadata)
                                                     : Collections.emptyMap();
+
+            if (isBroadcaster) {
+                metadata = metadata.toBuilder().putMetadata(BROADCASTER_METADATA_KEY, ByteString.EMPTY).build();
+            }
+
+            final IBroadcaster broadcaster = useConsistentHashBroadcasting
+                    ? new ConsistentHashBroadcaster(messagingClient, membershipView, listenAddress,
+                    Optional.of(metadata), sharedResources, settings.getConsensusBatchingWindowInMs())
+                    : new UnicastToAllBroadcaster(messagingClient);
+
             final MembershipService membershipService = new MembershipService(listenAddress,
-                    cutDetector, membershipView, sharedResources, settings,
-                                            messagingClient, edgeFailureDetector, metadataMap, subscriptions);
+                    cutDetector, membershipView, sharedResources, settings, messagingClient, broadcaster,
+                    edgeFailureDetector, metadataMap, subscriptions);
             messagingServer.setMembershipService(membershipService);
             messagingServer.start();
             return new Cluster(messagingServer, membershipService, sharedResources, listenAddress);
@@ -301,6 +326,11 @@ public final class Cluster {
          * @throws IOException Thrown if we cannot successfully start a server
          */
         Cluster join(final Endpoint seedAddress) throws IOException, InterruptedException {
+            if (this.seedAddress != null && !this.seedAddress.equals(seedAddress)) {
+                throw new JoinException("Cannot join another seed node while an attempt is in progress");
+            }
+            this.seedAddress = seedAddress;
+
             NodeId currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
             sharedResources = new SharedResources(listenAddress);
             messagingServer = messagingServer != null
@@ -310,10 +340,15 @@ public final class Cluster {
                     ? messagingClient
                     : new GrpcClient(listenAddress, sharedResources, settings);
             messagingServer.start();
+
+            if (isBroadcaster) {
+                metadata = metadata.toBuilder().putMetadata(BROADCASTER_METADATA_KEY, ByteString.EMPTY).build();
+            }
+
             for (int attempt = 0; attempt < RETRIES; attempt++) {
                 try {
                     return joinAttempt(seedAddress, currentIdentifier, attempt);
-                } catch (final ExecutionException | JoinPhaseTwoException e) {
+                } catch (final ExecutionException e) {
                     LOG.error("Join message to seed {} returned an exception: {}", Utils.loggable(seedAddress), e);
                 } catch (final JoinPhaseOneException e) {
                     /*
@@ -321,18 +356,20 @@ public final class Cluster {
                      */
                     final JoinResponse result = e.getJoinPhaseOneResult();
                     switch (result.getStatusCode()) {
-                        case CONFIG_CHANGED:
-                            LOG.error("CONFIG_CHANGED received from {}. Retrying.", Utils.loggable(result.getSender()));
-                            break;
                         case UUID_ALREADY_IN_RING:
                             LOG.error("UUID_ALREADY_IN_RING received from {}. Retrying.",
                                     Utils.loggable(result.getSender()));
                             currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
                             break;
-                        case MEMBERSHIP_REJECTED:
+                        case HOSTNAME_ALREADY_IN_RING:
                             LOG.error("Membership rejected by {}. Retrying.", Utils.loggable(result.getSender()));
                             break;
+                        case VIEW_CHANGE_IN_PROGRESS:
+                            LOG.info("Seed node {} is executing a view change. Retrying.",
+                                    Utils.loggable(result.getSender()));
+                            break;
                         default:
+                            this.seedAddress = null;
                             throw new JoinException("Unrecognized status code");
                     }
                 }
@@ -340,104 +377,35 @@ public final class Cluster {
             messagingServer.shutdown();
             messagingClient.shutdown();
             sharedResources.shutdown();
+            this.seedAddress = null;
             throw new JoinException("Join attempt unsuccessful " + Utils.loggable(listenAddress));
         }
 
         /**
-         * A single attempt by a node to join a cluster. This includes phase one, where it contacts
-         * a seed node to receive a list of observers to contact and the configuration to join. If successful,
-         * it triggers phase two where it contacts those observers who then vouch for the joiner's admission
-         * into the cluster.
+         * A single attempt by a node to join a cluster.
          */
         private Cluster joinAttempt(final Endpoint seedAddress, final NodeId currentIdentifier, final int attempt)
                                                                 throws ExecutionException, InterruptedException {
             assert messagingClient != null;
-            // First, get the configuration ID and the observers to contact from the seed node.
-            final RapidRequest preJoinMessage = Utils.toRapidRequest(PreJoinMessage.newBuilder()
-                                                                            .setSender(listenAddress)
-                                                                            .setNodeId(currentIdentifier)
-                                                                            .build());
-            final JoinResponse joinPhaseOneResult = messagingClient.sendMessage(seedAddress, preJoinMessage)
-                                                                   .get()
-                                                                   .getJoinResponse();
 
-            /*
-             * Either the seed node indicates it is safe to join, or it indicates that we're already
-             * part of the configuration (which happens due to a race condition where we retry a join
-             * after a timeout while the cluster has added us -- see below).
-             */
-            if (joinPhaseOneResult.getStatusCode() != JoinStatusCode.SAFE_TO_JOIN
-                    && joinPhaseOneResult.getStatusCode() != JoinStatusCode.HOSTNAME_ALREADY_IN_RING) {
-                throw new JoinPhaseOneException(joinPhaseOneResult);
+            final RapidRequest joinMessage = Utils.toRapidRequest(JoinMessage.newBuilder()
+                    .setSender(listenAddress)
+                    .setNodeId(currentIdentifier)
+                    .setMetadata(metadata)
+                    .build());
+            final JoinResponse joinResponse = messagingClient.sendMessage(seedAddress, joinMessage)
+                    .get()
+                    .getJoinResponse();
+
+            if (joinResponse.getStatusCode() != JoinStatusCode.SAFE_TO_JOIN) {
+                throw new JoinPhaseOneException(joinResponse);
             }
 
-            /*
-             * HOSTNAME_ALREADY_IN_RING is a special case. If the joinPhase2 request times out before
-             * the join confirmation arrives from an observer, a client may re-try a join by contacting
-             * the seed and get this response. It should simply get the configuration streamed to it.
-             * To do that, that client tries the join protocol but with a configuration id of -1.
-             */
-            final long configurationToJoin = joinPhaseOneResult.getStatusCode()
-                    == JoinStatusCode.HOSTNAME_ALREADY_IN_RING ? -1 : joinPhaseOneResult.getConfigurationId();
-            LOG.debug("{} is trying a join under configuration {} (attempt {})",
-                      Utils.loggable(listenAddress), configurationToJoin, attempt);
-
-            /*
-             * Phase one complete. Now send a phase two message to all our observers, and if there is a valid
-             * response, construct a Cluster object based on it.
-             */
-            final Optional<JoinResponse> response = sendJoinPhase2Messages(joinPhaseOneResult,
-                    configurationToJoin, currentIdentifier)
-                    .stream()
-                    .filter(Objects::nonNull)
-                    .map(RapidResponse::getJoinResponse)
-                    .filter(r -> r.getStatusCode() == JoinStatusCode.SAFE_TO_JOIN)
-                    .filter(r -> r.getConfigurationId() != configurationToJoin)
-                    .findFirst();
-            if (response.isPresent()) {
-                return createClusterFromJoinResponse(response.get());
-            }
-            throw new JoinPhaseTwoException();
+            return createClusterFromJoinResponse(joinResponse);
         }
 
         /**
-         * Identifies the set of observers to reach out to from the phase one message, and sends a join phase 2 message.
-         */
-        private List<RapidResponse> sendJoinPhase2Messages(final JoinResponse joinPhaseOneResult,
-                                        final long configurationToJoin, final NodeId currentIdentifier)
-                                                            throws ExecutionException, InterruptedException {
-            assert messagingClient != null;
-            // We have the list of observers. Now contact them as part of phase 2.
-            final List<Endpoint> observerList = joinPhaseOneResult.getEndpointsList();
-            final Map<Endpoint, List<Integer>> ringNumbersPerObserver = new HashMap<>(K);
-
-            // Batch together requests to the same node.
-            int ringNumber = 0;
-            for (final Endpoint observer: observerList) {
-                ringNumbersPerObserver.computeIfAbsent(observer, k -> new ArrayList<>()).add(ringNumber);
-                ringNumber++;
-            }
-
-            final List<ListenableFuture<RapidResponse>> responseFutures = new ArrayList<>();
-            for (final Map.Entry<Endpoint, List<Integer>> entry: ringNumbersPerObserver.entrySet()) {
-                final JoinMessage msg = JoinMessage.newBuilder()
-                        .setSender(listenAddress)
-                        .setNodeId(currentIdentifier)
-                        .setMetadata(metadata)
-                        .setConfigurationId(configurationToJoin)
-                        .addAllRingNumber(entry.getValue()).build();
-                final RapidRequest request = Utils.toRapidRequest(msg);
-                LOG.info("{} is sending a join-p2 to {} for config {}",
-                        Utils.loggable(listenAddress), Utils.loggable(entry.getKey()),
-                        configurationToJoin);
-                final ListenableFuture<RapidResponse> call = messagingClient.sendMessage(entry.getKey(), request);
-                responseFutures.add(call);
-            }
-            return Futures.successfulAsList(responseFutures).get();
-        }
-
-        /**
-         * We have a valid JoinPhase2Response. Use the retrieved configuration to construct and return a Cluster object.
+         * We have a valid JoinResponse. Use the retrieved configuration to construct and return a Cluster object.
          */
         private Cluster createClusterFromJoinResponse(final JoinResponse response) {
             assert messagingClient != null && messagingServer != null && sharedResources != null;
@@ -460,9 +428,15 @@ public final class Cluster {
             final MultiNodeCutDetector cutDetector = new MultiNodeCutDetector(K, H, L);
             edgeFailureDetector = edgeFailureDetector != null ? edgeFailureDetector
                                                   : new PingPongFailureDetector.Factory(listenAddress, messagingClient);
+
+            final IBroadcaster broadcaster = useConsistentHashBroadcasting
+                    ? new ConsistentHashBroadcaster(messagingClient, membershipViewFinal, listenAddress,
+                    Optional.of(metadata), sharedResources, settings.getConsensusBatchingWindowInMs())
+                    : new UnicastToAllBroadcaster(messagingClient);
+
             final MembershipService membershipService =
-                    new MembershipService(listenAddress, cutDetector, membershipViewFinal,
-                           sharedResources, settings, messagingClient, edgeFailureDetector, allMetadata, subscriptions);
+                    new MembershipService(listenAddress, cutDetector, membershipViewFinal, sharedResources, settings,
+                            messagingClient, broadcaster, edgeFailureDetector, allMetadata, subscriptions);
             messagingServer.setMembershipService(membershipService);
             if (LOG.isTraceEnabled()) {
                 LOG.trace("{} has observers {}", listenAddress,
@@ -489,8 +463,8 @@ public final class Cluster {
     static final class JoinPhaseOneException extends RuntimeException {
         final JoinResponse joinPhaseOneResult;
 
-        JoinPhaseOneException(final JoinResponse joinPhaseOneResult) {
-            this.joinPhaseOneResult = joinPhaseOneResult;
+        JoinPhaseOneException(final JoinResponse joinResult) {
+            this.joinPhaseOneResult = joinResult;
         }
 
         private JoinResponse getJoinPhaseOneResult() {
@@ -498,6 +472,4 @@ public final class Cluster {
         }
     }
 
-    static final class JoinPhaseTwoException extends RuntimeException {
-    }
 }

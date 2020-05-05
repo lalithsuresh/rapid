@@ -28,8 +28,8 @@ import com.vrg.rapid.pb.Phase1aMessage;
 import com.vrg.rapid.pb.Phase1bMessage;
 import com.vrg.rapid.pb.Phase2aMessage;
 import com.vrg.rapid.pb.Phase2bMessage;
-import com.vrg.rapid.pb.PreJoinMessage;
 import com.vrg.rapid.pb.ProbeMessage;
+import com.vrg.rapid.pb.BroadcastingMessage;
 import com.vrg.rapid.pb.ProbeResponse;
 import com.vrg.rapid.pb.RapidRequest;
 import com.vrg.rapid.pb.RapidResponse;
@@ -150,10 +150,6 @@ final class Utils {
      * Helpers to avoid the boilerplate of constructing a new RapidRequest/RapidResponse for
      * every message we want to send out.
      */
-    static RapidRequest toRapidRequest(final PreJoinMessage msg) {
-        return RapidRequest.newBuilder().setPreJoinMessage(msg).build();
-    }
-
     static RapidRequest toRapidRequest(final JoinMessage msg) {
         return RapidRequest.newBuilder().setJoinMessage(msg).build();
     }
@@ -186,6 +182,10 @@ final class Utils {
         return RapidRequest.newBuilder().setPhase2BMessage(msg).build();
     }
 
+    static RapidRequest toRapidRequest(final BroadcastingMessage msg) {
+        return RapidRequest.newBuilder().setBroadcastingMessage(msg).build();
+    }
+
     static RapidResponse toRapidResponse(final JoinResponse msg) {
         return RapidResponse.newBuilder().setJoinResponse(msg).build();
     }
@@ -197,7 +197,6 @@ final class Utils {
     static RapidResponse toRapidResponse(final ProbeResponse msg) {
         return RapidResponse.newBuilder().setProbeResponse(msg).build();
     }
-
 
     /**
      * Used to order endpoints in the different rings.

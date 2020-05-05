@@ -13,19 +13,19 @@
 
 package com.vrg.rapid;
 
-import com.vrg.rapid.pb.Endpoint;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.vrg.rapid.messaging.IBroadcaster;
 import com.vrg.rapid.messaging.IMessagingClient;
+import com.vrg.rapid.pb.Endpoint;
+import com.vrg.rapid.pb.Metadata;
 import com.vrg.rapid.pb.RapidRequest;
 import com.vrg.rapid.pb.RapidResponse;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ThreadLocalRandom;
 
 
@@ -33,9 +33,8 @@ import java.util.concurrent.ThreadLocalRandom;
  * Simple best-effort broadcaster.
  */
 final class UnicastToAllBroadcaster implements IBroadcaster {
-    private static final Logger LOG = LoggerFactory.getLogger(UnicastToAllBroadcaster.class);
     private final IMessagingClient messagingClient;
-    private List<Endpoint> recipients = Collections.emptyList();
+    private List<Endpoint> recipients = new ArrayList<>();
 
     UnicastToAllBroadcaster(final IMessagingClient messagingClient) {
         this.messagingClient = messagingClient;
@@ -43,22 +42,26 @@ final class UnicastToAllBroadcaster implements IBroadcaster {
 
     @Override
     @CanIgnoreReturnValue
-    public synchronized List<ListenableFuture<RapidResponse>> broadcast(final RapidRequest msg) {
+    public synchronized List<ListenableFuture<RapidResponse>> broadcast(final RapidRequest msg,
+                                                                        final long configurationId) {
+        // Randomize the sequence of nodes that will receive a broadcast from this node
+        final List<Endpoint> arr = new ArrayList<>(recipients);
+        Collections.shuffle(arr, ThreadLocalRandom.current());
+
         final List<ListenableFuture<RapidResponse>> futures = new ArrayList<>(recipients.size());
-        for (final Endpoint recipient: recipients) {
+        for (final Endpoint recipient: arr) {
             futures.add(messagingClient.sendMessageBestEffort(recipient, msg));
         }
         return futures;
     }
 
     @Override
-    public synchronized void setMembership(final List<Endpoint> recipients) {
-        if (LOG.isTraceEnabled()) {
-            LOG.trace("setMembership {}", Utils.loggable(recipients));
-        }
-        // Randomize the sequence of nodes that will receive a broadcast from this node for each configuration
-        final List<Endpoint> arr = new ArrayList<>(recipients);
-        Collections.shuffle(arr, ThreadLocalRandom.current());
-        this.recipients = arr;
+    public synchronized void onNodeAdded(final Endpoint node, final Optional<Metadata> metadata) {
+        recipients.add(node);
+    }
+
+    @Override
+    public synchronized void onNodeRemoved(final Endpoint node) {
+        recipients.remove(node);
     }
 }
