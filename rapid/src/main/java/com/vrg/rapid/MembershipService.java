@@ -54,6 +54,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.Deque;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
@@ -92,7 +94,7 @@ public final class MembershipService {
     private final Map<Endpoint, Metadata> joinerMetadata = new HashMap<>();
     private final IMessagingClient messagingClient;
     private final MetadataManager metadataManager;
-    private final List<ViewChange> membershipHistory = Collections.synchronizedList(new ArrayList<>());
+    private final Deque<ViewChange> membershipHistory = new ConcurrentLinkedDeque<>();
 
     // Event subscriptions
     private final Map<ClusterEvents, List<BiConsumer<Long, List<NodeStatusChange>>>> subscriptions;
@@ -352,7 +354,7 @@ public final class MembershipService {
     }
 
     /**
-     * Compiles a list of view changes that occured since the requesting node last saw a change
+     * Compiles a list of view changes that occurred since the requesting node last saw a change
      */
     private ListenableFuture<RapidResponse> handleMessage(final SynchronizationMessage request) {
         final SettableFuture<RapidResponse> future = SettableFuture.create();
@@ -360,23 +362,19 @@ public final class MembershipService {
         // retrieve all the configuration changes after the one of the request
         final List<ViewChange> changeList = new ArrayList<>();
 
-        boolean configurationIdReached = false;
         for (final ViewChange viewChange : membershipHistory) {
-            if (configurationIdReached) {
+            if (viewChange.getConfigurationId() != request.getConfigurationId()) {
                 changeList.add(viewChange);
-            }
-            if (viewChange.getConfigurationId() == request.getConfigurationId()) {
-                configurationIdReached = true;
+            } else {
+                break;
             }
         }
 
-        final RapidResponse response = RapidResponse.newBuilder().setSynchronizationResponse(
-                SynchronizationResponse.newBuilder()
-                        .setSender(myAddr)
-                        .addAllChanges(changeList)
-                        .build())
-                .build();
-
+        final SynchronizationResponse.Builder builder = SynchronizationResponse.newBuilder().setSender(myAddr);
+        for (int i = changeList.size() - 1; i >= 0; i--) {
+            builder.addChanges(changeList.get(i));
+        }
+        final RapidResponse response = RapidResponse.newBuilder().setSynchronizationResponse(builder.build()).build();
         future.set(response);
         return future;
     }
@@ -449,7 +447,7 @@ public final class MembershipService {
         subscriptions.get(ClusterEvents.VIEW_CHANGE).forEach(cb -> cb.accept(currentConfigurationId, statusChanges));
 
         // Update the membership history
-        membershipHistory.add(ViewChange.newBuilder()
+        membershipHistory.addFirst(ViewChange.newBuilder()
                 .setConfigurationId(currentConfigurationId)
                 .addAllEndpoints(proposal)
                 .addAllNodeIdKeys(affectedNodeIds.keySet())
@@ -494,17 +492,8 @@ public final class MembershipService {
                 if (!membershipHistory
                         .stream().anyMatch(change -> change.getConfigurationId() == observerConfigurationId)) {
 
-                    // we still have not synchronized our worldview after the configured timeout
-                    if (settings.leaveOnMembershipViewUpdateTimeout()) {
-                        // proactively leave the cluster
-                        subscriptions.get(ClusterEvents.KICKED).forEach(cb ->
-                                cb.accept(membershipView.getCurrentConfigurationId(), Collections.emptyList())
-                        );
-                        leave();
-                        shutdown();
-                    } else {
-                        synchronizeView(probeMessage.getSender());
-                    }
+                    // we still have not synchronized our worldview after the configured timeout, synchronize now
+                    synchronizeView(probeMessage.getSender());
                 }
             }, settings.getMembershipViewUpdateTimeoutInMs(), TimeUnit.MILLISECONDS);
         }
@@ -522,8 +511,7 @@ public final class MembershipService {
                 .build();
         Futures.addCallback(
                 messagingClient.sendMessageBestEffort(observer, syncRequest),
-                new SynchronizationCallback());
-
+                new SynchronizationCallback(membershipView.getCurrentConfigurationId()));
     }
 
 
@@ -820,16 +808,27 @@ public final class MembershipService {
     }
 
     class SynchronizationCallback implements FutureCallback<RapidResponse> {
+
+        private final long configurationId;
+
+        public SynchronizationCallback(final long configurationId) {
+            this.configurationId = configurationId;
+        }
+
         @Override
         public void onSuccess(@Nonnull final RapidResponse rapidResponse) {
-            for (final ViewChange change : rapidResponse.getSynchronizationResponse().getChangesList()) {
-                for (int i = 0; i < change.getNodeIdKeysCount(); i++) {
-                    joinerUuid.put(change.getNodeIdKeys(i), change.getNodeIdValues(i));
+            synchronized (membershipUpdateLock) {
+                if (membershipView.getCurrentConfigurationId() == configurationId) {
+                    for (final ViewChange change : rapidResponse.getSynchronizationResponse().getChangesList()) {
+                        for (int i = 0; i < change.getNodeIdKeysCount(); i++) {
+                            joinerUuid.put(change.getNodeIdKeys(i), change.getNodeIdValues(i));
+                        }
+                        for (int i = 0; i < change.getMetadataKeysCount(); i++) {
+                            joinerMetadata.put(change.getMetadataKeys(i), change.getMetadataValues(i));
+                        }
+                        decideViewChange(change.getEndpointsList());
+                    }
                 }
-                for (int i = 0; i < change.getMetadataKeysCount(); i++) {
-                    joinerMetadata.put(change.getMetadataKeys(i), change.getMetadataValues(i));
-                }
-                decideViewChange(change.getEndpointsList());
             }
         }
 
@@ -846,7 +845,5 @@ public final class MembershipService {
         int getBatchingWindowInMs();
 
         int getMembershipViewUpdateTimeoutInMs();
-
-        boolean leaveOnMembershipViewUpdateTimeout();
     }
 }
