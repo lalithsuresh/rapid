@@ -30,6 +30,7 @@ import java.io.IOException;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +42,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -49,6 +51,7 @@ import java.util.stream.IntStream;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.fail;
 
 /**
@@ -355,6 +358,52 @@ public class ClusterTest {
         createCluster(numNodes, seedEndpoint);
         waitAndVerifyAgreement(numNodes - failedNodes.size(), 10, 1000);
         verifyNumClusterInstances(numNodes);
+    }
+
+    /**
+     * Check the anti-entropy mechanism that catches up members that have missed a consensus round
+     */
+    @Test(timeout = 50000)
+    public void missConsensusMessagesAndSync() throws IOException, InterruptedException {
+        useFastFailureDetectionTimeouts();
+        final int membershipViewUpdateTimeoutInMs = 5000;
+        settings.setMembershipViewUpdateTimeoutInMs(membershipViewUpdateTimeoutInMs);
+        final int numNodesPhase1 = 40;
+        final int numNodesPhase2 = 5;
+        final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", basePort);
+        createCluster(numNodesPhase1, seedEndpoint);
+        verifyCluster(numNodesPhase1);
+
+        // node that will miss consensus messages joins. needs to join now because of the way drop helpers work
+        final Endpoint staleNode = Utils.hostFromParts("127.0.0.1", portCounter.incrementAndGet());
+        dropFirstNAtServer(staleNode, 1000, RapidRequest.ContentCase.FASTROUNDPHASE2BMESSAGE);
+        extendCluster(staleNode, seedEndpoint);
+        waitAndVerifyAgreement(numNodesPhase1 + 1, 10, 2000);
+
+        extendCluster(numNodesPhase2, seedEndpoint);
+
+
+        final Map<Endpoint, Cluster> instancesToCheck = new HashMap<>(instances);
+        instancesToCheck.remove(staleNode);
+
+        final AtomicBoolean hasSynchronized = new AtomicBoolean(false);
+        instances.get(staleNode).registerSubscription(ClusterEvents.VIEW_CHANGE, (configurationId, statusChanges) -> {
+            hasSynchronized.set(true);
+        });
+
+        // the other nodes will see all nodes
+        waitAndVerifyAgreement(numNodesPhase1 + numNodesPhase2 + 1, 10, 2000, instancesToCheck);
+        assertTrue(instances.get(seedEndpoint).getMemberlist().contains(staleNode));
+
+        // the stale node will be out of date
+        assertEquals(numNodesPhase1 + 1, instances.get(staleNode).getMemberlist().size());
+
+        assertFalse(hasSynchronized.get());
+        Thread.sleep(membershipViewUpdateTimeoutInMs);
+        assertTrue(hasSynchronized.get());
+
+        // all nodes should be in agreement
+        waitAndVerifyAgreement(numNodesPhase1 + numNodesPhase2 + 1, 10, 1000);
     }
 
     /**
@@ -669,8 +718,12 @@ public class ClusterTest {
      * @param expectedSize expected size of each cluster
      */
     private void verifyCluster(final int expectedSize) {
-        final List<Endpoint> any = instances.entrySet().iterator().next().getValue().getMemberlist();
-        for (final Cluster cluster : instances.values()) {
+        verifyCluster(expectedSize, instances);
+    }
+
+    private void verifyCluster(final int expectedSize, final Map<Endpoint, Cluster> instancesToCheck) {
+        final List<Endpoint> any = instancesToCheck.entrySet().iterator().next().getValue().getMemberlist();
+        for (final Cluster cluster : instancesToCheck.values()) {
             assertEquals(cluster.toString(), expectedSize, cluster.getMemberlist().size());
             assertEquals(cluster.getMemberlist(), any);
             if (addMetadata) {
@@ -678,6 +731,7 @@ public class ClusterTest {
             }
         }
     }
+
 
     /**
      * Verify that all nodes in the cluster are of size {@code expectedSize} and have an identical
@@ -710,11 +764,17 @@ public class ClusterTest {
      */
     private void waitAndVerifyAgreement(final int expectedSize, final int maxTries, final int intervalInMs)
             throws InterruptedException {
+        waitAndVerifyAgreement(expectedSize, maxTries, intervalInMs, instances);
+    }
+
+    private void waitAndVerifyAgreement(final int expectedSize, final int maxTries, final int intervalInMs,
+                                        final Map<Endpoint, Cluster> instancesToCheck)
+            throws InterruptedException {
         int tries = maxTries;
         while (--tries > 0) {
             boolean ready = true;
-            final List<Endpoint> any = instances.entrySet().iterator().next().getValue().getMemberlist();
-            for (final Cluster cluster : instances.values()) {
+            final List<Endpoint> any = instancesToCheck.entrySet().iterator().next().getValue().getMemberlist();
+            for (final Cluster cluster : instancesToCheck.values()) {
                 if (!(cluster.getMemberlist().size() == expectedSize
                         && cluster.getMemberlist().equals(any))) {
                     ready = false;
@@ -727,8 +787,9 @@ public class ClusterTest {
             }
         }
 
-        verifyCluster(expectedSize);
+        verifyCluster(expectedSize, instancesToCheck);
     }
+
 
     // Helper that provides a list of N random nodes that have already been added to the instances map
     private Set<Endpoint> getRandomHosts(final int N) {
