@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/lalithsuresh/rapid.svg?branch=master)](https://travis-ci.org/lalithsuresh/rapid) [![Coverage Status](https://coveralls.io/repos/github/lalithsuresh/rapid/badge.svg?branch=master)](https://coveralls.io/github/lalithsuresh/rapid?branch=master)
+[![CircleCI](https://circleci.com/gh/lalithsuresh/rapid.svg?style=svg)](https://circleci.com/gh/lalithsuresh/rapid) [![codecov](https://codecov.io/gh/lalithsuresh/rapid/branch/master/graph/badge.svg)](https://codecov.io/gh/lalithsuresh/rapid)
 
 What is Rapid?
 ==============
