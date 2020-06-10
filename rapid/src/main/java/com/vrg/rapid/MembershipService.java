@@ -13,7 +13,6 @@
 
 package com.vrg.rapid;
 
-import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
@@ -35,13 +34,9 @@ import com.vrg.rapid.pb.ProbeResponse;
 import com.vrg.rapid.pb.RapidRequest;
 import com.vrg.rapid.pb.RapidResponse;
 import com.vrg.rapid.pb.LeaveMessage;
-import com.vrg.rapid.pb.SynchronizationMessage;
-import com.vrg.rapid.pb.SynchronizationResponse;
-import com.vrg.rapid.pb.ViewChange;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.annotation.Nonnull;
 import javax.annotation.concurrent.GuardedBy;
 import javax.annotation.concurrent.NotThreadSafe;
 import java.util.ArrayList;
@@ -54,8 +49,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.Deque;
-import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
@@ -82,8 +75,6 @@ public final class MembershipService {
     static final int BATCHING_WINDOW_IN_MS = 100;
     private static final int DEFAULT_FAILURE_DETECTOR_INITIAL_DELAY_IN_MS = 0;
     static final int DEFAULT_FAILURE_DETECTOR_INTERVAL_IN_MS = 1000;
-    static final int MEMBERSHIP_VIEW_TIMEOUT_IN_MS = 60000;
-    static final boolean LEAVE_ON_MEMBERSHIP_VIEW_TIMEOUT = false;
     private static final int LEAVE_MESSAGE_TIMEOUT = 1500;
     private final MembershipView membershipView;
     private final MultiNodeCutDetector cutDetection;
@@ -95,7 +86,6 @@ public final class MembershipService {
     private final Map<Endpoint, Metadata> joinerMetadata = new HashMap<>();
     private final IMessagingClient messagingClient;
     private final MetadataManager metadataManager;
-    private final Deque<ViewChange> membershipHistory = new ConcurrentLinkedDeque<>();
 
     // Event subscriptions
     private final Map<ClusterEvents, List<BiConsumer<Long, List<NodeStatusChange>>>> subscriptions;
@@ -120,9 +110,6 @@ public final class MembershipService {
     // Fields used by consensus protocol
     private boolean announcedProposal = false;
     private final Object membershipUpdateLock = new Object();
-
-    private boolean isLeaving = false;
-
     private final Settings settings;
 
 
@@ -199,8 +186,6 @@ public final class MembershipService {
                 return handleConsensusMessages(msg);
             case LEAVEMESSAGE:
                 return handleLeaveMessage(msg);
-            case SYNCHRONIZATIONMESSAGE:
-                return handleMessage(msg.getSynchronizationMessage());
             case CONTENT_NOT_SET:
             default:
                 throw new IllegalArgumentException("Unidentified RapidRequest type " + msg.getContentCase());
@@ -362,31 +347,6 @@ public final class MembershipService {
         return future;
     }
 
-    /**
-     * Compiles a list of view changes that occurred since the requesting node last saw a change
-     */
-    private ListenableFuture<RapidResponse> handleMessage(final SynchronizationMessage request) {
-        final SettableFuture<RapidResponse> future = SettableFuture.create();
-
-        // retrieve all the configuration changes after the one of the request
-        final List<ViewChange> changeList = new ArrayList<>();
-
-        for (final ViewChange viewChange : membershipHistory) {
-            if (viewChange.getConfigurationId() != request.getConfigurationId()) {
-                changeList.add(viewChange);
-            } else {
-                break;
-            }
-        }
-
-        final SynchronizationResponse.Builder builder = SynchronizationResponse.newBuilder().setSender(myAddr);
-        for (int i = changeList.size() - 1; i >= 0; i--) {
-            builder.addChanges(changeList.get(i));
-        }
-        final RapidResponse response = RapidResponse.newBuilder().setSynchronizationResponse(builder.build()).build();
-        future.set(response);
-        return future;
-    }
 
     /**
      * Receives proposal for the one-step consensus (essentially phase 2 of Fast Paxos).
@@ -420,9 +380,6 @@ public final class MembershipService {
         // The first step is to disable our failure detectors in anticipation of new ones to be created.
         cancelFailureDetectorJobs();
 
-        final Map<Endpoint, NodeId> affectedNodeIds = new HashMap();
-        final Map<Endpoint, Metadata> affectedMetadata = new HashMap<>();
-
         final List<NodeStatusChange> statusChanges = new ArrayList<>(proposal.size());
         synchronized (membershipUpdateLock) {
             for (final Endpoint node : proposal) {
@@ -438,11 +395,9 @@ public final class MembershipService {
                 else {
                     assert joinerUuid.containsKey(node);
                     final NodeId nodeId = joinerUuid.remove(node);
-                    affectedNodeIds.put(node, nodeId);
                     membershipView.ringAdd(node, nodeId);
                     final Metadata metadata = joinerMetadata.remove(node);
                     if (metadata.getMetadataCount() > 0) {
-                        affectedMetadata.put(node, metadata);
                         metadataManager.addMetadata(Collections.singletonMap(node, metadata));
                     }
                     statusChanges.add(new NodeStatusChange(node, EdgeStatus.UP, metadata));
@@ -451,19 +406,8 @@ public final class MembershipService {
         }
 
         final long currentConfigurationId = membershipView.getCurrentConfigurationId();
-
         // Publish an event to the listeners.
         subscriptions.get(ClusterEvents.VIEW_CHANGE).forEach(cb -> cb.accept(currentConfigurationId, statusChanges));
-
-        // Update the membership history
-        membershipHistory.addFirst(ViewChange.newBuilder()
-                .setConfigurationId(currentConfigurationId)
-                .addAllEndpoints(proposal)
-                .addAllNodeIdKeys(affectedNodeIds.keySet())
-                .addAllNodeIdValues(affectedNodeIds.values())
-                .addAllMetadataKeys(affectedMetadata.keySet())
-                .addAllMetadataValues(affectedMetadata.values())
-                .build());
 
         // Clear data structures for the next round.
         cutDetection.clear();
@@ -491,36 +435,9 @@ public final class MembershipService {
     /**
      * Invoked by observers of a node for failure detection.
      */
-    @SuppressWarnings("FutureReturnValueIgnored")
     private ListenableFuture<RapidResponse> handleMessage(final ProbeMessage probeMessage) {
         LOG.trace("handleProbeMessage from {}", Utils.loggable(probeMessage.getSender()));
-        final long observerConfigurationId = probeMessage.getObserverConfigurationId();
-
-        if (!membershipHistory.stream().anyMatch(change -> change.getConfigurationId() == observerConfigurationId)) {
-            backgroundTasksExecutor.schedule(() -> {
-                if (!membershipHistory
-                        .stream().anyMatch(change -> change.getConfigurationId() == observerConfigurationId)) {
-
-                    // we still have not synchronized our worldview after the configured timeout, synchronize now
-                    synchronizeView(probeMessage.getSender());
-                }
-            }, settings.getMembershipViewUpdateTimeoutInMs(), TimeUnit.MILLISECONDS);
-        }
         return Futures.immediateFuture(Utils.toRapidResponse(ProbeResponse.getDefaultInstance()));
-    }
-
-    private void synchronizeView(final Endpoint observer) {
-        // attempt to retrieve the current member list from the observer
-        final RapidRequest syncRequest = RapidRequest.newBuilder()
-                .setSynchronizationMessage(SynchronizationMessage
-                        .newBuilder()
-                        .setSender(myAddr)
-                        .setConfigurationId(membershipView.getCurrentConfigurationId())
-                        .build())
-                .build();
-        Futures.addCallback(
-                messagingClient.sendMessageBestEffort(observer, syncRequest),
-                new SynchronizationCallback(membershipView.getCurrentConfigurationId()));
     }
 
 
@@ -615,29 +532,24 @@ public final class MembershipService {
      * This operation is blocking, as we need to wait to send the alert messages before shutting down the rest
      */
     void leave() {
-        if (!isLeaving) {
-            final LeaveMessage leaveMessage = LeaveMessage.newBuilder().setSender(myAddr).build();
-            final RapidRequest leave = RapidRequest.newBuilder().setLeaveMessage(leaveMessage).build();
+        final LeaveMessage leaveMessage = LeaveMessage.newBuilder().setSender(myAddr).build();
+        final RapidRequest leave = RapidRequest.newBuilder().setLeaveMessage(leaveMessage).build();
 
-            cancelFailureDetectorJobs();
-
+        try {
+            final List<Endpoint> observers = membershipView.getObserversOf(myAddr);
+            final ListenableFuture<List<RapidResponse>> leaveResponses = Futures.successfulAsList(observers.stream()
+                    .map(endpoint -> messagingClient.sendMessageBestEffort(endpoint, leave))
+                    .collect(Collectors.toList()));
             try {
-                final List<Endpoint> observers = membershipView.getObserversOf(myAddr);
-                final ListenableFuture<List<RapidResponse>> leaveResponses = Futures.successfulAsList(observers.stream()
-                        .map(endpoint -> messagingClient.sendMessageBestEffort(endpoint, leave))
-                        .collect(Collectors.toList()));
-                isLeaving = true;
-                try {
-                    leaveResponses.get(LEAVE_MESSAGE_TIMEOUT, TimeUnit.MILLISECONDS);
-                } catch (final InterruptedException | ExecutionException e) {
-                    LOG.trace("Exception while leaving", e);
-                } catch (final TimeoutException e) {
-                    LOG.trace("Timeout while leaving", e);
-                }
-            } catch (final MembershipView.NodeNotInRingException e) {
-                // we already were removed, so that's fine
-                LOG.trace("Node was already removed prior to leaving", e);
+                leaveResponses.get(LEAVE_MESSAGE_TIMEOUT, TimeUnit.MILLISECONDS);
+            } catch (final InterruptedException | ExecutionException e) {
+                LOG.trace("Exception while leaving", e);
+            } catch (final TimeoutException e) {
+                LOG.trace("Timeout while leaving", e);
             }
+        } catch (final MembershipView.NodeNotInRingException e) {
+            // we already were removed, so that's fine
+            LOG.trace("Node was already removed prior to leaving", e);
         }
     }
 
@@ -775,7 +687,6 @@ public final class MembershipService {
         final List<ScheduledFuture<?>> jobs = membershipView.getSubjectsOf(myAddr)
                 .stream().map(subject -> backgroundTasksExecutor
                          .scheduleAtFixedRate(fdFactory.createInstance(subject,
-                                membershipView.getCurrentConfigurationId(),
                                 createNotifierForSubject(subject)), // Runnable
                                 DEFAULT_FAILURE_DETECTOR_INITIAL_DELAY_IN_MS,
                                 settings.getFailureDetectorIntervalInMs(),
@@ -821,43 +732,9 @@ public final class MembershipService {
         }
     }
 
-    class SynchronizationCallback implements FutureCallback<RapidResponse> {
-
-        private final long configurationId;
-
-        public SynchronizationCallback(final long configurationId) {
-            this.configurationId = configurationId;
-        }
-
-        @Override
-        public void onSuccess(@Nonnull final RapidResponse rapidResponse) {
-            synchronized (membershipUpdateLock) {
-                if (membershipView.getCurrentConfigurationId() == configurationId) {
-                    for (final ViewChange change : rapidResponse.getSynchronizationResponse().getChangesList()) {
-                        for (int i = 0; i < change.getNodeIdKeysCount(); i++) {
-                            joinerUuid.put(change.getNodeIdKeys(i), change.getNodeIdValues(i));
-                        }
-                        for (int i = 0; i < change.getMetadataKeysCount(); i++) {
-                            joinerMetadata.put(change.getMetadataKeys(i), change.getMetadataValues(i));
-                        }
-                        decideViewChange(change.getEndpointsList());
-                    }
-                }
-            }
-        }
-
-        @Override
-        public void onFailure(final Throwable throwable) {
-            LOG.warn("Failed to synchronize view changes", throwable);
-
-        }
-    }
-
     interface ISettings {
         int getFailureDetectorIntervalInMs();
 
         int getBatchingWindowInMs();
-
-        int getMembershipViewUpdateTimeoutInMs();
     }
 }

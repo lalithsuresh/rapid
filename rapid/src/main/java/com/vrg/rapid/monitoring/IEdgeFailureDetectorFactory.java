@@ -30,5 +30,5 @@ import io.grpc.ExperimentalApi;
  */
 @ExperimentalApi
 public interface IEdgeFailureDetectorFactory {
-    Runnable createInstance(final Endpoint subject, final long configuraitonId, final Runnable notifier);
+    Runnable createInstance(final Endpoint subject, final Runnable notifier);
 }
