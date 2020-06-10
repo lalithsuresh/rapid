@@ -1,9 +1,36 @@
-version: 2.1
 
-orbs:
-  maven: circleci/maven@0.0.12
+# Java Maven CircleCI 2.0 configuration file
+#
+# Check https://circleci.com/docs/2.0/language-java/ for more details
+#
+version: 2
+jobs:
+  build:
+    docker: # run the steps with Docker
+      - image: circleci/openjdk:8-jdk-stretch
 
-workflows:
-  maven_test:
-    jobs:
-      - maven/test # checkout, build, test, and upload test results
+    working_directory: ~/rapid
+
+    environment:
+      # Customize the JVM maximum heap limit
+      MAVEN_OPTS: -Xmx3200m
+
+    steps:
+      - checkout
+
+      # run tests!
+      - run: mvn clean org.jacoco:jacoco-maven-plugin:prepare-agent package 
+      - run: mvn -pl '!build-common' jacoco:report
+      - run: bash <(curl -s https://codecov.io/bash)
+
+      # collect test metadata
+      - run:
+          name: Save test results
+          command: |
+            mkdir -p ~/test-results/junit/
+            find . -type f -regex ".*/target/surefire-reports/.*xml" -exec cp {} ~/test-results/junit/ \;
+          when: always
+      - store_test_results:
+          path: ~/test-results
+      - store_artifacts:
+          path: ~/test-results/junit 
