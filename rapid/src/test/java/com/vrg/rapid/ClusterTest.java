@@ -31,6 +31,7 @@ import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -142,6 +143,68 @@ public class ClusterTest {
         extendCluster(1, seedEndpoint);
         verifyCluster(2);
     }
+
+    /**
+     * A node attempts to join two different seeds in a very short time-frame.
+     * Rather than be allowed to join twice, the client API disallows this behavior
+     */
+    @Test(timeout = 30000)
+    public void singleNodeJoinsTwoSeeds() throws Exception {
+
+        // set up two nodes
+        final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", basePort);
+        createCluster(1, seedEndpoint);
+        verifyCluster(1);
+        extendCluster(1, seedEndpoint);
+        verifyCluster(2);
+
+        final Endpoint joiningEndpoint = Utils.hostFromParts("127.0.0.1", portCounter.incrementAndGet());
+
+        final ExecutorService executor = Executors.newWorkStealingPool(2);
+        final CountDownLatch latch = new CountDownLatch(2);
+
+        final Iterator<Endpoint> seedIterator = instances.keySet().iterator();
+        final Endpoint seed1 = seedIterator.next();
+        final Endpoint seed2 = seedIterator.next();
+        try {
+            executor.execute(() -> {
+                final Cluster.Builder builder = buildCluster(joiningEndpoint);
+
+                // first join attempt
+                try {
+                    final Cluster joiner = builder.join(seed1);
+                    instances.put(joiningEndpoint, joiner);
+                } catch (final InterruptedException | IOException e) {
+                    e.printStackTrace();
+                    fail();
+                } finally {
+                    latch.countDown();
+                }
+
+                // client tries to join again while a join is already in progress at another seed
+                // this should fail
+                try {
+                    builder.join(seed2);
+                    fail();
+                } catch (final InterruptedException | IOException e) {
+                    // that's what we want
+                } finally {
+                    latch.countDown();
+                }
+            });
+
+            latch.await();
+        } catch (final InterruptedException e) {
+            e.printStackTrace();
+            fail();
+        } finally {
+            executor.shutdown();
+        }
+
+        waitAndVerifyAgreement(3, 10, 1000);
+
+    }
+
 
     /**
      * Test with K nodes joining the network through a single seed.
@@ -263,7 +326,7 @@ public class ClusterTest {
         for (int i = 0; i < phaseTwojoiners; i++) {
             extendCluster(1, seedEndpoint);
         }
-        waitAndVerifyAgreement(numNodes + phaseOneJoiners + phaseTwojoiners, 20, 1000);
+        waitAndVerifyAgreement(numNodes + phaseOneJoiners + phaseTwojoiners, 20, 1500);
         verifyNumClusterInstances(numNodes + phaseOneJoiners + phaseTwojoiners);
     }
 

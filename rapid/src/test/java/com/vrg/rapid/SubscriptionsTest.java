@@ -197,6 +197,7 @@ public class SubscriptionsTest {
         // after it, as well as the notification from its own initialization
         assertEquals(numNodes + 1, seedCb1.numTimesCalled());
         testNodeStatus(seedCb1.getNotificationLog(), EdgeStatus.UP);
+        Thread.sleep(2000);
         for (int i = 0; i < numNodes; i++) {
             assertEquals(numNodes - i, callbacks.get(i).numTimesCalled());
             assertEquals(numNodes - i, callbacks.get(i).getNotificationLog().size());

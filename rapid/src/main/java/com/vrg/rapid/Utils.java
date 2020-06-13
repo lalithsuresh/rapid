@@ -28,7 +28,6 @@ import com.vrg.rapid.pb.Phase1aMessage;
 import com.vrg.rapid.pb.Phase1bMessage;
 import com.vrg.rapid.pb.Phase2aMessage;
 import com.vrg.rapid.pb.Phase2bMessage;
-import com.vrg.rapid.pb.PreJoinMessage;
 import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
 import com.vrg.rapid.pb.RapidRequest;
@@ -150,10 +149,6 @@ final class Utils {
      * Helpers to avoid the boilerplate of constructing a new RapidRequest/RapidResponse for
      * every message we want to send out.
      */
-    static RapidRequest toRapidRequest(final PreJoinMessage msg) {
-        return RapidRequest.newBuilder().setPreJoinMessage(msg).build();
-    }
-
     static RapidRequest toRapidRequest(final JoinMessage msg) {
         return RapidRequest.newBuilder().setJoinMessage(msg).build();
     }
