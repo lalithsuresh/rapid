@@ -23,4 +23,8 @@
         <Class name="com.vrg.rapid.NettyClientServerTest" />
         <Bug pattern="UC_USELESS_OBJECT" />
     </Match>
+    <Match>
+        <Class name="com.vrg.rapid.messaging.impl.NettyClientServer" />
+        <Bug pattern="NP_NONNULL_PARAM_VIOLATION" />
+    </Match>
 </FindBugsFilter>

@@ -17,6 +17,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.MoreExecutors;
 import com.vrg.rapid.messaging.IBroadcaster;
 import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.pb.Endpoint;
@@ -142,7 +143,8 @@ class Paxos {
         final RapidRequest request = Utils.toRapidRequest(phase1bMessage);
         final ListenableFuture<RapidResponse> rapidResponseListenableFuture =
                 client.sendMessage(phase1aMessage.getSender(), request);
-        Futures.addCallback(rapidResponseListenableFuture, new ResponseCallback());
+        Futures.addCallback(rapidResponseListenableFuture, new ResponseCallback(),
+                            MoreExecutors.directExecutor());
     }
 
     /**

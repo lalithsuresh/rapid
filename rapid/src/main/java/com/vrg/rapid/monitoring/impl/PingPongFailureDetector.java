@@ -15,6 +15,7 @@ package com.vrg.rapid.monitoring.impl;
 
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.MoreExecutors;
 import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.monitoring.IEdgeFailureDetectorFactory;
 import com.vrg.rapid.pb.Endpoint;
@@ -79,7 +80,7 @@ public class PingPongFailureDetector implements Runnable {
         else {
             LOG.trace("{} sending probe to {}", address, subject);
             Futures.addCallback(rpcClient.sendMessageBestEffort(subject, probeMessage),
-                    new ProbeCallback(subject));
+                                new ProbeCallback(subject), MoreExecutors.directExecutor());
         }
     }
 

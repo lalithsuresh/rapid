@@ -22,7 +22,6 @@ import com.vrg.rapid.pb.Endpoint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.annotation.Nullable;
 import java.util.concurrent.ExecutorService;
 import java.util.function.Supplier;
 
@@ -64,7 +63,7 @@ class Retries {
         final ListenableFuture<T> callFuture = call.get();
         Futures.addCallback(callFuture, new FutureCallback<T>() {
             @Override
-            public void onSuccess(@Nullable final T result) {
+            public void onSuccess(final T result) {
                 signal.set(result);
             }
 

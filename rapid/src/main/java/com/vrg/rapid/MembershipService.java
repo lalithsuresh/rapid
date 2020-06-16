@@ -313,7 +313,7 @@ public final class MembershipService {
             // We already have a proposal for this round
             // => we have initiated consensus and cannot go back on our proposal.
             if (announcedProposal) {
-                future.set(null);
+                future.set(RapidResponse.getDefaultInstance());
             } else {
                 // We now apply all the valid messages into our condition detector
                 // to obtain a view change proposal
@@ -341,7 +341,7 @@ public final class MembershipService {
                             .sorted(Utils.AddressComparator.getComparatorWithSeed(0))
                             .collect(Collectors.toList())));
                 }
-                future.set(null);
+                future.set(RapidResponse.getDefaultInstance());
             }
         });
         return future;
@@ -366,7 +366,7 @@ public final class MembershipService {
     private ListenableFuture<RapidResponse> handleLeaveMessage(final RapidRequest request) {
         final SettableFuture<RapidResponse> future = SettableFuture.create();
         edgeFailureNotification(request.getLeaveMessage().getSender(), membershipView.getCurrentConfigurationId());
-        future.set(null);
+        future.set(RapidResponse.getDefaultInstance());
         return future;
     }
 
