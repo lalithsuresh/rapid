@@ -167,6 +167,8 @@ public class NettyClientServer implements IMessagingClient, IMessagingServer {
     public void shutdown() {
         if (serverChannel != null) {
             serverChannel.channel().closeFuture().awaitUninterruptibly(0, TimeUnit.SECONDS);
+            resources.getEventLoopGroup().shutdownGracefully(0, 0, TimeUnit.SECONDS)
+                     .awaitUninterruptibly(0, TimeUnit.SECONDS);
         }
         channelCache.invalidateAll();
     }
