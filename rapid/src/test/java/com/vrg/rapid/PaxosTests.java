@@ -478,12 +478,12 @@ public class PaxosTests {
     private static class NoOpClient implements IMessagingClient {
         @Override
         public ListenableFuture<RapidResponse> sendMessage(final Endpoint remote, final RapidRequest msg) {
-            return Futures.immediateFuture(null);
+            return Futures.immediateFuture(RapidResponse.getDefaultInstance());
         }
 
         @Override
         public ListenableFuture<RapidResponse> sendMessageBestEffort(final Endpoint remote, final RapidRequest msg) {
-            return Futures.immediateFuture(null);
+            return Futures.immediateFuture(RapidResponse.getDefaultInstance());
         }
 
         @Override
@@ -494,7 +494,7 @@ public class PaxosTests {
     private static class NoOpBroadcaster implements IBroadcaster {
         @Override
         public List<ListenableFuture<RapidResponse>> broadcast(final RapidRequest rapidRequest) {
-            return Collections.singletonList(Futures.immediateFuture(null));
+            return Collections.singletonList(Futures.immediateFuture(RapidResponse.getDefaultInstance()));
         }
 
         @Override
