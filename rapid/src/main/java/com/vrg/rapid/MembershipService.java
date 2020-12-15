@@ -58,7 +58,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -88,7 +88,7 @@ public final class MembershipService {
     private final MetadataManager metadataManager;
 
     // Event subscriptions
-    private final Map<ClusterEvents, List<BiConsumer<Long, List<NodeStatusChange>>>> subscriptions;
+    private final Map<ClusterEvents, List<Consumer<ClusterStatusChange>>> subscriptions;
 
     //
     private FastPaxos fastPaxosInstance;
@@ -125,7 +125,7 @@ public final class MembershipService {
                       final MembershipView membershipView, final SharedResources sharedResources,
                       final Settings settings, final IMessagingClient messagingClient,
                       final IEdgeFailureDetectorFactory edgeFailureDetector, final Map<Endpoint, Metadata> metadataMap,
-                      final Map<ClusterEvents, List<BiConsumer<Long, List<NodeStatusChange>>>> subscriptions) {
+                      final Map<ClusterEvents, List<Consumer<ClusterStatusChange>>> subscriptions) {
         this.myAddr = myAddr;
         this.settings = settings;
         this.membershipView = membershipView;
@@ -161,8 +161,11 @@ public final class MembershipService {
 
         // Execute all VIEW_CHANGE callbacks. This informs applications that a start/join has successfully completed.
         final long configurationId = membershipView.getCurrentConfigurationId();
+        final List<Endpoint> currentMembership = membershipView.getRing(0);
         final List<NodeStatusChange> nodeStatusChanges = getInitialViewChange();
-        subscriptions.get(ClusterEvents.VIEW_CHANGE).forEach(cb -> cb.accept(configurationId, nodeStatusChanges));
+        final ClusterStatusChange clusterStatusChange = new ClusterStatusChange(configurationId, currentMembership,
+                                                                                nodeStatusChanges);
+        subscriptions.get(ClusterEvents.VIEW_CHANGE).forEach(cb -> cb.accept(clusterStatusChange));
     }
 
     /**
@@ -333,9 +336,12 @@ public final class MembershipService {
 
                     if (subscriptions.containsKey(ClusterEvents.VIEW_CHANGE_PROPOSAL)) {
                         final List<NodeStatusChange> result = createNodeStatusChangeList(proposal);
+                        final List<Endpoint> currentMembership = membershipView.getRing(0);
+                        final ClusterStatusChange clusterStatusChange = new ClusterStatusChange(currentConfigurationId,
+                                                                                             currentMembership, result);
                         // Inform subscribers that a proposal has been announced.
                         subscriptions.get(ClusterEvents.VIEW_CHANGE_PROPOSAL)
-                                .forEach(cb -> cb.accept(currentConfigurationId, result));
+                                .forEach(cb -> cb.accept(clusterStatusChange));
                     }
                     fastPaxosInstance.propose(new ArrayList<>(proposal.stream()
                             .sorted(Utils.AddressComparator.getComparatorWithSeed(0))
@@ -407,7 +413,10 @@ public final class MembershipService {
 
         final long currentConfigurationId = membershipView.getCurrentConfigurationId();
         // Publish an event to the listeners.
-        subscriptions.get(ClusterEvents.VIEW_CHANGE).forEach(cb -> cb.accept(currentConfigurationId, statusChanges));
+        final List<Endpoint> currentMembership = membershipView.getRing(0);
+        final ClusterStatusChange clusterStatusChange = new ClusterStatusChange(currentConfigurationId,
+                                                                                currentMembership, statusChanges);
+        subscriptions.get(ClusterEvents.VIEW_CHANGE).forEach(cb -> cb.accept(clusterStatusChange));
 
         // Clear data structures for the next round.
         cutDetection.clear();
@@ -420,12 +429,11 @@ public final class MembershipService {
         // Inform EdgeFailureDetector about membership change
         if (membershipView.isHostPresent(myAddr)) {
             createFailureDetectorsForCurrentConfiguration();
-        }
-        else {
+        } else {
             // We need to gracefully exit by calling a user handler and invalidating
             // the current session.
             LOG.trace("Got kicked out and is shutting down.");
-            subscriptions.get(ClusterEvents.KICKED).forEach(cb -> cb.accept(currentConfigurationId, statusChanges));
+            subscriptions.get(ClusterEvents.KICKED).forEach(cb -> cb.accept(clusterStatusChange));
         }
 
         // Send new configuration to all nodes joining through us
@@ -447,7 +455,7 @@ public final class MembershipService {
      * @param callback Callback to be executed when {@code event} occurs.
      */
     void registerSubscription(final ClusterEvents event,
-                              final BiConsumer<Long, List<NodeStatusChange>> callback) {
+                              final Consumer<ClusterStatusChange> callback) {
         subscriptions.get(event).add(callback);
     }
 

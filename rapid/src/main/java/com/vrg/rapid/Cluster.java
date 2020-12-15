@@ -48,7 +48,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
-import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 /**
  * The public API for Rapid. Users create Cluster objects using either Cluster.start()
@@ -135,7 +135,7 @@ public final class Cluster {
      * @param callback Callback to be executed when {@code event} occurs.
      */
     public void registerSubscription(final ClusterEvents event,
-                                     final BiConsumer<Long, List<NodeStatusChange>> callback) {
+                                     final Consumer<ClusterStatusChange> callback) {
         membershipService.registerSubscription(event, callback);
     }
 
@@ -164,7 +164,7 @@ public final class Cluster {
         @Nullable private IEdgeFailureDetectorFactory edgeFailureDetector = null;
         private Metadata metadata = Metadata.getDefaultInstance();
         private Settings settings = new Settings();
-        private final Map<ClusterEvents, List<BiConsumer<Long, List<NodeStatusChange>>>> subscriptions =
+        private final Map<ClusterEvents, List<Consumer<ClusterStatusChange>>> subscriptions =
                 new EnumMap<>(ClusterEvents.class);
 
         // These fields are initialized at the beginning of start() and join()
@@ -223,7 +223,7 @@ public final class Cluster {
          */
         @ExperimentalApi
         public Builder addSubscription(final ClusterEvents event,
-                                       final BiConsumer<Long, List<NodeStatusChange>> callback) {
+                                       final Consumer<ClusterStatusChange> callback) {
             this.subscriptions.computeIfAbsent(event, k -> new ArrayList<>());
             this.subscriptions.get(event).add(callback);
             return this;

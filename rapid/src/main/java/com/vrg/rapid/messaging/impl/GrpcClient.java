@@ -159,7 +159,7 @@ public class GrpcClient implements IMessagingClient {
 
     private Channel getChannel(final Endpoint remote) {
         // TODO: allow configuring SSL/TLS
-        Channel channel;
+        final Channel channel;
         LOG.debug("Creating channel from {} to {}", address, remote);
 
         if (settings.getUseInProcessTransport()) {

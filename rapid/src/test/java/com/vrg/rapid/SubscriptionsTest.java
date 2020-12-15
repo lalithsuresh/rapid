@@ -13,9 +13,9 @@
 
 package com.vrg.rapid;
 
-import com.vrg.rapid.pb.Endpoint;
 import com.google.protobuf.ByteString;
 import com.vrg.rapid.pb.EdgeStatus;
+import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.Metadata;
 import org.junit.Test;
 
@@ -26,7 +26,8 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.function.BiConsumer;
+import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -60,12 +61,22 @@ public class SubscriptionsTest {
                 .useSettings(settings)
                 .join(seedEndpoint);
 
+        final List<Endpoint> firstEventAtSeed = seedCb.getMembershipLog().get(0);
+        final List<Endpoint> secondEventAtSeed = seedCb.getMembershipLog().get(1);
         assertEquals(2, seedCb.numTimesCalled());
+        assertEquals(1, firstEventAtSeed.size());
+        assertTrue(firstEventAtSeed.contains(seedEndpoint));
+        assertTrue(secondEventAtSeed.contains(seedEndpoint));
+        assertTrue(secondEventAtSeed.contains(joiner));
+
+        final List<Endpoint> firstEventAtJoiner = joinCb.getMembershipLog().get(0);
         assertEquals(1, joinCb.numTimesCalled());
-        assertEquals(2, seedCb.getNotificationLog().size());
-        assertEquals(1, joinCb.getNotificationLog().size());
-        testNodeStatus(seedCb.getNotificationLog(), EdgeStatus.UP);
-        testNodeStatus(joinCb.getNotificationLog(), EdgeStatus.UP);
+        assertTrue(firstEventAtJoiner.contains(seedEndpoint));
+        assertTrue(firstEventAtJoiner.contains(joiner));
+        assertEquals(2, seedCb.getDeltaLog().size());
+        assertEquals(1, joinCb.getDeltaLog().size());
+        testNodeStatus(seedCb.getDeltaLog(), EdgeStatus.UP);
+        testNodeStatus(joinCb.getDeltaLog(), EdgeStatus.UP);
 
         seedCluster.shutdown();
         nonSeed.shutdown();
@@ -104,10 +115,10 @@ public class SubscriptionsTest {
         assertEquals(2, seedCb2.numTimesCalled());
         assertEquals(1, joinCb1.numTimesCalled());
         assertEquals(1, joinCb2.numTimesCalled());
-        testNodeStatus(seedCb1.getNotificationLog(), EdgeStatus.UP);
-        testNodeStatus(seedCb2.getNotificationLog(), EdgeStatus.UP);
-        testNodeStatus(joinCb1.getNotificationLog(), EdgeStatus.UP);
-        testNodeStatus(joinCb2.getNotificationLog(), EdgeStatus.UP);
+        testNodeStatus(seedCb1.getDeltaLog(), EdgeStatus.UP);
+        testNodeStatus(seedCb2.getDeltaLog(), EdgeStatus.UP);
+        testNodeStatus(joinCb1.getDeltaLog(), EdgeStatus.UP);
+        testNodeStatus(joinCb2.getDeltaLog(), EdgeStatus.UP);
 
         seedCluster.shutdown();
         nonSeed.shutdown();
@@ -144,9 +155,9 @@ public class SubscriptionsTest {
         assertEquals(2, seedCb1.numTimesCalled());
         assertEquals(1, seedCb2.numTimesCalled());
         assertEquals(1, joinCb1.numTimesCalled());
-        testNodeStatus(seedCb1.getNotificationLog(), EdgeStatus.UP);
-        testNodeStatus(seedCb2.getNotificationLog(), EdgeStatus.UP);
-        testNodeStatus(joinCb1.getNotificationLog(), EdgeStatus.UP);
+        testNodeStatus(seedCb1.getDeltaLog(), EdgeStatus.UP);
+        testNodeStatus(seedCb2.getDeltaLog(), EdgeStatus.UP);
+        testNodeStatus(joinCb1.getDeltaLog(), EdgeStatus.UP);
 
         seedCluster.shutdown();
         nonSeed.shutdown();
@@ -196,11 +207,11 @@ public class SubscriptionsTest {
         // Each node will hear a number of notifications equal to the number of nodes that joined
         // after it, as well as the notification from its own initialization
         assertEquals(numNodes + 1, seedCb1.numTimesCalled());
-        testNodeStatus(seedCb1.getNotificationLog(), EdgeStatus.UP);
+        testNodeStatus(seedCb1.getDeltaLog(), EdgeStatus.UP);
         for (int i = 0; i < numNodes; i++) {
             assertEquals(numNodes - i, callbacks.get(i).numTimesCalled());
-            assertEquals(numNodes - i, callbacks.get(i).getNotificationLog().size());
-            testNodeStatus(callbacks.get(i).getNotificationLog(), EdgeStatus.UP);
+            assertEquals(numNodes - i, callbacks.get(i).getDeltaLog().size());
+            testNodeStatus(callbacks.get(i).getDeltaLog(), EdgeStatus.UP);
         }
 
         // Fail the seed node and wait for the dissemination to kick in
@@ -213,8 +224,8 @@ public class SubscriptionsTest {
         // All joiners should receive one more event that includes the seed host having failed. This event
         // should be of type EdgeStatus.DOWN, and should also include the metadata about the seed node
         for (int i = 0; i < numNodes; i++) {
-            assertEquals(numNodes - i + 1, callbacks.get(i).getNotificationLog().size());
-            final List<NodeStatusChange> lastNotification = callbacks.get(i).getNotificationLog().get(numNodes - i);
+            assertEquals(numNodes - i + 1, callbacks.get(i).getDeltaLog().size());
+            final List<NodeStatusChange> lastNotification = callbacks.get(i).getDeltaLog().get(numNodes - i);
             assertEquals(1, lastNotification.size());
             assertEquals(EdgeStatus.DOWN, lastNotification.get(0).getStatus());
             assertEquals(seedEndpoint, lastNotification.get(0).getEndpoint());
@@ -245,20 +256,26 @@ public class SubscriptionsTest {
     /**
      * Encapsulates a NodeStatusChange callback and counts the number of times it was invoked
      */
-    private static class TestCallback implements BiConsumer<Long, List<NodeStatusChange>> {
-        private final List<List<NodeStatusChange>> notificationLog = new ArrayList<>();
-
-        @Override
-        public void accept(final Long id, final List<NodeStatusChange> nodeStatusChanges) {
-            notificationLog.add(nodeStatusChanges);
-        }
+    private static class TestCallback implements Consumer<ClusterStatusChange> {
+        private final List<ClusterStatusChange> notificationLog = new ArrayList<>();
 
         int numTimesCalled() {
             return notificationLog.size();
         }
 
-        List<List<NodeStatusChange>> getNotificationLog() {
-            return notificationLog;
+        List<List<Endpoint>> getMembershipLog() {
+            return notificationLog.stream().map(ClusterStatusChange::getMembership)
+                    .collect(Collectors.toList());
+        }
+
+        List<List<NodeStatusChange>> getDeltaLog() {
+            return notificationLog.stream().map(ClusterStatusChange::getDelta)
+                    .collect(Collectors.toList());
+        }
+
+        @Override
+        public void accept(final ClusterStatusChange clusterStatusChange) {
+            notificationLog.add(clusterStatusChange);
         }
     }
 }

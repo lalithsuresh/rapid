@@ -15,7 +15,7 @@ package com.vrg.standalone;
 
 import com.google.common.net.HostAndPort;
 import com.vrg.rapid.Cluster;
-import com.vrg.rapid.NodeStatusChange;
+import com.vrg.rapid.ClusterStatusChange;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.DefaultParser;
@@ -26,7 +26,6 @@ import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
-import java.util.List;
 
 /**
  * Rapid Cluster example.
@@ -65,22 +64,22 @@ public class StandaloneAgent {
     /**
      * Executed whenever a Cluster VIEW_CHANGE_PROPOSAL event occurs.
      */
-    void onViewChangeProposal(final Long configurationId, final List<NodeStatusChange> viewChange) {
-        LOG.info("The condition detector has outputted a proposal: {} {}", viewChange, configurationId);
+    void onViewChangeProposal(final ClusterStatusChange viewChange) {
+        LOG.info("The condition detector has outputted a proposal: {}", viewChange);
     }
 
     /**
      * Executed whenever a Cluster KICKED event occurs.
      */
-    void onKicked(final Long configurationId, final List<NodeStatusChange> viewChange) {
-        LOG.info("We got kicked from the network: {} {}", viewChange, configurationId);
+    void onKicked(final ClusterStatusChange viewChange) {
+        LOG.info("We got kicked from the network: {}", viewChange);
     }
 
     /**
      * Executed whenever a Cluster VIEW_CHANGE event occurs.
      */
-    void onViewChange(final Long configurationId, final List<NodeStatusChange> viewChange) {
-        LOG.info("View change detected: {} {}", viewChange, configurationId);
+    void onViewChange(final ClusterStatusChange viewChange) {
+        LOG.info("View change detected: {}", viewChange);
     }
 
     /**
