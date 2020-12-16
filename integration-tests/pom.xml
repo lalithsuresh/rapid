@@ -17,7 +17,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <parent>
         <artifactId>rapid-project</artifactId>
-        <groupId>com.vrg</groupId>
+        <groupId>com.github.lalithsuresh</groupId>
         <version>1.0-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
@@ -25,13 +25,13 @@
     <artifactId>integration-tests</artifactId>
     <dependencies>
         <dependency>
-            <groupId>com.vrg</groupId>
+            <groupId>com.github.lalithsuresh</groupId>
             <artifactId>rapid</artifactId>
             <version>1.0-SNAPSHOT</version>
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>com.vrg</groupId>
+            <groupId>com.github.lalithsuresh</groupId>
             <artifactId>examples</artifactId>
             <version>1.0-SNAPSHOT</version>
             <scope>test</scope>

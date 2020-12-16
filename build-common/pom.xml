@@ -16,7 +16,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
     <modelVersion>4.0.0</modelVersion>
-    <groupId>com.vrg</groupId>
+    <groupId>com.github.lalithsuresh</groupId>
     <artifactId>build-common</artifactId>
     <version>1.0</version>
     <name>Build Tools</name>

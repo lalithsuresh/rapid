@@ -95,7 +95,7 @@ If your project uses maven, add the following dependency into your project's pom
 
 ```xml
   <dependency>
-     <groupId>com.vrg</groupId>
+     <groupId>com.github.lalithsuresh</groupId>
      <artifactId>rapid</artifactId>
      <version>1.0-SNAPSHOT</version>
   </dependency>
