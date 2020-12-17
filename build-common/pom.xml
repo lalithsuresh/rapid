@@ -14,6 +14,7 @@
 <project>
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.deploy.skip>true</maven.deploy.skip>
     </properties>
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.github.lalithsuresh</groupId>
