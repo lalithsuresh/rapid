@@ -22,7 +22,7 @@
     <groupId>com.github.lalithsuresh</groupId>
     <artifactId>rapid-project</artifactId>
     <packaging>pom</packaging>
-    <version>0.7.0</version>
+    <version>0.8.0-SNAPSHOT</version>
     <name>rapid-project</name>
     <description>Implementation of the Rapid membership protocol</description>
     <url>https://github.com/lalithsuresh/rapid</url>
