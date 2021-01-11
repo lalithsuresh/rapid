@@ -55,6 +55,7 @@ import org.slf4j.LoggerFactory;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.io.Serializable;
+import java.net.InetSocketAddress;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -65,7 +66,8 @@ import java.util.concurrent.atomic.AtomicLong;
 public class NettyClientServer implements IMessagingClient, IMessagingServer {
     private static final Logger LOG = LoggerFactory.getLogger(NettyClientServer.class);
     private static final FutureLoader FUTURE_LOADER = new FutureLoader();
-    private static final int DEFAULT_TIMEOUT_SECONDS = 30;
+    // todo make timeout seconds configurable
+    private static final int DEFAULT_TIMEOUT_SECONDS = 5;
     private final Endpoint listenAddress;
     private final LoadingCache<Endpoint, ChannelFuture> channelCache;
     private final LoadingCache<Long, SettableFuture<RapidResponse>> outstandingRequests;
@@ -73,7 +75,14 @@ public class NettyClientServer implements IMessagingClient, IMessagingServer {
     private final SharedResources resources;
 
     @Nullable private MembershipService membershipService = null;
-    @Nullable private ChannelFuture serverChannel = null;
+    @Nullable private volatile ChannelFuture serverChannel = null;
+    private volatile boolean shutdown = false;
+
+    public int getBoundPort() {
+        return boundPort;
+    }
+
+    private int boundPort;
 
     public NettyClientServer(final Endpoint listenAddress) {
         this(listenAddress, new SharedResources(listenAddress));
@@ -103,6 +112,7 @@ public class NettyClientServer implements IMessagingClient, IMessagingServer {
             .option(ChannelOption.SO_RCVBUF, 4096)
             .option(ChannelOption.SO_REUSEADDR, true)
             .option(ChannelOption.TCP_NODELAY, true)
+            .option(ChannelOption.SO_LINGER, 0)
             .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
             .handler(new ClientChannelInitializer(clientHandler));
     }
@@ -153,6 +163,7 @@ public class NettyClientServer implements IMessagingClient, IMessagingServer {
         try {
             serverChannel = serverBootstrap.bind(listenAddress.getHostname().toStringUtf8(),
                     listenAddress.getPort()).sync();
+            boundPort = ((InetSocketAddress)serverChannel.channel().localAddress()).getPort();
         } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
             LOG.error("Could not start server {}", e);
@@ -165,12 +176,15 @@ public class NettyClientServer implements IMessagingClient, IMessagingServer {
      */
     @Override
     public void shutdown() {
-        if (serverChannel != null) {
-            serverChannel.channel().closeFuture().awaitUninterruptibly(0, TimeUnit.SECONDS);
-            resources.getEventLoopGroup().shutdownGracefully(0, 0, TimeUnit.SECONDS)
-                     .awaitUninterruptibly(0, TimeUnit.SECONDS);
+        try {
+            resources.getEventLoopGroup().shutdownGracefully(0, 0, TimeUnit.SECONDS).await(0);
+        } catch (final InterruptedException e) {
+            e.printStackTrace();
+            Thread.currentThread().interrupt();
         }
         channelCache.invalidateAll();
+        membershipService = null; // todo need a better way to stop messaging than nulling this var
+        shutdown = true;
     }
 
     /**

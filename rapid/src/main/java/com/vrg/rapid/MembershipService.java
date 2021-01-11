@@ -210,9 +210,10 @@ public final class MembershipService {
                     .setSender(myAddr)
                     .setConfigurationId(membershipView.getCurrentConfigurationId())
                     .setStatusCode(statusCode);
-            LOG.info("Join at seed for {seed:{}, sender:{}, config:{}, size:{}}",
+            LOG.info("Join at seed for {seed:{}, sender:{}, config:{}, size:{} members:{}}",
                     Utils.loggable(myAddr), Utils.loggable(msg.getSender()),
-                    membershipView.getCurrentConfigurationId(), membershipView.getMembershipSize());
+                    membershipView.getCurrentConfigurationId(), membershipView.getMembershipSize(),
+                    membershipView.getRing(0));
             if (statusCode.equals(JoinStatusCode.SAFE_TO_JOIN)
                     || statusCode.equals(JoinStatusCode.HOSTNAME_ALREADY_IN_RING)) {
                 // Return a list of observers for the joiner to contact for phase 2 of the protocol
@@ -527,12 +528,19 @@ public final class MembershipService {
     }
 
     /**
-     * Shuts down all the executors.
+     * Shuts down all the executors
      */
     void shutdown() {
         alertBatcherJob.cancel(true);
         failureDetectorJobs.forEach(k -> k.cancel(true));
-        messagingClient.shutdown();
+    }
+
+    /**
+     * Shuts down all the executors in preparation for a restart
+     */
+    void shutdownForRestart() {
+        alertBatcherJob.cancel(true);
+        failureDetectorJobs.forEach(k -> k.cancel(true));
     }
 
     /**

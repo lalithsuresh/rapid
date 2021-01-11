@@ -68,6 +68,8 @@ import java.util.function.Consumer;
  * be part of multiple separate clusters.
  */
 public final class Cluster {
+    private static final boolean INHIBIT_MESSENGER_SHUTDOWN =
+        Boolean.getBoolean("rapid.cluster.inhibitMessengerShutdown");
     private static final Logger LOG = LoggerFactory.getLogger(Cluster.class);
     private static final int K = 10;
     private static final int H = 9;
@@ -153,9 +155,22 @@ public final class Cluster {
      */
     public void shutdown() {
         LOG.debug("Shutting down RpcServer and MembershipService");
-        rpcServer.shutdown();
+        if (!INHIBIT_MESSENGER_SHUTDOWN) {
+            rpcServer.shutdown();
+        }
         membershipService.shutdown();
-        sharedResources.shutdown();
+        if (!INHIBIT_MESSENGER_SHUTDOWN) {
+            sharedResources.shutdown();
+        }
+        this.hasShutdown = true;
+    }
+
+    /**
+     * Shuts down this Cluster instance in preparation for a restart as the sole member of a
+     * new cluster
+     */
+    public void shutdownForRestart() {
+        membershipService.shutdownForRestart();
         this.hasShutdown = true;
     }
 
@@ -171,6 +186,9 @@ public final class Cluster {
         @Nullable private IMessagingClient messagingClient = null;
         @Nullable private IMessagingServer messagingServer = null;
         @Nullable private SharedResources sharedResources = null;
+
+        // NodeID for this node
+        @Nullable private NodeId currentIdentifier;
 
         /**
          * Instantiates a builder for a Rapid Cluster node that will listen on the given {@code listenAddress}
@@ -261,7 +279,7 @@ public final class Cluster {
             messagingClient = messagingClient != null
                                 ? messagingClient
                                 : new GrpcClient(listenAddress, sharedResources, settings);
-            final NodeId currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
+            currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
             final MembershipView membershipView = new MembershipView(K, Collections.singletonList(currentIdentifier),
                     Collections.singletonList(listenAddress));
             final MultiNodeCutDetector cutDetector = new MultiNodeCutDetector(K, H, L);
@@ -279,6 +297,28 @@ public final class Cluster {
             return new Cluster(messagingServer, membershipService, sharedResources, listenAddress);
         }
 
+
+        /**
+         * Restart a Cluster as the sole node in a new view
+         * @return
+         * @throws IOException
+         */
+        public Cluster restart() throws IOException {
+            final MembershipView membershipView = new MembershipView(K, Collections.singletonList(currentIdentifier),
+                Collections.singletonList(listenAddress));
+            final MultiNodeCutDetector cutDetector = new MultiNodeCutDetector(K, H, L);
+            edgeFailureDetector = edgeFailureDetector != null ? edgeFailureDetector
+                : new PingPongFailureDetector.Factory(listenAddress, messagingClient);
+
+            final Map<Endpoint, Metadata> metadataMap = metadata.getMetadataCount() > 0
+                ? Collections.singletonMap(listenAddress, metadata)
+                : Collections.emptyMap();
+            final MembershipService membershipService = new MembershipService(listenAddress,
+                cutDetector, membershipView, sharedResources, settings,
+                messagingClient, edgeFailureDetector, metadataMap, subscriptions);
+            messagingServer.setMembershipService(membershipService);
+            return new Cluster(messagingServer, membershipService, sharedResources, listenAddress);
+        }
 
         /**
          * Joins an existing cluster, using {@code seedAddress} to bootstrap.
@@ -301,7 +341,7 @@ public final class Cluster {
          * @throws IOException Thrown if we cannot successfully start a server
          */
         Cluster join(final Endpoint seedAddress) throws IOException, InterruptedException {
-            NodeId currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
+            currentIdentifier = Utils.nodeIdFromUUID(UUID.randomUUID());
             sharedResources = new SharedResources(listenAddress);
             messagingServer = messagingServer != null
                     ? messagingServer
@@ -337,9 +377,11 @@ public final class Cluster {
                     }
                 }
             }
-            messagingServer.shutdown();
-            messagingClient.shutdown();
-            sharedResources.shutdown();
+            if (!INHIBIT_MESSENGER_SHUTDOWN) {
+                messagingServer.shutdown();
+                messagingClient.shutdown();
+                sharedResources.shutdown();
+            }
             throw new JoinException("Join attempt unsuccessful " + Utils.loggable(listenAddress));
         }
 
