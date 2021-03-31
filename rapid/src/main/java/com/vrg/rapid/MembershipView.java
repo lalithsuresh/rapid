@@ -26,14 +26,14 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.NavigableSet;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.HashMap;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -46,7 +46,7 @@ final class MembershipView {
     private final int K;
     private static final LongHashFunction HASH_FUNCTION = LongHashFunction.xx(0);
     private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
-    @GuardedBy("rwLock") private final ArrayList<Utils.AddressComparator> addressComparators;
+    @GuardedBy("rwLock") private final ArrayList<AddressComparator> addressComparators;
     @GuardedBy("rwLock") private final ArrayList<NavigableSet<Endpoint>> rings;
     @GuardedBy("rwLock") private final Set<NodeId> identifiersSeen = new TreeSet<>(NodeIdComparator.INSTANCE);
     @GuardedBy("rwLock") private final Map<Endpoint, List<Endpoint>> cachedObservers = new HashMap<>();
@@ -61,7 +61,7 @@ final class MembershipView {
         this.rings = new ArrayList<>(K);
         this.addressComparators = new ArrayList<>(K);
         for (int k = 0; k < K; k++) {
-            final Utils.AddressComparator comparatorWithSeed = Utils.AddressComparator.getComparatorWithSeed(k);
+            final AddressComparator comparatorWithSeed = new AddressComparator(k);
             this.addressComparators.add(comparatorWithSeed);
             this.rings.add(new TreeSet<>(comparatorWithSeed));
         }
@@ -71,14 +71,13 @@ final class MembershipView {
     /**
      * Used to bootstrap a membership view from the fields of a MembershipView.Settings object.
      */
-    MembershipView(final int K, final Collection<NodeId> nodeIds,
-                   final Collection<Endpoint> endpoints) {
+    MembershipView(final int K, final Collection<NodeId> nodeIds, final Collection<Endpoint> endpoints) {
         assert K > 0;
         this.K = K;
         this.rings = new ArrayList<>(K);
         this.addressComparators = new ArrayList<>(K);
         for (int k = 0; k < K; k++) {
-            final Utils.AddressComparator comparatorWithSeed = Utils.AddressComparator.getComparatorWithSeed(k);
+            final AddressComparator comparatorWithSeed = new AddressComparator(k);
             this.addressComparators.add(comparatorWithSeed);
             final TreeSet<Endpoint> set = new TreeSet<>(comparatorWithSeed);
             set.addAll(endpoints);
@@ -462,6 +461,16 @@ final class MembershipView {
         }
     }
 
+    /**
+     * The address comparator for ring 0. Can be used by clients to present a consistent
+     * sort order for a list of endpoints.
+     *
+     * @return address comparator with ring 0 (and seed 0)
+     */
+    AddressComparator getRingZeroComparator() {
+        return addressComparators.get(0);
+    }
+
     private static final class NodeIdComparator implements Comparator<NodeId>, Serializable {
         private static final long serialVersionUID = -4891729395L;
         private static final NodeIdComparator INSTANCE = new NodeIdComparator();
@@ -544,6 +553,36 @@ final class MembershipView {
                 hash = hash * 37 + HASH_FUNCTION.hashInt(endpoint.getPort());
             }
             return hash;
+        }
+    }
+
+    /**
+     * Used to order endpoints in the different rings.
+     */
+    static final class AddressComparator implements Comparator<Endpoint>, Serializable {
+        private static final long serialVersionUID = -4891729390L;
+        private final LongHashFunction hashFunction;
+        private final Map<Endpoint, Long> hashCache;
+
+        AddressComparator(final int seed) {
+            this.hashFunction = LongHashFunction.xx(seed);
+            this.hashCache = new HashMap<>();
+        }
+
+        @Override
+        public final int compare(final Endpoint c1, final Endpoint c2) {
+            final long hash1 = hashCache.computeIfAbsent(c1, this::computeHash);
+            final long hash2 = hashCache.computeIfAbsent(c2, this::computeHash);
+            return Long.compare(hash1, hash2);
+        }
+
+        private long computeHash(final Endpoint endpoint) {
+            return hashFunction.hashBytes(endpoint.getHostname().asReadOnlyByteBuffer()) * 31
+                    + hashFunction.hashInt(endpoint.getPort());
+        }
+
+        void removeEndpoint(final Endpoint endpoint) {
+            hashCache.remove(endpoint);
         }
     }
 }

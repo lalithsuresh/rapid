@@ -33,13 +33,8 @@ import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
 import com.vrg.rapid.pb.RapidRequest;
 import com.vrg.rapid.pb.RapidResponse;
-import net.openhft.hashing.LongHashFunction;
 
-import java.io.Serializable;
 import java.util.Collection;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -196,41 +191,5 @@ final class Utils {
 
     static RapidResponse toRapidResponse(final ProbeResponse msg) {
         return RapidResponse.newBuilder().setProbeResponse(msg).build();
-    }
-
-
-    /**
-     * Used to order endpoints in the different rings.
-     */
-    static final class AddressComparator implements Comparator<Endpoint>, Serializable {
-        private static final long serialVersionUID = -4891729390L;
-        private static final Map<Integer, AddressComparator> INSTANCES = new HashMap<>();
-        private final LongHashFunction hashFunction;
-        private final Map<Endpoint, Long> hashCache;
-
-        AddressComparator(final int seed) {
-            this.hashFunction = LongHashFunction.xx(seed);
-            this.hashCache = new HashMap<>();
-        }
-
-        @Override
-        public final int compare(final Endpoint c1, final Endpoint c2) {
-            final long hash1 = hashCache.computeIfAbsent(c1, this::computeHash);
-            final long hash2 = hashCache.computeIfAbsent(c2, this::computeHash);
-            return Long.compare(hash1, hash2);
-        }
-
-        static synchronized AddressComparator getComparatorWithSeed(final int seed) {
-            return INSTANCES.computeIfAbsent(seed, AddressComparator::new);
-        }
-
-        private long computeHash(final Endpoint endpoint) {
-            return hashFunction.hashBytes(endpoint.getHostname().asReadOnlyByteBuffer()) * 31
-                    + hashFunction.hashInt(endpoint.getPort());
-        }
-
-        void removeEndpoint(final Endpoint endpoint) {
-            hashCache.remove(endpoint);
-        }
     }
 }

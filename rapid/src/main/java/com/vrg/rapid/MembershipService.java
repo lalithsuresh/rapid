@@ -19,13 +19,14 @@ import com.google.common.util.concurrent.SettableFuture;
 import com.vrg.rapid.messaging.IBroadcaster;
 import com.vrg.rapid.messaging.IMessagingClient;
 import com.vrg.rapid.monitoring.IEdgeFailureDetectorFactory;
+import com.vrg.rapid.pb.AlertMessage;
 import com.vrg.rapid.pb.BatchedAlertMessage;
+import com.vrg.rapid.pb.EdgeStatus;
 import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.JoinMessage;
 import com.vrg.rapid.pb.JoinResponse;
 import com.vrg.rapid.pb.JoinStatusCode;
-import com.vrg.rapid.pb.EdgeStatus;
-import com.vrg.rapid.pb.AlertMessage;
+import com.vrg.rapid.pb.LeaveMessage;
 import com.vrg.rapid.pb.Metadata;
 import com.vrg.rapid.pb.NodeId;
 import com.vrg.rapid.pb.PreJoinMessage;
@@ -33,7 +34,6 @@ import com.vrg.rapid.pb.ProbeMessage;
 import com.vrg.rapid.pb.ProbeResponse;
 import com.vrg.rapid.pb.RapidRequest;
 import com.vrg.rapid.pb.RapidResponse;
-import com.vrg.rapid.pb.LeaveMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,13 +49,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
@@ -344,7 +344,7 @@ public final class MembershipService {
                                 .forEach(cb -> cb.accept(clusterStatusChange));
                     }
                     fastPaxosInstance.propose(new ArrayList<>(proposal.stream()
-                            .sorted(Utils.AddressComparator.getComparatorWithSeed(0))
+                            .sorted(membershipView.getRingZeroComparator())
                             .collect(Collectors.toList())));
                 }
                 future.set(RapidResponse.getDefaultInstance());
