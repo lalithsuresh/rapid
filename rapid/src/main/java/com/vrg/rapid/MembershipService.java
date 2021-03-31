@@ -383,6 +383,9 @@ public final class MembershipService {
      * and any node that is currently in the membership list will be removed from it.
      */
     private void decideViewChange(final List<Endpoint> proposal) {
+        LOG.info("Decide view change called in current configuration {} ({} nodes), for proposal {}",
+                membershipView.getCurrentConfigurationId(), membershipView.getMembershipSize(),
+                Utils.loggable(proposal));
         // The first step is to disable our failure detectors in anticipation of new ones to be created.
         cancelFailureDetectorJobs();
 
