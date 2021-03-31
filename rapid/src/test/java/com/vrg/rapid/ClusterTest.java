@@ -341,7 +341,6 @@ public class ClusterTest {
      */
     @Test
     public void injectAsymmetricDrops() throws IOException, InterruptedException {
-        useFastFailureDetectionTimeouts();
         final int numNodes = 50;
         final int numFailingNodes = 10;
         final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", basePort);
@@ -353,7 +352,7 @@ public class ClusterTest {
         // we may have less than numFailedNodes entries in the set
         failedNodes.forEach(host -> dropFirstNAtServer(host, 100, RapidRequest.ContentCase.PROBEMESSAGE));
         createCluster(numNodes, seedEndpoint);
-        waitAndVerifyAgreement(numNodes - failedNodes.size(), 10, 1000);
+        waitAndVerifyAgreement(numNodes - failedNodes.size(), 20, 1500);
         verifyNumClusterInstances(numNodes);
     }
 

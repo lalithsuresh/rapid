@@ -145,7 +145,7 @@ class FastPaxos {
         final int F = (int) Math.floor((membershipSize - 1) / 4.0); // Fast Paxos resiliency.
         if (votesReceived.size() >= membershipSize - F) {
             if (count >= membershipSize - F) {
-                LOG.trace("Decided on a view change: {}", proposalMessage.getEndpointsList());
+                LOG.trace("Decided on a view change: {}", Utils.loggable(proposalMessage.getEndpointsList()));
                 // We have a successful proposal. Consume it.
                 onDecidedWrapped.accept(proposalMessage.getEndpointsList());
             } else {
