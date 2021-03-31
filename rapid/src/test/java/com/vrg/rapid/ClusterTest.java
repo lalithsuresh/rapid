@@ -341,7 +341,6 @@ public class ClusterTest {
      */
     @Test
     public void injectAsymmetricDrops() throws IOException, InterruptedException {
-        useFastFailureDetectionTimeouts();
         final int numNodes = 50;
         final int numFailingNodes = 10;
         final Endpoint seedEndpoint = Utils.hostFromParts("127.0.0.1", basePort);
