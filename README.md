@@ -97,7 +97,7 @@ If your project uses maven, add the following dependency into your project's pom
   <dependency>
      <groupId>com.github.lalithsuresh</groupId>
      <artifactId>rapid</artifactId>
-     <version>0.7.0</version>
+     <version>0.8.0</version>
   </dependency>
 ```
 
